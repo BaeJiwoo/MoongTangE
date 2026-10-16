@@ -3,6 +3,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <chrono>
+#include <thread>
 
 namespace test {
 inline void check(bool ok, const char* expression, int line) {
@@ -16,6 +18,14 @@ template<class F> int run(F f) {
 template<class F> bool throws(F f) {
     try { f(); } catch (const std::exception&) { return true; }
     return false;
+}
+template<class F> bool waitFor(F predicate, std::chrono::milliseconds timeout=std::chrono::seconds(3)) {
+    const auto deadline = std::chrono::steady_clock::now()+timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (predicate()) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return predicate();
 }
 }
 #define CHECK(...) test::check((__VA_ARGS__), #__VA_ARGS__, __LINE__)
