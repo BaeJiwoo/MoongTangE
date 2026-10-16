@@ -12,8 +12,8 @@ int main() { return test::run([] {
     for (int i=0; i<60; ++i) world.step();
     auto s = world.snapshot();
     CHECK(s.tick == 60 && s.players.size() == 2);
-    CHECK(test::near(s.players[0].position.x, 5/std::sqrt(2.0)));
-    CHECK(test::near(std::hypot(s.players[0].velocity.x,s.players[0].velocity.z),5));
+    CHECK(test::approx(s.players[0].position.x, 5/std::sqrt(2.0)));
+    CHECK(test::approx(std::hypot(s.players[0].velocity.x,s.players[0].velocity.z),5));
     CHECK(s.players[1].position.x == 1.5);
     CHECK(s.players[0].position.y == 0.5);
     for (int i=0; i<65; ++i) world.step();

@@ -5,6 +5,7 @@ No external physics engine is used. Common and ServerCore do not link raylib or 
 | Library | Pinned release / commit | License | Purpose |
 | --- | --- | --- | --- |
 | [raylib](https://github.com/raysan5/raylib/releases/tag/6.0) | 6.0 / `dbc56a87da87d973a9c5baa4e7438a9d20121d28` | zlib/libpng | Client rendering and input |
+| [Standalone Asio](https://github.com/chriskohlhoff/asio/releases/tag/asio-1-38-2) | 1.38.2 / `8806a6803cde7054c3049d3666d3ec36786568c5` | Boost Software License 1.0 | TCP transport |
 
 CMake verifies the downloaded source archive against its SHA-256. raylib's source archive includes its license and the notices for embedded dependencies (including GLFW). Preserve those notices when redistributing binaries and source.
 
