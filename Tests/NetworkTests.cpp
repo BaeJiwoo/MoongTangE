@@ -62,4 +62,11 @@ int main() { return test::run([] {
     TcpClientTransport refused("127.0.0.1",unused);
     CHECK(test::waitFor([&] { return !refused.error().empty(); }));
     CHECK(!refused.connected());
+    for (int i=0; i<5; ++i) {
+        auto shutting=std::make_unique<AsioServer>(core,"127.0.0.1",0);
+        TcpClientTransport first("127.0.0.1",shutting->port()), second("127.0.0.1",shutting->port());
+        CHECK(test::waitFor([&] { return first.connected() && second.connected(); }));
+        shutting.reset();
+        CHECK(test::waitFor([&] { return !first.connected() && !second.connected(); }));
+    }
 }); }

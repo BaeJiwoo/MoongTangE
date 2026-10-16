@@ -11,6 +11,7 @@ struct AsioServer::Impl {
     std::thread thread;
     std::uint64_t lastTick{};
     std::uint16_t boundPort{};
+    bool stopping{};
     Impl(std::shared_ptr<ServerHost> h, const std::string& address,std::uint16_t port)
         : host(std::move(h)),acceptor(io),publish(io) {
         if (!host || !host->running()) throw std::invalid_argument("ServerCore is not running");
@@ -21,6 +22,7 @@ struct AsioServer::Impl {
     }
     ~Impl() {
         asio::post(io,[this] {
+            stopping=true;
             asio::error_code ignored; acceptor.close(ignored); publish.cancel();
             const auto copy=sessions;
             for (const auto& [channel,id] : copy) { (void)id; channel->close("Server stopping"); }
@@ -29,6 +31,7 @@ struct AsioServer::Impl {
     }
     void accept() {
         acceptor.async_accept([this](asio::error_code error,asio::ip::tcp::socket socket) {
+            if (stopping) return;
             if (!error) {
                 if (sessions.size()<maxPlayers*2) {
                     auto channel=std::make_shared<TcpChannel>(std::move(socket));
@@ -62,7 +65,7 @@ struct AsioServer::Impl {
     void broadcast() {
         publish.expires_after(std::chrono::milliseconds(50));
         publish.async_wait([this](asio::error_code error) {
-            if (error) return;
+            if (error || stopping) return;
             const auto state=host->snapshot();
             if (state.tick && state.tick!=lastTick) {
                 lastTick=state.tick;
