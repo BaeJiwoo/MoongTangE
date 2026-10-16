@@ -12,19 +12,103 @@ C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 프로젝트입니�
 
 ## 개발 상태
 
-저장소 초기화 단계입니다. 게임 구현과 빌드 설정은 후속 이슈별 PR에서 추가합니다.
+싱글플레이, TCP 멀티플레이, 자체 물리 시뮬레이션과 자동 테스트가 구현되어 있습니다. 모든 개발 PR은 리뷰를 위해 미병합 상태로 유지합니다. 전체 구현은 마지막 작업 브랜치인 `10-QA`에 있으며, `main`에는 초기 README만 있습니다.
 
 초기 README 이후 모든 개발 변경은 실제 GitHub 이슈 번호를 사용하는 작업 브랜치에서 진행합니다. 의존성이 있는 변경은 Stacked PR로 제출하며, PR은 사용자가 리뷰하고 직접 병합할 수 있도록 열린 상태로 유지합니다.
 
-## 예정 기술 스택
+## 기술 스택
 
 | 영역 | 기술 |
 | --- | --- |
 | 언어 | C++20 |
 | 빌드 | CMake |
-| 네트워크 | Standalone Asio |
-| 렌더링 | raylib |
+| 네트워크 | Standalone Asio 1.38.2, TCP |
+| 렌더링 | raylib 6.0 |
 | 테스트 | CTest |
 | CI | GitHub Actions |
 
-빌드 및 실행 명령, 외부 의존성 라이선스와 플랫폼별 검증 결과는 구현 PR에 맞춰 문서화합니다.
+## 빌드
+
+CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 네트워크 자동 테스트에는 Python 3도 필요합니다. 첫 구성 시 고정된 외부 소스를 다운로드하므로 인터넷 연결이 필요합니다. 다운로드는 SHA-256으로 검증합니다.
+
+```sh
+git clone --branch 10-QA https://github.com/BaeJiwoo/portable-physics-sandbox.git
+cd portable-physics-sandbox
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --parallel 2
+ctest --test-dir build -C Release --output-on-failure
+```
+
+Windows에서는 Visual Studio의 Desktop development with C++ 워크로드를 설치하세요. Linux의 그래픽 빌드 의존성:
+
+```sh
+sudo apt-get install libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev
+```
+
+macOS에서는 Xcode Command Line Tools와 CMake를 사용합니다.
+
+서버만 빌드하려면 `-DSANDBOX_BUILD_CLIENT=OFF`를 추가하세요. 외부 라이브러리 없이 코어와 테스트만 빌드하려면 아래 구성을 사용합니다.
+
+```sh
+cmake -S . -B build-core -DSANDBOX_BUILD_CLIENT=OFF -DSANDBOX_BUILD_NETWORK=OFF
+cmake --build build-core --config Release
+ctest --test-dir build-core -C Release --output-on-failure
+```
+
+## 실행
+
+Windows / Visual Studio 빌드:
+
+```powershell
+# 싱글플레이: 클라이언트 내부 서버 사용
+.\build\Release\Client.exe --single
+
+# 멀티플레이: 첫 번째 터미널에서 서버 실행
+.\build\Release\DedicatedServer.exe --port 27015
+
+# 별도 터미널에서 클라이언트 실행. 여러 개를 실행할 수 있습니다.
+.\build\Release\Client.exe --connect 127.0.0.1:27015
+```
+
+Linux / macOS의 일반 단일 구성 빌드에서는 실행 파일이 `build/Client`, `build/DedicatedServer`에 있습니다. 명령행 옵션은 같습니다.
+
+```sh
+./build/Client --single
+./build/DedicatedServer --port 27015
+./build/Client --connect 127.0.0.1:27015
+```
+
+W/A/S/D로 바닥의 공을 움직이고 Escape로 종료합니다. 자신의 공은 주황색, 다른 플레이어는 파란색입니다. 중력은 (0,-9.81,0), 공의 반지름은 0.5, 최초 공 위치는 (0,2,0)입니다. 추가 플레이어는 X축으로 간격을 두고 생성됩니다. 대각선 이동 속도는 정규화됩니다.
+
+서버 기본 바인딩은 `127.0.0.1`입니다. 신뢰할 수 있는 테스트 LAN에서만 `--public`을 사용해 `0.0.0.0`으로 바인딩하세요. 이 프로토콜에는 사용자 인증이나 암호화가 없으므로 인터넷에 공개하지 마세요. 방화벽 포트 개방은 자동으로 수행하지 않습니다.
+
+`DedicatedServer --run-for 5`는 5초 후 정상 종료합니다. 포트 0은 운영체제가 사용 가능한 테스트 포트를 선택하며 실제 주소가 출력됩니다. `Client --single --smoke` 또는 `Client --connect host:port --smoke`는 숨겨진 그래픽 창에서 서버 이동을 확인한 뒤 자동 종료합니다. `--smoke`도 OpenGL 환경이 필요합니다. 환경변수 `SANDBOX_SMOKE_CAPTURE`를 지정하면 종료 직전 화면을 해당 PNG 경로에 저장합니다.
+
+## 구조와 동작
+
+```text
+Common/       수학, 자체 물리, GameWorld, 프로토콜, 전송 인터페이스
+Server/Core/  재사용 가능한 ServerCore, 60Hz Tick, 제한된 명령 큐
+Server/Network/ Asio TCP 서버 (렌더링 의존성 없음)
+Client/       raylib 화면과 키보드, LocalTransport/TcpClientTransport
+Network/      양쪽에서 사용하는 비동기 TCP 프레이밍과 자원 제한
+Tests/        단위 테스트, 루프백, 프로세스 통합 테스트
+cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
+```
+
+싱글플레이는 같은 프로세스의 ServerCore에 메시지를 전달합니다. 멀티플레이는 TCP 입력을 같은 ServerCore의 큐로 전달합니다. 물리 상태는 Tick 스레드에서만 변경되고, 클라이언트는 약 20Hz로 받은 Snapshot을 표시합니다. 자세한 메시지 규격과 제한은 [PROTOCOL.md](PROTOCOL.md)를 참고하세요.
+
+## 테스트와 제한
+
+- CTest: 벡터, 낙하/충돌, 게임 월드, 서버 수명/큐, 로컬 전송, 프로토콜, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속.
+- 동일 Tick 입력 일정의 로컬 계산과 직렬화 경로는 매 Tick 비교합니다. 실제 비동기 전송은 입력 도착 시점이 다르므로 이동 속도·방향·바닥 정지 등 물리 조건을 비교합니다.
+- CI: Windows/MSVC, Linux/GCC, macOS/Clang에서 전체 빌드와 테스트, 외부 의존성 없는 코어 구성을 검증합니다. GUI 실행은 CI 필수 항목이 아니며 실제 결과는 [Actions](https://github.com/BaeJiwoo/portable-physics-sandbox/actions)에서 확인하세요.
+- 공과 평면의 충돌만 구현합니다. 공끼리의 충돌, 클라이언트 보간/예측, UDP, 물리 롤백 및 사용자 인증은 후속 범위입니다.
+- 최대 32명, 입력 만료 120 Tick, 고정 dt=1/60이며 플랫폼 간 비트 단위의 결정성을 보장하지 않습니다.
+- 비공개 저장소 브랜치 보호 설정은 현재 계정 요금제에서 HTTP 403으로 거부됐습니다. 저장소 공개 범위는 변경하지 않았습니다.
+
+## 리뷰와 병합
+
+[ROADMAP.md](ROADMAP.md)의 순서대로 PR을 리뷰하세요. 후속 PR은 선행 미병합 브랜치를 Base로 사용합니다. 선행 PR을 병합한 뒤 다음 PR의 Base를 확인하고 필요하면 `main`으로 재지정하세요. 에이전트는 PR을 병합하거나 자동 병합을 활성화하지 않습니다.
+
+의존성과 재배포 시 라이선스 고지는 [THIRD_PARTY.md](THIRD_PARTY.md), 개발 규칙은 [AGENTS.md](AGENTS.md)에 정리되어 있습니다.

@@ -1,5 +1,11 @@
 name: Build and test
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -20,3 +26,9 @@ jobs:
         run: cmake --build build --config Release --parallel 2
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Configure without graphics and networking dependencies
+        run: cmake -S . -B build-core -DCMAKE_BUILD_TYPE=Release -DSANDBOX_BUILD_CLIENT=OFF -DSANDBOX_BUILD_NETWORK=OFF
+      - name: Build core
+        run: cmake --build build-core --config Release --parallel 2
+      - name: Test core
+        run: ctest --test-dir build-core -C Release --output-on-failure

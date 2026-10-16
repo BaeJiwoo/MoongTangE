@@ -9,4 +9,4 @@ No external physics engine is used. Common and ServerCore do not link raylib or 
 
 CMake verifies the downloaded source archive against its SHA-256. raylib's source archive includes its license and the notices for embedded dependencies (including GLFW). Preserve those notices when redistributing binaries and source.
 
-Build tools: CMake >=3.25 and a C++20 compiler. The client needs desktop OpenGL and platform windowing development libraries. On Debian/Ubuntu install `libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev`.
+Build tools: CMake >=3.25 and a C++20 compiler; Python 3 is required for network process tests when BUILD_TESTING is enabled. The client needs desktop OpenGL and platform windowing development libraries. On Debian/Ubuntu install `libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev`.
