@@ -1,0 +1,8 @@
+/.tools/
+/build*/
+/out/
+/.vs/
+/.idea/
+*.user
+*.log
+.DS_Store
