@@ -29,7 +29,10 @@ int main() { return test::run([] {
     CHECK(!a.send({b.playerId(),1,1,0}));
     CHECK(a.send({aId,1,1,0})); CHECK(b.send({b.playerId(),1,0,-1}));
     CHECK(test::waitFor([&] {
-        if (auto state=a.receive()) for (const auto& p:state->players) if (p.id==aId && p.velocity.x==5) return true;
+        if (auto state=a.receive()) for (const auto& p:state->players) if (p.id==aId && p.velocity.x>0.5) {
+            CHECK(test::approx(p.angularVelocity.z,-p.velocity.x/0.5));
+            CHECK(p.orientation!=Quaternion{} && p.orientation.unit()); return true;
+        }
         return false;
     }));
     asio::io_context io;
@@ -42,15 +45,15 @@ int main() { return test::run([] {
         const auto command=wire::frame(wire::input({id,1,1,0}));
         for (const auto byte:command) asio::write(raw,asio::buffer(&byte,1));
         bool moved=false;
-        for (int i=0; i<20 && !moved; ++i) {
+        for (int i=0; i<40 && !moved; ++i) {
             const auto state=wire::readSnapshot(readFrame(raw));
-            for (const auto& p:state.players) if (p.id==id && p.velocity.x==5) moved=true;
+            for (const auto& p:state.players) if (p.id==id && p.velocity.x>0.5 && p.angularVelocity.z<0) moved=true;
         }
         CHECK(moved);
         const auto goodbye=wire::frame(wire::Bytes{5}); asio::write(raw,asio::buffer(goodbye));
         CHECK(closed(raw));
     }
-    for (const auto& bad : std::vector<wire::Bytes>{{0,0,16,1},{0,0,0,0},wire::frame(wire::Bytes{1,0,2}),wire::frame(wire::input({1,1,0,0}))}) {
+    for (const auto& bad : std::vector<wire::Bytes>{{0,0,16,1},{0,0,0,0},wire::frame(wire::Bytes{1,0,1}),wire::frame(wire::input({1,1,0,0}))}) {
         asio::ip::tcp::socket raw(io); raw.connect(endpoint);
         asio::write(raw,asio::buffer(bad)); CHECK(closed(raw));
     }

@@ -10,9 +10,9 @@ int main() { return test::run([] {
     server.start(); server.start();
     const auto id = server.connect(); CHECK(id != 0);
     CHECK(server.submit({id,1,1,0})); CHECK(!server.submit({id,1,1,0}));
-    CHECK(test::waitFor([&] { return !server.snapshot().players.empty(); }));
+    CHECK(test::waitFor([&] { const auto s=server.snapshot(); return !s.players.empty() && s.players[0].velocity.x>0.5; }));
     auto state = server.snapshot(); CHECK(state.tick%3 == 0);
-    CHECK(state.players[0].velocity.x == 5);
+    CHECK(state.players[0].angularVelocity.z<0 && state.players[0].orientation.unit());
     for (std::uint64_t seq=2; seq<10000; ++seq) server.submit({id,seq,0,0});
     CHECK(server.pending() <= sandbox::ServerHost::maxPending);
     server.disconnect(id);

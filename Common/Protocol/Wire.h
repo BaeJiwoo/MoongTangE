@@ -8,7 +8,7 @@
 namespace sandbox::wire {
 static_assert(sizeof(double)==8 && std::numeric_limits<double>::is_iec559, "Protocol requires IEEE-754 binary64");
 using Bytes = std::vector<std::uint8_t>;
-inline constexpr std::uint16_t version=1;
+inline constexpr std::uint16_t version=2;
 inline constexpr std::uint32_t maxFrame=4096;
 enum class Type : std::uint8_t { ClientHello=1, ServerHello=2, Input=3, Snapshot=4, Disconnect=5 };
 inline void require(bool ok) { if (!ok) throw std::invalid_argument("Invalid protocol message"); }
@@ -19,6 +19,7 @@ struct Writer {
     }
     void real(double value) { require(std::isfinite(value)); integer(std::bit_cast<std::uint64_t>(value),8); }
     void vector(Vector3 v) { real(v.x); real(v.y); real(v.z); }
+    void quaternion(Quaternion q) { require(q.unit()); real(q.w); real(q.x); real(q.y); real(q.z); }
 };
 struct Reader {
     std::span<const std::uint8_t> data;
@@ -31,6 +32,10 @@ struct Reader {
     }
     double real() { const auto value=std::bit_cast<double>(integer(8)); require(std::isfinite(value)); return value; }
     Vector3 vector() { const double x=real(), y=real(), z=real(); return {x,y,z}; }
+    Quaternion quaternion() {
+        const double w=real(), x=real(), y=real(), z=real();
+        const Quaternion q{w,x,y,z}; require(q.unit()); return q;
+    }
     void end() const { require(cursor==data.size()); }
 };
 inline Type type(std::span<const std::uint8_t> data) { require(!data.empty()); return static_cast<Type>(data[0]); }
@@ -65,6 +70,7 @@ inline Bytes snapshot(const WorldSnapshot& state) {
     for (const auto& p : state.players) {
         require(p.id && ids.insert(p.id).second);
         w.integer(p.id,4); w.vector(p.position); w.vector(p.velocity);
+        w.quaternion(p.orientation); w.vector(p.angularVelocity);
     }
     return w.data;
 }
@@ -75,6 +81,7 @@ inline WorldSnapshot readSnapshot(std::span<const std::uint8_t> data) {
     std::set<std::uint32_t> ids;
     for (std::uint64_t i=0; i<count; ++i) {
         PlayerState p; p.id=static_cast<std::uint32_t>(r.integer(4)); p.position=r.vector(); p.velocity=r.vector();
+        p.orientation=r.quaternion(); p.angularVelocity=r.vector();
         require(p.id && ids.insert(p.id).second); state.players.push_back(p);
     }
     r.end(); return state;

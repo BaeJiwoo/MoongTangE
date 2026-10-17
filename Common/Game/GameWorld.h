@@ -29,16 +29,15 @@ public:
     void step() {
         for (auto& [id,p] : players_) {
             (void)id;
-            const auto velocity = tick_-p.inputTick < 120 ? movementVelocity(p.input.x,p.input.z) : Vector3{};
-            p.body.velocity.x = velocity.x;
-            p.body.velocity.z = velocity.z;
-            physics_.step(p.body);
+            const auto force = tick_-p.inputTick < 120 ? movementForce(p.input.x,p.input.z) : Vector3{};
+            physics_.step(p.body,PhysicsWorld::fixedDelta,force);
         }
         ++tick_;
     }
     WorldSnapshot snapshot() const {
         WorldSnapshot result{tick_, {}};
-        for (const auto& [id,p] : players_) result.players.push_back({id,p.body.position,p.body.velocity});
+        for (const auto& [id,p] : players_)
+            result.players.push_back({id,p.body.position,p.body.velocity,p.body.orientation,p.body.angularVelocity});
         return result;
     }
 };
