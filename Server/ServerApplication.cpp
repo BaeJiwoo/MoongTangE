@@ -12,67 +12,67 @@
 
 namespace sandbox {
 namespace {
-std::shared_ptr<ServerHost> startCore() {
-    auto core = std::make_shared<ServerHost>();
-    core->start();
-    return core;
+std::shared_ptr<ServerHost> startServerCore() {
+    auto serverCore = std::make_shared<ServerHost>();
+    serverCore->start();
+    return serverCore;
 }
 } // namespace
 
-ServerApplication::ServerApplication(ServerOptions options) : options_(std::move(options)) {
-    if (options_.duration < std::chrono::seconds::zero()) {
+ServerApplication::ServerApplication(ServerOptions options) : m_options(std::move(options)) {
+    if (m_options.m_runDuration < std::chrono::seconds::zero()) {
         throw std::invalid_argument("Server duration cannot be negative");
     }
 }
 
 void ServerApplication::run() {
-    if (started_.exchange(true)) {
+    if (m_hasRun.exchange(true)) {
         throw std::logic_error("ServerApplication can run only once");
     }
-    if (stopRequested_) {
+    if (m_stopRequested) {
         return;
     }
 
-    // Declaration order guarantees networking closes before the final core owner is released.
-    const auto core = startCore();
-    const std::string address = options_.publicBind ? "0.0.0.0" : "127.0.0.1";
-    AsioServer network(core, address, options_.port);
+    // Declaration order closes networking before releasing the final server core owner.
+    const auto serverCore = startServerCore();
+    const std::string bindAddress = m_options.m_publicBind ? "0.0.0.0" : "127.0.0.1";
+    AsioServer networkServer(serverCore, bindAddress, m_options.m_port);
 
-    // Asio delivers signal callbacks on this control thread, outside the native signal handler.
-    asio::io_context control;
-    asio::signal_set signals(control, SIGINT, SIGTERM);
-    asio::steady_timer deadline(control);
-    signals.async_wait([this](asio::error_code error, int) {
+    // Asio delivers signal callbacks on the control thread, outside the native signal handler.
+    asio::io_context controlContext;
+    asio::signal_set shutdownSignals(controlContext, SIGINT, SIGTERM);
+    asio::steady_timer shutdownDeadline(controlContext);
+    shutdownSignals.async_wait([this](asio::error_code error, int) {
         if (!error) {
             requestStop();
         }
     });
-    if (options_.duration > std::chrono::seconds::zero()) {
-        deadline.expires_after(options_.duration);
-        deadline.async_wait([this](asio::error_code error) {
+    if (m_options.m_runDuration > std::chrono::seconds::zero()) {
+        shutdownDeadline.expires_after(m_options.m_runDuration);
+        shutdownDeadline.async_wait([this](asio::error_code error) {
             if (!error) {
                 requestStop();
             }
         });
     }
 
-    std::cout << "Listening " << address << ':' << network.port() << std::endl;
-    if (options_.publicBind) {
+    std::cout << "Listening " << bindAddress << ':' << networkServer.port() << std::endl;
+    if (m_options.m_publicBind) {
         std::cerr << "Warning: unauthenticated test server; use trusted networks only.\n";
     }
-    port_ = network.port();
-    constexpr auto stopPollInterval = std::chrono::milliseconds(50);
-    while (!stopRequested_) {
-        control.run_for(stopPollInterval);
+    m_boundPort = networkServer.port();
+    constexpr auto STOP_POLL_INTERVAL = std::chrono::milliseconds(50);
+    while (!m_stopRequested) {
+        controlContext.run_for(STOP_POLL_INTERVAL);
     }
-    // Destroying control services cancels their callbacks, then network and core shut down.
+    // Control services release their callbacks before networking and the server core shut down.
 }
 
 void ServerApplication::requestStop() noexcept {
-    stopRequested_ = true;
+    m_stopRequested = true;
 }
 
 std::uint16_t ServerApplication::port() const noexcept {
-    return port_.load();
+    return m_boundPort.load();
 }
 } // namespace sandbox

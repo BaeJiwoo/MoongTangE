@@ -6,7 +6,7 @@
 #include <vector>
 
 namespace sandbox {
-inline constexpr std::size_t maxPlayers = simulation::maxPlayers;
+inline constexpr std::size_t MAX_PLAYERS = simulation::MAX_PLAYERS;
 
 struct PlayerState {
     std::uint32_t id{};

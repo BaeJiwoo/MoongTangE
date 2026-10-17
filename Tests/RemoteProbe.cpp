@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
             if (auto state = client.receive()) {
                 for (const auto& p : state->players) {
                     if (p.id == id && p.position.x > sandbox::simulation::spawnX(id) +
-                                                         sandbox::simulation::playerRadius) {
+                                                         sandbox::simulation::PLAYER_RADIUS) {
                         return true;
                     }
                 }

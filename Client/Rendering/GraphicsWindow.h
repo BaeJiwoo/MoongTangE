@@ -8,7 +8,7 @@ class GraphicsWindow {
 public:
     explicit GraphicsWindow(bool hidden) {
         SetConfigFlags(FLAG_MSAA_4X_HINT | (hidden ? FLAG_WINDOW_HIDDEN : FLAG_WINDOW_RESIZABLE));
-        InitWindow(1100, 720, "Portable Physics Sandbox");
+        InitWindow(1100, 720, "MoongTangE");
         if (!IsWindowReady()) {
             throw std::runtime_error("Graphics window initialization failed");
         }

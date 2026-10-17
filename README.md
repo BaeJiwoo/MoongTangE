@@ -1,6 +1,6 @@
-# portable-physics-sandbox
+# MoongTangE
 
-C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 프로젝트입니다.
+MoongTangE는 C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 서비스입니다.
 
 ## 목표
 
@@ -35,8 +35,8 @@ CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 네트워크 �
 네트워크 구성에서는 고정된 Protobuf와 Abseil 소스, 동일 릴리스의 `protoc`도 빌드합니다. 첫 전체 빌드는 이 의존성 컴파일 때문에 더 오래 걸립니다. 별도 Protobuf 설치는 필요하지 않으며 `.proto`로 생성한 파일은 빌드 폴더에만 저장됩니다.
 
 ```sh
-git clone https://github.com/BaeJiwoo/portable-physics-sandbox.git
-cd portable-physics-sandbox
+git clone https://github.com/BaeJiwoo/MoongTangE.git
+cd MoongTangE
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel 2
 ctest --test-dir build -C Release --output-on-failure
@@ -91,15 +91,17 @@ W/A/S/D를 누르면 바닥의 공에 힘이 가해져 서서히 가속합니다
 
 ## 구조와 동작
 
-서버 구성 요소, 스레드와 소유권, 입력 처리 및 종료 순서는 [서버 구조 문서](docs/SERVER_ARCHITECTURE.md)에 설명되어 있습니다.
+서버 구성 요소, 스레드와 소유권, 입력 처리 및 종료 순서는 [서버 구조 문서](docs/SERVER_ARCHITECTURE.md)에 설명되어 있습니다. 같은 문서의 [파일별 함수 안내](docs/SERVER_ARCHITECTURE.md#파일별-함수-안내)는 파일 이름을 눌러 펼칠 수 있습니다.
+
+서버와 공유 TCP 채널은 `.h`에 선언, 같은 이름의 `.cpp`에 구현을 둡니다. 멤버는 `m_` 접두사, 고정 상수는 `UPPER_SNAKE_CASE`를 사용합니다. `AsioServer`는 공개 진입점을 제공하며 `ServerNetworkRuntime`이 연결·세션·네트워크 스레드를 관리합니다.
 
 ```text
 Common/       수학, 자체 물리, GameWorld, 입력·Snapshot 자료형, 전송 인터페이스
-Server/       실행 진입점, 옵션, ServerApplication 수명 관리
-Server/Core/  재사용 가능한 ServerCore, 60Hz Tick, 제한된 명령 큐
-Server/Network/ Asio TCP 서버 (렌더링 의존성 없음)
+Server/       실행 진입점, ServerOptions.h/.cpp, ServerApplication.h/.cpp
+Server/Core/  ServerHost.h/.cpp, TickScheduler.h/.cpp (60Hz Tick과 명령 큐)
+Server/Network/ AsioServer.h/.cpp, ServerNetworkRuntime.h/.cpp
 Client/       raylib 화면과 키보드, LocalTransport/TcpClientTransport
-Network/      비동기 TCP 프레이밍, 자원 제한, Protobuf 스키마와 메시지 변환
+Network/      TcpChannel.h/.cpp, Protobuf 스키마와 Codec.h/.cpp
 Tests/        단위 테스트, 루프백, 프로세스 통합 테스트
 cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 ```
@@ -110,7 +112,7 @@ cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 
 - CTest: 벡터/quaternion, 낙하/충돌/구름/관성, 게임 월드, 서버 수명/큐, ServerApplication 실행·종료, 로컬 전송, Protobuf 프로토콜, 화면 보간, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속. 전체 12개, 외부 의존성 없는 구성 7개입니다. Protobuf 프로토콜 테스트는 네트워크 구성에 포함됩니다.
 - 동일 Tick 입력 일정의 로컬 계산과 직렬화 경로는 매 Tick 비교합니다. 실제 비동기 전송은 입력 도착 시점이 다르므로 이동 속도·방향·바닥 정지 등 물리 조건을 비교합니다.
-- CI: Windows/MSVC, Linux/GCC, macOS/Clang에서 전체 빌드와 테스트, 외부 의존성 없는 코어 구성을 검증합니다. GUI 실행은 CI 필수 항목이 아니며 실제 결과는 [Actions](https://github.com/BaeJiwoo/portable-physics-sandbox/actions)에서 확인하세요.
+- CI: Windows/MSVC, Linux/GCC, macOS/Clang에서 전체 빌드와 테스트, 외부 의존성 없는 코어 구성을 검증합니다. GUI 실행은 CI 필수 항목이 아니며 실제 결과는 [Actions](https://github.com/BaeJiwoo/MoongTangE/actions)에서 확인하세요.
 - 공과 평면의 충돌만 구현합니다. 공끼리의 충돌, 경사면, 클라이언트 예측, UDP, 물리 롤백 및 사용자 인증은 후속 범위입니다.
 - 최대 32명, 입력 만료 120 Tick, 고정 dt=1/60이며 플랫폼 간 비트 단위의 결정성을 보장하지 않습니다.
 - 비공개 저장소 브랜치 보호 설정은 현재 계정 요금제에서 HTTP 403으로 거부됐습니다. 저장소 공개 범위는 변경하지 않았습니다.

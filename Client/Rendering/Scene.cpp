@@ -10,7 +10,7 @@ namespace sandbox {
 namespace {
 constexpr int ballRings = 20;
 constexpr int ballSectors = 32;
-constexpr float ballRadius = static_cast<float>(simulation::playerRadius);
+constexpr float ballRadius = static_cast<float>(simulation::PLAYER_RADIUS);
 
 ::Vector3 renderVector(Vector3 value) {
     return {static_cast<float>(value.x), static_cast<float>(value.y), static_cast<float>(value.z)};
@@ -34,7 +34,7 @@ Vector3 spherePoint(int ring, int sector) {
 
 void drawOverlay(std::uint64_t tick, std::uint32_t playerId, const char* mode, const char* status) {
     DrawRectangle(14, 14, 510, 158, Color{12, 18, 30, 220});
-    DrawText("PORTABLE PHYSICS SANDBOX", 28, 28, 22, RAYWHITE);
+    DrawText("MoongTangE", 28, 28, 22, RAYWHITE);
     DrawText(TextFormat("%s | Player %u | Tick %llu", mode, playerId,
                         static_cast<unsigned long long>(tick)),
              28, 62, 18, SKYBLUE);

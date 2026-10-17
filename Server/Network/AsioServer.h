@@ -5,6 +5,8 @@
 #include <string>
 
 namespace sandbox {
+class ServerNetworkRuntime;
+
 class AsioServer {
 public:
     AsioServer(std::shared_ptr<ServerHost> host, const std::string& address = "127.0.0.1",
@@ -17,7 +19,6 @@ public:
     std::uint16_t port() const;
 
 private:
-    class Impl;
-    std::unique_ptr<Impl> impl_;
+    std::unique_ptr<ServerNetworkRuntime> m_networkRuntime;
 };
 } // namespace sandbox

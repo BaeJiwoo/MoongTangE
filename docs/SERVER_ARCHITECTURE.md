@@ -1,4 +1,4 @@
-# 서버 구조와 실행 흐름
+# MoongTangE 서버 구조와 실행 흐름
 
 이 문서는 구현된 서버의 책임, 스레드 경계와 자원 수명을 설명합니다. 실행 진입점은 `Server/main.cpp`, 실행 수명 관리자는 `Server/ServerApplication.*`입니다.
 
@@ -11,7 +11,8 @@
 | `ServerHost` | Tick 스레드, 연결 등록, 제한된 명령 큐, 최신 Snapshot의 안전한 공유 | 소켓·화면 처리 |
 | `GameWorld` | 플레이어와 입력 상태, 입력 만료, 물리 단계 호출 | 스레드 생성·소켓 접근 |
 | `PhysicsWorld` | 중력, 평면 접촉, 마찰, 구름 저항과 자세 갱신 | 입력 수신·렌더링 |
-| `AsioServer` | TCP 연결, Hello, 입력 검증·전달, Snapshot 송신 | 게임 월드 직접 변경 |
+| `AsioServer` | 네트워크 실행 객체 소유, 시작·종료와 포트 조회의 공개 진입점 | 개별 세션 처리 |
+| `ServerNetworkRuntime` | 네트워크 스레드, TCP 연결, Hello, 입력 검증·전달, Snapshot 송신 | 게임 월드 직접 변경 |
 | `TcpChannel` | 길이 프레이밍, 부분 송수신, 타임아웃과 전송 큐 | 물리·게임 규칙 |
 | `NetworkProtocol` | Protobuf 메시지와 게임 자료형 변환, 메시지 값·크기 검증 | 물리 상태 소유·소켓 I/O |
 | `LocalTransport` / `TcpClientTransport` | 동일한 클라이언트 전송 인터페이스 구현 | 클라이언트에서 권위 물리 계산 |
@@ -22,7 +23,8 @@
 flowchart TD
     Main[main: 옵션과 오류 보고] --> App[ServerApplication: 제어 스레드]
     App --> Host[ServerHost: Tick 스레드]
-    App --> Network[AsioServer: 네트워크 스레드]
+    App --> Facade[AsioServer: 공개 진입점]
+    Facade --> Network[ServerNetworkRuntime: 네트워크 스레드]
     Network --> Channel[TcpChannel: 연결별 소켓과 큐]
     Network -->|명령 큐에 등록| Host
     Host --> World[GameWorld]
@@ -32,16 +34,16 @@ flowchart TD
 
 독립 서버에는 실행을 제어하는 호출 스레드, 물리 Tick 스레드, 네트워크 스레드가 있습니다. `ServerApplication::run()`은 호출 스레드에서 실행됩니다. 다른 스레드에서는 `requestStop()`과 `port()`만 호출할 수 있습니다. 두 메서드는 atomic 상태를 사용합니다. 애플리케이션 객체를 파괴하기 전에 `run()`이 반환해야 하며, 실행은 객체당 한 번만 허용합니다.
 
-`run()`의 지역 자원은 애플리케이션의 실행 수명을 따릅니다. `ServerHost`를 시작한 뒤 `AsioServer`를 생성합니다. `AsioServer`는 코어의 공유 소유권을 유지합니다. 생성의 역순으로 파괴되어 네트워크 작업을 종료한 뒤 마지막 코어 소유자가 해제됩니다. 바인딩 실패나 출력·이벤트 루프 예외도 같은 RAII 정리 경로를 거칩니다.
+`run()`의 지역 자원은 애플리케이션의 실행 수명을 따릅니다. `ServerHost`를 시작한 뒤 `AsioServer`를 생성합니다. `AsioServer::m_networkRuntime`이 `ServerNetworkRuntime`을 단독 소유하고, runtime의 `m_serverHost`가 코어의 공유 소유권을 유지합니다. 생성의 역순으로 파괴되어 네트워크 작업을 종료한 뒤 마지막 코어 소유자가 해제됩니다. 바인딩 실패나 출력·이벤트 루프 예외도 같은 RAII 정리 경로를 거칩니다.
 
-`ServerHost::run()` 내부의 `GameWorld`는 Tick 스레드만 접근합니다. `dataMutex_`는 명령 큐·연결 목록·최신 Snapshot을 보호하고, `lifecycleMutex_`는 코어의 시작과 종료를 직렬화합니다. 네트워크 콜백은 `connect`, `submit`, `disconnect`를 호출할 뿐 월드를 직접 변경하지 않습니다.
+`ServerHost::run()` 내부의 `GameWorld`는 Tick 스레드만 접근합니다. `m_dataMutex`는 `m_pendingCommands`·`m_lastInputSequences`·`m_latestSnapshot`·`m_nextPlayerId`를 보호하고, `m_lifecycleMutex`는 코어의 시작과 종료를 직렬화합니다. `WorldCommand`는 `WorldCommandType::JOIN/INPUT/LEAVE`와 플레이어·입력을 묶는 값 타입입니다. 네트워크 콜백은 `connect`, `submit`, `disconnect`를 호출할 뿐 월드를 직접 변경하지 않습니다.
 
 ## 입력에서 화면까지
 
 ```mermaid
 sequenceDiagram
     participant Client as Client
-    participant Net as AsioServer
+    participant Net as ServerNetworkRuntime
     participant Queue as ServerHost 명령 큐
     participant World as Tick / GameWorld
     Client->>Net: Hello
@@ -64,7 +66,181 @@ sequenceDiagram
 
 싱글플레이의 `ClientApplication`은 `ServerHost`를 시작하고 `LocalTransport`로 입력과 Snapshot을 교환합니다. 소켓과 `ServerApplication`은 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
 
-`Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerRuntime` 빌드 대상은 `ServerApplication` 구현을 제공하고, `TcpTransport`를 통해 서버 네트워크 계층을 사용합니다. `SANDBOX_BUILD_NETWORK=OFF`이면 독립 서버와 `ServerRuntime`을 빌드하지 않습니다.
+`Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication` 구현을 제공하고, `TcpTransport`와 `ServerOptions`를 연결합니다. `SANDBOX_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며, Asio를 직접 포함하는 `ServerNetworkRuntime.h`의 독립 컴파일도 생략합니다.
+
+## 명명과 헤더·구현 분리
+
+서버와 공유 TCP 채널은 멤버 변수에 `m_` 접두사(`m_networkThread`), 고정 상수에 `UPPER_SNAKE_CASE`(`MAX_PENDING_COMMANDS`)를 사용합니다. `ServerOptions`의 필드는 `m_port`, `m_runDuration`, `m_publicBind`, `m_showHelp`입니다. 함수·매개변수·런타임 지역 변수는 lowerCamelCase이며, 변경하지 않는다는 이유로 `const`를 붙인 지역 Snapshot 복사도 이 규칙을 따릅니다. 공통 시뮬레이션과 프로토콜의 상수도 대문자로 통일했습니다.
+
+각 `.h`에는 타입·함수 선언을, 같은 이름의 `.cpp`에는 비템플릿 함수 본문을 둡니다. 상수 정의, 멤버 기본값, default/delete 선언은 헤더에 남깁니다. Common의 기존 헤더 기반 값 타입·템플릿은 유지합니다. 클라이언트 전용 구현체의 이름 변경은 이 서버 정리 범위에 포함하지 않습니다.
+
+| CMake 라이브러리 | 구현 파일 | 직접 연결하는 대상 |
+| --- | --- | --- |
+| `ServerCore` | `ServerHost.cpp`, `TickScheduler.cpp` | Common, Threads |
+| `ServerOptions` | `ServerOptions.cpp` | Common |
+| `TcpTransport` | `AsioServer.cpp`, `ServerNetworkRuntime.cpp`, `TcpChannel.cpp`, `TcpClientTransport.cpp` | ServerCore, AsioStandalone, NetworkProtocol |
+| `ServerRuntime` | `ServerApplication.cpp` | TcpTransport, ServerOptions |
+| `NetworkProtocol` | `Codec.cpp` | Common, ProtocolMessages |
+
+## 파일별 함수 안내
+
+파일 이름을 누르면 설명을 펼칠 수 있습니다. 헤더와 구현 파일은 한 쌍으로 표시하며, 기본 생성·소멸과 복사/이동 금지 선언은 역할에 필요한 경우에만 설명합니다.
+
+<details>
+<summary>Server/main.cpp — 프로그램 진입점</summary>
+
+[main.cpp](../Server/main.cpp)
+
+| 함수 | 설명 |
+| --- | --- |
+| `main(argc, argv)` | 명령행 인자를 해석하고 도움말 또는 ServerApplication을 실행합니다. 예외는 오류 메시지와 종료 코드 1로 변환합니다. |
+
+</details>
+
+<details>
+<summary>Server/ServerOptions.h · ServerOptions.cpp — 실행 옵션</summary>
+
+[선언](../Server/ServerOptions.h) · [구현](../Server/ServerOptions.cpp)
+
+`ServerOptions`는 포트(기본 27015), 실행 시간(기본 0), 외부 바인딩·도움말 여부를 저장하는 값 타입입니다.
+
+| 함수 | 설명 |
+| --- | --- |
+| `parseServerOptions(arguments)` | `--port`, `--public`, `--run-for`, `--help`를 해석합니다. 포트 0은 자동 할당이며 잘못된 옵션·범위를 거부합니다. |
+
+</details>
+
+<details>
+<summary>Server/ServerApplication.h · ServerApplication.cpp — 실행 수명과 종료</summary>
+
+[선언](../Server/ServerApplication.h) · [구현](../Server/ServerApplication.cpp)
+
+| 함수 | 설명 |
+| --- | --- |
+| `ServerApplication(options)` | 옵션을 저장하고 음수 실행 시간을 거부합니다. 아직 서버를 시작하지 않습니다. |
+| `run()` | 한 번만 실행할 수 있습니다. 코어·네트워크를 시작하고 제어용 Asio 이벤트 루프에서 종료 요청을 기다립니다. 지역 객체의 역순 소멸로 자원을 정리합니다. |
+| `requestStop()` | `m_stopRequested`를 원자적으로 설정합니다. 다른 스레드에서도 호출할 수 있으며 정리 완료를 기다리지는 않습니다. |
+| `port()` | 원자적으로 게시한 실제 포트를 조회합니다. 시작 전에는 0, 종료 후에는 마지막 포트입니다. |
+| `startServerCore()` (cpp 내부) | ServerHost를 공유 소유 객체로 만들고 Tick 스레드를 시작합니다. |
+
+`m_hasRun`은 실행 시도 여부이며 현재 가동 여부가 아닙니다. 호출자는 `run()` 반환 후 애플리케이션을 파괴해야 합니다. `STOP_POLL_INTERVAL`은 종료 플래그 재확인 간격 50ms이며 물리 Tick 간격과 다릅니다.
+
+</details>
+
+<details>
+<summary>Server/Core/ServerHost.h · ServerHost.cpp — Tick 스레드와 월드 명령</summary>
+
+[선언](../Server/Core/ServerHost.h) · [구현](../Server/Core/ServerHost.cpp)
+
+| 함수 | 설명 |
+| --- | --- |
+| `start()` | 가동 상태를 설정하고 Tick 스레드를 시작합니다. 이미 실행 중이면 반환합니다. |
+| `stop()` / `~ServerHost()` | Tick 중단을 요청하고 join한 뒤 명령·연결·Snapshot 상태를 정리합니다. 소멸자도 stop을 호출합니다. |
+| `running()` | 원자적 가동 상태를 조회합니다. |
+| `connect()` | 플레이어 ID를 할당하고 JOIN 명령을 큐에 넣습니다. 정지·인원/큐 한도·ID 고갈이면 0입니다. |
+| `disconnect(playerId)` | 등록된 연결을 제거하고 LEAVE 명령을 보장하여 큐에 넣습니다. |
+| `submit(input)` | 값·연결·증가하는 시퀀스·큐 크기를 검증하고 INPUT 명령을 넣습니다. 수락 여부를 반환합니다. |
+| `snapshot()` | 잠금 아래 최신 공개 Snapshot을 복사합니다. |
+| `pending()` | 잠금 아래 대기 명령 수를 조회합니다. |
+| `hasClient(playerId)` | 실행 중이고 해당 연결이 등록되어 있는지 확인합니다. |
+| `run(stopToken)` (비공개) | 명령 큐를 꺼내 JOIN/INPUT/LEAVE를 적용하고 GameWorld를 고정 시간으로 진행합니다. 3 Tick마다 Snapshot을 게시합니다. |
+
+일반 명령 한도는 `MAX_PENDING_COMMANDS = 1024`입니다. 퇴장 명령은 최대 `MAX_PLAYERS`개까지 추가되어 정리가 누락되지 않습니다.
+
+</details>
+
+<details>
+<summary>Server/Core/TickScheduler.h · TickScheduler.cpp — 고정 Tick 일정</summary>
+
+[선언](../Server/Core/TickScheduler.h) · [구현](../Server/Core/TickScheduler.cpp)
+
+| 함수 | 설명 |
+| --- | --- |
+| `TickScheduler(now)` | 단조 시계 기준 시작 시각을 `m_nextTick`에 저장합니다. 테스트에서는 시각을 주입할 수 있습니다. |
+| `advance(now)` | 다음 Tick 시각에 `TICK_PERIOD`를 더해 반환합니다. `MAX_CATCH_UP_TICKS`(8)보다 크게 지연되면 다음 시각을 재설정합니다. |
+
+스케줄러는 수면이나 물리 계산을 직접 수행하지 않습니다. ServerHost가 반환 시각까지 대기하며 물리 dt는 `simulation::FIXED_DELTA`로 유지합니다.
+
+</details>
+
+<details>
+<summary>Server/Network/AsioServer.h · AsioServer.cpp — TCP 서버 공개 진입점</summary>
+
+[선언](../Server/Network/AsioServer.h) · [구현](../Server/Network/AsioServer.cpp)
+
+| 함수 | 설명 |
+| --- | --- |
+| `AsioServer(host, address, port)` | ServerNetworkRuntime을 만들고 `m_networkRuntime`으로 단독 소유합니다. 기본 주소는 루프백입니다. |
+| `~AsioServer()` | 소유한 runtime을 파괴해 네트워크 종료를 수행합니다. 불완전 타입의 unique_ptr이므로 cpp에서 정의합니다. |
+| `port()` | runtime이 실제 바인딩한 포트를 반환합니다. |
+
+헤더에는 runtime의 전방 선언만 둬 Asio 구현 세부 사항을 공개 진입점에서 숨깁니다.
+
+</details>
+
+<details>
+<summary>Server/Network/ServerNetworkRuntime.h · ServerNetworkRuntime.cpp — 연결·세션·전송 루프</summary>
+
+[선언](../Server/Network/ServerNetworkRuntime.h) · [구현](../Server/Network/ServerNetworkRuntime.cpp)
+
+기존 `Impl`의 책임을 명시한 클래스입니다. 아래의 연결/세션 함수와 콜백은 네트워크 스레드에서 실행됩니다. 생성자는 스레드 시작 전에 초기 대기를 등록합니다.
+
+| 함수 | 설명 |
+| --- | --- |
+| `ServerNetworkRuntime(host, address, port)` | 실행 중인 코어를 확인하고 TCP를 바인딩합니다. 연결 수락·Snapshot 타이머를 등록한 뒤 네트워크 스레드를 시작합니다. |
+| `~ServerNetworkRuntime()` | 종료 처리를 io_context에 게시하고 네트워크 스레드를 join합니다. |
+| `port()` | 생성 시 확정된 포트를 조회합니다. |
+| `closeAllSessions()` | 수락·타이머를 중단하고 세션 목록의 복사본을 순회하며 연결을 닫습니다. |
+| `acceptNextConnection()` | 다음 연결을 비동기로 수락합니다. 연결 한도 이내면 세션을 만들고 수락을 다시 등록합니다. |
+| `addSession(socket)` | TcpChannel과 Hello 이전 세션을 만들고 수신/종료 콜백을 설치합니다. weak_ptr로 소유권 순환을 피합니다. |
+| `removeSession(channel)` | 코어에 퇴장을 요청하고 세션을 제거합니다. |
+| `handleMessage(channel, data)` | 첫 Hello를 검증하고 ID를 할당합니다. 이후 입력은 코어 큐에 전달하며 Disconnect·잘못된 메시지는 연결을 종료합니다. |
+| `broadcastLatestSnapshot()` | 아직 보내지 않은 최신 Snapshot을 Hello가 완료된 세션에 전송합니다. |
+| `scheduleSnapshotBroadcast()` | `SNAPSHOT_INTERVAL`마다 전송 콜백을 실행하고 다음 타이머를 등록합니다. |
+
+`MAX_CONNECTIONS`는 Hello 대기를 포함한 64개입니다. `m_sessions`와 전송 상태는 네트워크 스레드가 관리하며 GameWorld는 직접 변경하지 않습니다.
+
+</details>
+
+<details>
+<summary>Network/TcpChannel.h · TcpChannel.cpp — 서버·클라이언트 공용 TCP 프레임</summary>
+
+[선언](../Network/TcpChannel.h) · [구현](../Network/TcpChannel.cpp)
+
+| 함수 | 설명 |
+| --- | --- |
+| `TcpChannel(socket)` | 소켓 소유권을 받고 같은 실행 환경의 읽기 제한 타이머를 만듭니다. |
+| `start(onMessage, onClose)` | 콜백·공유 소유권·단일 시작 조건을 검증하고 TCP_NODELAY 설정 후 수신을 시작합니다. |
+| `send(payload)` | 길이 헤더를 붙여 송신 큐에 넣습니다. 큐가 비어 있었다면 쓰기를 시작하며 한도를 넘으면 연결을 닫습니다. |
+| `close(reason)` | 중복 호출을 무시하고 타이머·소켓·송신 큐를 정리한 뒤 종료 콜백을 호출합니다. |
+| `readFrameHeader()` | 읽기 제한 시간을 설정하고 4바이트 길이를 읽어 본문 크기를 검증합니다. |
+| `readFrameBody()` | 지정 길이만큼 읽은 뒤 메시지 콜백을 호출하고 다음 프레임 헤더 수신을 시작합니다. |
+| `writeNextFrame()` | 큐의 첫 프레임을 전송하고 완료 후 다음 프레임을 처리합니다. 콜백이 연결과 버퍼의 공유 소유권을 유지합니다. |
+
+`MAX_QUEUED_FRAMES = 32`, `READ_TIMEOUT = 10초`입니다. 모든 호출은 해당 io_context 스레드에서 직렬로 수행해야 합니다.
+
+</details>
+
+<details>
+<summary>Network/Protocol/Codec.h · Codec.cpp — 게임 메시지와 Protobuf 변환</summary>
+
+[선언](../Network/Protocol/Codec.h) · [구현](../Network/Protocol/Codec.cpp) · [스키마](../Network/Protocol/game.proto)
+
+| 함수 | 설명 |
+| --- | --- |
+| `require(condition)` / `type(data)` | 유효성 위반을 예외로 알리고 첫 바이트에서 MessageType을 검사·추출합니다. |
+| `clientHello()` / `serverHello(playerId)` | 프로토콜 버전과 서버 할당 ID가 담긴 Hello를 인코딩합니다. |
+| `readClientHello(data)` / `readServerHello(data)` | Hello 버전과 ID를 검증합니다. 서버 Hello 해석은 ID를 반환합니다. |
+| `input(command)` / `readInput(data, sessionId)` | 입력을 인코딩하거나 세션 ID를 결합하여 검증된 InputCommand로 해석합니다. |
+| `snapshot(state)` / `readSnapshot(data)` | Tick과 플레이어 상태를 변환하고 인원·ID·필드·수치·회전 유효성을 검사합니다. |
+| `disconnect()` / `isDisconnect(data)` | Disconnect를 만들거나 종류와 Protobuf 본문을 검증합니다. |
+| `frame(payload)` / `frameSize(header)` | 4바이트 big-endian 길이를 붙이거나 읽고 프레임 한도를 검사합니다. |
+| `encode<Message>()` / `decode<Message>()` (cpp 내부) | 메시지 종류와 Protobuf 직렬화/역직렬화, 크기·파서 한도를 공통 처리합니다. |
+| `writeVector()` / `readVector()` / `writeQuaternion()` / `readQuaternion()` (cpp 내부) | 벡터·회전을 Protobuf 필드와 게임 값 타입 사이에서 검증하며 변환합니다. |
+
+`PROTOCOL_VERSION = 3`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. MessageType의 대문자 이름 변경은 wire 바이트 값을 바꾸지 않습니다. `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
+
+</details>
 
 ## Protobuf와 게임 자료형의 경계
 

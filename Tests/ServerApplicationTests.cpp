@@ -15,32 +15,32 @@ using namespace std::chrono_literals;
 class RunningApplication {
 public:
     explicit RunningApplication(sandbox::ServerApplication& application)
-        : thread_([this, &application](std::stop_token stop) {
+        : m_thread([this, &application](std::stop_token stop) {
               const std::stop_callback onStop(stop, [&application] {
                   application.requestStop();
               });
               try {
                   application.run();
-                  finished_.set_value();
+                  m_finished.set_value();
               } catch (...) {
-                  finished_.set_exception(std::current_exception());
+                  m_finished.set_exception(std::current_exception());
               }
           }) {}
 
     void finish() {
-        auto completion = finished_.get_future();
+        auto completion = m_finished.get_future();
         CHECK(completion.wait_for(3s) == std::future_status::ready);
         completion.get();
-        thread_.join();
+        m_thread.join();
     }
 
 private:
-    std::promise<void> finished_;
-    std::jthread thread_;
+    std::promise<void> m_finished;
+    std::jthread m_thread;
 };
 
 void requestedStopDisconnectsClients() {
-    sandbox::ServerApplication application({.port = 0});
+    sandbox::ServerApplication application({.m_port = 0});
     CHECK(application.port() == 0);
     RunningApplication running(application);
     CHECK(test::waitFor([&] {
@@ -65,7 +65,7 @@ void requestedStopDisconnectsClients() {
 }
 
 void deadlineStopsApplication() {
-    sandbox::ServerApplication application({.port = 0, .duration = 1s});
+    sandbox::ServerApplication application({.m_port = 0, .m_runDuration = 1s});
     const auto started = std::chrono::steady_clock::now();
     RunningApplication running(application);
     running.finish();
@@ -76,17 +76,17 @@ void deadlineStopsApplication() {
 void startupFailureAndPriorCancellation() {
     asio::io_context io;
     asio::ip::tcp::acceptor reserved(io, {asio::ip::make_address("127.0.0.1"), 0});
-    sandbox::ServerApplication unavailable({.port = reserved.local_endpoint().port()});
+    sandbox::ServerApplication unavailable({.m_port = reserved.local_endpoint().port()});
     CHECK(test::throws([&] {
         unavailable.run();
     }));
     CHECK(unavailable.port() == 0);
-    sandbox::ServerApplication cancelled({.port = reserved.local_endpoint().port()});
+    sandbox::ServerApplication cancelled({.m_port = reserved.local_endpoint().port()});
     cancelled.requestStop();
     cancelled.run();
     CHECK(cancelled.port() == 0);
     CHECK(test::throws([] {
-        sandbox::ServerApplication invalid({.duration = -1s});
+        sandbox::ServerApplication invalid({.m_runDuration = -1s});
     }));
 }
 } // namespace

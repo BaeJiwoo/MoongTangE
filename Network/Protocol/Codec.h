@@ -7,19 +7,19 @@
 
 namespace sandbox::wire {
 using Bytes = std::vector<std::uint8_t>;
-inline constexpr std::uint32_t version = 3;
-inline constexpr std::uint32_t maxFrame = 8192;
-inline constexpr unsigned frameHeaderBytes = 4;
-enum class Type : std::uint8_t {
-    ClientHello = 1,
-    ServerHello = 2,
-    Input = 3,
-    Snapshot = 4,
-    Disconnect = 5
+inline constexpr std::uint32_t PROTOCOL_VERSION = 3;
+inline constexpr std::uint32_t MAX_FRAME_BYTES = 8192;
+inline constexpr unsigned FRAME_HEADER_BYTES = 4;
+enum class MessageType : std::uint8_t {
+    CLIENT_HELLO = 1,
+    SERVER_HELLO = 2,
+    INPUT = 3,
+    SNAPSHOT = 4,
+    DISCONNECT = 5
 };
 
 void require(bool condition);
-Type type(std::span<const std::uint8_t> data);
+MessageType type(std::span<const std::uint8_t> data);
 Bytes clientHello();
 Bytes serverHello(std::uint32_t playerId);
 void readClientHello(std::span<const std::uint8_t> data);

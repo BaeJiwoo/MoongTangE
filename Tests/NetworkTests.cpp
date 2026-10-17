@@ -13,7 +13,7 @@ namespace {
 using namespace sandbox;
 
 sandbox::wire::Bytes readFrame(asio::ip::tcp::socket& socket) {
-    std::array<std::uint8_t, wire::frameHeaderBytes> header{};
+    std::array<std::uint8_t, wire::FRAME_HEADER_BYTES> header{};
     asio::read(socket, asio::buffer(header));
     sandbox::wire::Bytes data(sandbox::wire::frameSize(header));
     asio::read(socket, asio::buffer(data));

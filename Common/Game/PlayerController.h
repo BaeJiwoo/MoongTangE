@@ -8,6 +8,6 @@ inline Vector3 movementForce(double x, double z) {
     if (direction.length() > 1) {
         direction = direction.normalized();
     }
-    return direction * simulation::movementForce;
+    return direction * simulation::MOVEMENT_FORCE;
 }
 } // namespace sandbox

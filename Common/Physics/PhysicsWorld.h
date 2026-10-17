@@ -15,7 +15,7 @@ struct PhysicsMaterial {
 // Stateless integration of caller-owned bodies; material parameters are validated once.
 class PhysicsWorld {
 public:
-    static constexpr double fixedDelta = simulation::fixedDelta;
+    static constexpr double fixedDelta = simulation::FIXED_DELTA;
 
     explicit PhysicsWorld(PhysicsMaterial material = {}) : material_(material) {
         for (const double value :
@@ -63,7 +63,7 @@ private:
         if (grounded) {
             body.velocity = body.velocity + groundForce * (dt / body.mass);
         }
-        body.velocity = body.velocity + Vector3{0, -simulation::gravity, 0} * dt;
+        body.velocity = body.velocity + Vector3{0, -simulation::GRAVITY, 0} * dt;
     }
 
     void applyGroundDrag(RigidBody& body, double dt) const {
@@ -79,7 +79,7 @@ private:
             return;
         }
         // Bound the contact torque so resistance alone cannot reverse the spin.
-        const double change = material_.rollingResistance * body.mass * simulation::gravity *
+        const double change = material_.rollingResistance * body.mass * simulation::GRAVITY *
                               body.radius * dt / body.inertia();
         body.angularVelocity = body.angularVelocity - rolling * (std::min(speed, change) / speed);
     }

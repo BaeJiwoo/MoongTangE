@@ -40,10 +40,10 @@ int main() {
         }
         const auto server =
             sandbox::parseServerOptions(std::array{"--port"sv, "0"sv, "--run-for"sv, "2"sv});
-        CHECK(server.port == 0 && server.duration.count() == 2 && !server.publicBind);
-        CHECK(sandbox::parseServerOptions(std::array{"--public"sv}).publicBind);
+        CHECK(server.m_port == 0 && server.m_runDuration.count() == 2 && !server.m_publicBind);
+        CHECK(sandbox::parseServerOptions(std::array{"--public"sv}).m_publicBind);
         CHECK(sandbox::parseClientOptions(std::array{"--help"sv}).showHelp);
-        CHECK(sandbox::parseServerOptions(std::array{"--help"sv}).showHelp);
+        CHECK(sandbox::parseServerOptions(std::array{"--help"sv}).m_showHelp);
         for (const auto& arguments :
              std::vector<std::vector<std::string_view>>{{"--port"},
                                                         {"--run-for"},

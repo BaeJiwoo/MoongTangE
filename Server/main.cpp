@@ -8,7 +8,7 @@ int main(int argc, char** argv) {
     try {
         const auto arguments = sandbox::commandLineArguments(argc, argv);
         const auto options = sandbox::parseServerOptions(arguments);
-        if (options.showHelp) {
+        if (options.m_showHelp) {
             std::cout << "DedicatedServer [--port 27015] [--public] [--run-for seconds]\n";
             return 0;
         }

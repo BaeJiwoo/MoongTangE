@@ -14,8 +14,8 @@ All work is reviewed through issue-specific PRs. Issue numbers below were return
 | 8 | #8 | `8-NET` | `7-CLIENT` | Wire protocol and TCP |
 | 9 | #9 | `9-MULTI` | `8-NET` | Dedicated server and remote client |
 | 10 | #10 | `10-QA` | `9-MULTI` | Integration, CI and documentation |
-| 11 | [#21](https://github.com/BaeJiwoo/portable-physics-sandbox/issues/21) | `21-ROLL` | `10-QA` | Rolling inertia/friction, orientation replication and smooth patterned rendering |
-| 12 | [#23](https://github.com/BaeJiwoo/portable-physics-sandbox/issues/23) | `23-REFACTOR` | `21-ROLL` | Whole-project C++ readability, Core Guidelines and OOP review/refactoring |
+| 11 | [#21](https://github.com/BaeJiwoo/MoongTangE/issues/21) | `21-ROLL` | `10-QA` | Rolling inertia/friction, orientation replication and smooth patterned rendering |
+| 12 | [#23](https://github.com/BaeJiwoo/MoongTangE/issues/23) | `23-REFACTOR` | `21-ROLL` | Whole-project C++ readability, Core Guidelines and OOP review/refactoring |
 
 Review and merge from top to bottom only with explicit user authorization. Use merge commits to preserve the stack's ancestry. After each predecessor is merged, verify that main matches the predecessor's tree, retarget the next PR to main, and recheck its head commit, CI and issue link. Confirm that merging closes the linked issue; retain issue history and work branches.
 
@@ -27,3 +27,4 @@ Deferred: UDP, client prediction, lag compensation, physics rollback, sphere/sph
 | --- | --- | --- | --- |
 | #25 | `25-SERVER` | `main` | ServerApplication lifecycle, regression tests and server architecture documentation |
 | #26 | `26-PROTOBUF` | `25-SERVER` | Pinned Protobuf, generated network schema, protocol v3 and codec boundary |
+| [#29](https://github.com/BaeJiwoo/MoongTangE/issues/29) | `29-NAMING` | `main` | Server names, m_ members, uppercase constants, header/source separation, collapsible function documentation and MoongTangE branding |

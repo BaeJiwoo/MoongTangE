@@ -8,7 +8,7 @@ int main() {
         using namespace std::chrono_literals;
         sandbox::TickScheduler scheduler(sandbox::TickScheduler::Clock::time_point{});
         CHECK(scheduler.advance({}) ==
-              sandbox::TickScheduler::Clock::time_point{} + sandbox::TickScheduler::period);
+              sandbox::TickScheduler::Clock::time_point{} + sandbox::TickScheduler::TICK_PERIOD);
         sandbox::ServerHost server;
         CHECK(server.connect() == 0);
         server.start();
@@ -27,7 +27,7 @@ int main() {
         for (std::uint64_t seq = 2; seq < 10000; ++seq) {
             server.submit({id, seq, 0, 0});
         }
-        CHECK(server.pending() <= sandbox::ServerHost::maxPending);
+        CHECK(server.pending() <= sandbox::ServerHost::MAX_PENDING_COMMANDS);
         server.disconnect(id);
         CHECK(test::waitFor([&] {
             return server.snapshot().players.empty();

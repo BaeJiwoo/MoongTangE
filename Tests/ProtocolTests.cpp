@@ -10,7 +10,7 @@
 namespace {
 using namespace sandbox;
 
-template <class Message> wire::Bytes packet(wire::Type kind, const Message& message) {
+template <class Message> wire::Bytes packet(wire::MessageType kind, const Message& message) {
     const auto bytes = message.SerializeAsString();
     wire::Bytes result{static_cast<std::uint8_t>(kind)};
     result.insert(result.end(), bytes.begin(), bytes.end());
@@ -54,14 +54,14 @@ void framingAndVersionNegotiation() {
             wire::frameSize(bad);
         }));
     }
-    CHECK(wire::frameSize(wire::Bytes{0, 0, 32, 0}) == wire::maxFrame);
+    CHECK(wire::frameSize(wire::Bytes{0, 0, 32, 0}) == wire::MAX_FRAME_BYTES);
     CHECK(test::throws([] {
         wire::frame({});
     }));
     CHECK(test::throws([] {
-        wire::frame(wire::Bytes(wire::maxFrame + 1));
+        wire::frame(wire::Bytes(wire::MAX_FRAME_BYTES + 1));
     }));
-    auto oversized = wire::Bytes(wire::maxFrame + 1, 0);
+    auto oversized = wire::Bytes(wire::MAX_FRAME_BYTES + 1, 0);
     oversized.front() = 1;
     CHECK(test::throws([&] {
         wire::readClientHello(oversized);
@@ -94,18 +94,18 @@ void inputsUseSessionIdentityAndValidatePresence() {
     message.set_sequence(1);
     message.set_x(0);
     CHECK(test::throws([&] {
-        wire::readInput(packet(wire::Type::Input, message), 7);
+        wire::readInput(packet(wire::MessageType::INPUT, message), 7);
     }));
     message.set_z(0);
-    CHECK(wire::readInput(packet(wire::Type::Input, message), 7).x == 0);
+    CHECK(wire::readInput(packet(wire::MessageType::INPUT, message), 7).x == 0);
     CHECK(test::throws([&] {
-        wire::readInput(packet(wire::Type::Input, message), 0);
+        wire::readInput(packet(wire::MessageType::INPUT, message), 0);
     }));
     for (const double bad :
          {2.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
         message.set_x(bad);
         CHECK(test::throws([&] {
-            wire::readInput(packet(wire::Type::Input, message), 7);
+            wire::readInput(packet(wire::MessageType::INPUT, message), 7);
         }));
         CHECK(test::throws([&] {
             wire::input({7, 1, bad, 0});
@@ -114,11 +114,11 @@ void inputsUseSessionIdentityAndValidatePresence() {
     message.set_x(0);
     message.set_sequence(0);
     CHECK(test::throws([&] {
-        wire::readInput(packet(wire::Type::Input, message), 7);
+        wire::readInput(packet(wire::MessageType::INPUT, message), 7);
     }));
     // Unknown fields support additive schema evolution; they cannot assign identity.
     message.set_sequence(2);
-    auto extended = packet(wire::Type::Input, message);
+    auto extended = packet(wire::MessageType::INPUT, message);
     extended.insert(extended.end(), {0x78, 99}); // Unknown field 15 = 99.
     CHECK(wire::readInput(extended, 7).playerId == 7);
     auto malformed = bytes;
@@ -141,7 +141,7 @@ void snapshotsValidateAllGameInvariants() {
     CHECK(wire::readSnapshot(wire::snapshot({0, {}})).tick == 0);
     auto reject = [](const proto::WorldSnapshot& message) {
         CHECK(test::throws([&] {
-            wire::readSnapshot(packet(wire::Type::Snapshot, message));
+            wire::readSnapshot(packet(wire::MessageType::SNAPSHOT, message));
         }));
     };
     auto bad = original;
@@ -168,7 +168,7 @@ void snapshotsValidateAllGameInvariants() {
     reject(bad);
     bad = original;
     bad.clear_players();
-    for (std::uint32_t id = 1; id <= maxPlayers + 1; ++id) {
+    for (std::uint32_t id = 1; id <= MAX_PLAYERS + 1; ++id) {
         auto& record = *bad.add_players();
         record.CopyFrom(original.players(0));
         record.set_id(id);
@@ -189,7 +189,7 @@ void snapshotsValidateAllGameInvariants() {
 void maximumSnapshotFitsBoundedFrame() {
     WorldSnapshot state{std::numeric_limits<std::uint64_t>::max(), {}};
     // Largest varints, all vector/quaternion components present, all 32 records.
-    for (std::uint32_t index = 0; index < maxPlayers; ++index) {
+    for (std::uint32_t index = 0; index < MAX_PLAYERS; ++index) {
         state.players.push_back({std::numeric_limits<std::uint32_t>::max() - index,
                                  {1, 2, 3},
                                  {4, 5, 6},
@@ -197,10 +197,10 @@ void maximumSnapshotFitsBoundedFrame() {
                                  {7, 8, 9}});
     }
     const auto bytes = wire::snapshot(state);
-    CHECK(bytes.size() == 4300 && bytes.size() <= wire::maxFrame);
-    CHECK(wire::readSnapshot(bytes).players.size() == maxPlayers);
+    CHECK(bytes.size() == 4300 && bytes.size() <= wire::MAX_FRAME_BYTES);
+    CHECK(wire::readSnapshot(bytes).players.size() == MAX_PLAYERS);
     const auto framed = wire::frame(bytes);
-    CHECK(wire::frameSize(std::span(framed).first(wire::frameHeaderBytes)) == bytes.size());
+    CHECK(wire::frameSize(std::span(framed).first(wire::FRAME_HEADER_BYTES)) == bytes.size());
     state.players.push_back({1, {}, {}});
     CHECK(test::throws([&] {
         wire::snapshot(state);

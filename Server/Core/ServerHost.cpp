@@ -5,111 +5,119 @@
 #include <utility>
 
 namespace sandbox {
+ServerHost::~ServerHost() {
+    stop();
+}
+
+bool ServerHost::running() const {
+    return m_running.load();
+}
+
 void ServerHost::start() {
-    std::lock_guard lifecycle(lifecycleMutex_);
-    if (running_.exchange(true)) {
+    std::lock_guard lifecycle(m_lifecycleMutex);
+    if (m_running.exchange(true)) {
         return;
     }
     try {
-        thread_ = std::jthread([this](std::stop_token stop) {
-            run(stop);
+        m_tickThread = std::jthread([this](std::stop_token stopToken) {
+            run(stopToken);
         });
     } catch (...) {
-        running_ = false;
+        m_running = false;
         throw;
     }
 }
 
 void ServerHost::stop() {
-    std::lock_guard lifecycle(lifecycleMutex_);
-    running_ = false;
-    if (thread_.joinable()) {
-        thread_.request_stop();
-        thread_.join();
+    std::lock_guard lifecycle(m_lifecycleMutex);
+    m_running = false;
+    if (m_tickThread.joinable()) {
+        m_tickThread.request_stop();
+        m_tickThread.join();
     }
-    std::lock_guard lock(dataMutex_);
-    commands_.clear();
-    connections_.clear();
-    snapshot_ = {};
+    std::lock_guard lock(m_dataMutex);
+    m_pendingCommands.clear();
+    m_lastInputSequences.clear();
+    m_latestSnapshot = {};
 }
 
 std::uint32_t ServerHost::connect() {
-    std::lock_guard lock(dataMutex_);
-    if (!running_ || connections_.size() >= maxPlayers || commands_.size() >= maxPending ||
-        nextId_ == 0) {
+    std::lock_guard lock(m_dataMutex);
+    if (!m_running || m_lastInputSequences.size() >= MAX_PLAYERS ||
+        m_pendingCommands.size() >= MAX_PENDING_COMMANDS || m_nextPlayerId == 0) {
         return 0;
     }
-    const auto id = nextId_++;
-    connections_.emplace(id, 0);
-    commands_.push_back({Kind::Join, id});
-    return id;
+    const auto playerId = m_nextPlayerId++;
+    m_lastInputSequences.emplace(playerId, 0);
+    m_pendingCommands.push_back({WorldCommandType::JOIN, playerId});
+    return playerId;
 }
 
-void ServerHost::disconnect(std::uint32_t id) {
-    std::lock_guard lock(dataMutex_);
-    if (connections_.erase(id)) {
-        commands_.push_back({Kind::Leave, id});
+void ServerHost::disconnect(std::uint32_t playerId) {
+    std::lock_guard lock(m_dataMutex);
+    if (m_lastInputSequences.erase(playerId)) {
+        m_pendingCommands.push_back({WorldCommandType::LEAVE, playerId});
     }
-    // Leaves may exceed maxPending by at most maxPlayers, so cleanup is never dropped.
+    // Leaves may exceed MAX_PENDING_COMMANDS by at most MAX_PLAYERS, so cleanup is never dropped.
 }
 
 bool ServerHost::submit(InputCommand input) {
     if (!input.valid()) {
         return false;
     }
-    std::lock_guard lock(dataMutex_);
-    const auto it = connections_.find(input.playerId);
-    if (!running_ || it == connections_.end() || input.sequence <= it->second ||
-        commands_.size() >= maxPending) {
+    std::lock_guard lock(m_dataMutex);
+    const auto connection = m_lastInputSequences.find(input.playerId);
+    if (!m_running || connection == m_lastInputSequences.end() ||
+        input.sequence <= connection->second || m_pendingCommands.size() >= MAX_PENDING_COMMANDS) {
         return false;
     }
-    it->second = input.sequence;
-    commands_.push_back({Kind::Input, input.playerId, input});
+    connection->second = input.sequence;
+    m_pendingCommands.push_back({WorldCommandType::INPUT, input.playerId, input});
     return true;
 }
 
 WorldSnapshot ServerHost::snapshot() const {
-    std::lock_guard lock(dataMutex_);
-    return snapshot_;
+    std::lock_guard lock(m_dataMutex);
+    return m_latestSnapshot;
 }
 
 std::size_t ServerHost::pending() const {
-    std::lock_guard lock(dataMutex_);
-    return commands_.size();
+    std::lock_guard lock(m_dataMutex);
+    return m_pendingCommands.size();
 }
 
-bool ServerHost::hasClient(std::uint32_t id) const {
-    std::lock_guard lock(dataMutex_);
-    return running_ && connections_.contains(id);
+bool ServerHost::hasClient(std::uint32_t playerId) const {
+    std::lock_guard lock(m_dataMutex);
+    return m_running && m_lastInputSequences.contains(playerId);
 }
 
-void ServerHost::run(std::stop_token stop) {
+void ServerHost::run(std::stop_token stopToken) {
     GameWorld world;
     TickScheduler scheduler;
-    while (!stop.stop_requested()) {
-        std::deque<Command> commands;
+    while (!stopToken.stop_requested()) {
+        std::deque<WorldCommand> commands;
         {
-            std::lock_guard lock(dataMutex_);
-            commands.swap(commands_);
+            std::lock_guard lock(m_dataMutex);
+            commands.swap(m_pendingCommands);
         }
         for (const auto& command : commands) {
-            switch (command.kind) {
-            case Kind::Join:
-                world.addPlayer(command.id);
+            switch (command.m_type) {
+            case WorldCommandType::JOIN:
+                world.addPlayer(command.m_playerId);
                 break;
-            case Kind::Input:
-                world.apply(command.input);
+            case WorldCommandType::INPUT:
+                world.apply(command.m_input);
                 break;
-            case Kind::Leave:
-                world.removePlayer(command.id);
+            case WorldCommandType::LEAVE:
+                world.removePlayer(command.m_playerId);
                 break;
             }
         }
         world.step();
         auto state = world.snapshot();
-        if (state.tick % simulation::snapshotIntervalTicks == 0) {
-            std::lock_guard lock(dataMutex_);
-            snapshot_ = std::move(state);
+        if (state.tick % simulation::SNAPSHOT_INTERVAL_TICKS == 0) {
+            std::lock_guard lock(m_dataMutex);
+            m_latestSnapshot = std::move(state);
         }
         std::this_thread::sleep_until(scheduler.advance());
     }

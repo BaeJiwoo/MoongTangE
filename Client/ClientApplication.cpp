@@ -91,7 +91,7 @@ void ClientApplication::observeSmokeProgress() {
             continue;
         }
         moved_ =
-            moved_ || player.position.x > simulation::spawnX(player.id) + simulation::playerRadius;
+            moved_ || player.position.x > simulation::spawnX(player.id) + simulation::PLAYER_RADIUS;
         rolled_ = rolled_ ||
                   (player.orientation != Quaternion{} && player.angularVelocity.length() > 0.1);
     }

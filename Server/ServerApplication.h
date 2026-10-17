@@ -21,9 +21,9 @@ public:
     std::uint16_t port() const noexcept;
 
 private:
-    ServerOptions options_;
-    std::atomic<bool> started_{false};
-    std::atomic<bool> stopRequested_{false};
-    std::atomic<std::uint16_t> port_{};
+    ServerOptions m_options;
+    std::atomic<bool> m_hasRun{false};
+    std::atomic<bool> m_stopRequested{false};
+    std::atomic<std::uint16_t> m_boundPort{};
 };
 } // namespace sandbox
