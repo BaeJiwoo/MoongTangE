@@ -20,3 +20,9 @@ All work is reviewed through issue-specific PRs. Issue numbers below were return
 Review and merge from top to bottom only with explicit user authorization. Use merge commits to preserve the stack's ancestry. After each predecessor is merged, verify that main matches the predecessor's tree, retarget the next PR to main, and recheck its head commit, CI and issue link. Confirm that merging closes the linked issue; retain issue history and work branches.
 
 Deferred: UDP, client prediction, lag compensation, physics rollback, sphere/sphere collision, and production authentication.
+
+## Follow-up work
+
+| Issue | Branch | PR base | Scope |
+| --- | --- | --- | --- |
+| #25 | `25-SERVER` | `main` | ServerApplication lifecycle, regression tests and server architecture documentation |

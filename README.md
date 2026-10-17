@@ -88,6 +88,8 @@ W/A/S/D를 누르면 바닥의 공에 힘이 가해져 서서히 가속합니다
 
 ## 구조와 동작
 
+서버 구성 요소, 스레드와 소유권, 입력 처리 및 종료 순서는 [서버 구조 문서](docs/SERVER_ARCHITECTURE.md)에 설명되어 있습니다.
+
 ```text
 Common/       수학, 자체 물리, GameWorld, 프로토콜, 전송 인터페이스
 Server/Core/  재사용 가능한 ServerCore, 60Hz Tick, 제한된 명령 큐
@@ -102,7 +104,7 @@ cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 
 ## 테스트와 제한
 
-- CTest: 벡터/quaternion, 낙하/충돌/구름/관성, 게임 월드, 서버 수명/큐, 로컬 전송, 프로토콜, 화면 보간, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속. 전체 11개, 외부 의존성 없는 구성 8개입니다.
+- CTest: 벡터/quaternion, 낙하/충돌/구름/관성, 게임 월드, 서버 수명/큐, ServerApplication 실행·종료, 로컬 전송, 프로토콜, 화면 보간, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속. 전체 12개, 외부 의존성 없는 구성 8개입니다.
 - 동일 Tick 입력 일정의 로컬 계산과 직렬화 경로는 매 Tick 비교합니다. 실제 비동기 전송은 입력 도착 시점이 다르므로 이동 속도·방향·바닥 정지 등 물리 조건을 비교합니다.
 - CI: Windows/MSVC, Linux/GCC, macOS/Clang에서 전체 빌드와 테스트, 외부 의존성 없는 코어 구성을 검증합니다. GUI 실행은 CI 필수 항목이 아니며 실제 결과는 [Actions](https://github.com/BaeJiwoo/portable-physics-sandbox/actions)에서 확인하세요.
 - 공과 평면의 충돌만 구현합니다. 공끼리의 충돌, 경사면, 클라이언트 예측, UDP, 물리 롤백 및 사용자 인증은 후속 범위입니다.
