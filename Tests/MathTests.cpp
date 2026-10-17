@@ -1,4 +1,6 @@
 #include "Common/Math/Vector3.h"
+#include "Common/Math/Quaternion.h"
+#include <numbers>
 #include "TestSupport.h"
 #include <limits>
 int main() { return test::run([] {
@@ -14,4 +16,12 @@ int main() { return test::run([] {
     const auto nan = std::numeric_limits<double>::quiet_NaN();
     CHECK(!Vector3{nan,0,0}.finite());
     CHECK(test::throws([&] { (void)Vector3{nan,0,0}.normalized(); }));
+    CHECK(sandbox::cross({1,0,0},{0,1,0})==Vector3{0,0,1});
+    const auto q=sandbox::Quaternion::fromRotation({0,0,std::numbers::pi/2});
+    CHECK((q.rotate({1,0,0})-Vector3{0,1,0}).length()<1e-9);
+    CHECK(((q*q).rotate({1,0,0})-Vector3{-1,0,0}).length()<1e-9);
+    const auto halfway=sandbox::interpolate({},q,0.5);
+    CHECK(test::approx(halfway.rotate({1,0,0}).x,std::sqrt(0.5)));
+    CHECK(sandbox::interpolate(q,{-q.w,-q.x,-q.y,-q.z},0.5).unit());
+    CHECK(test::throws([] { (void)sandbox::Quaternion{0,0,0,0}.normalized(); }));
 }); }

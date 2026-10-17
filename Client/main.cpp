@@ -1,5 +1,6 @@
 #include "Client/Input/Keyboard.h"
 #include "Client/Rendering/Scene.h"
+#include "Client/Rendering/SnapshotInterpolator.h"
 #include "Client/Transport/LocalTransport.h"
 #include "Common/Utility/CommandLine.h"
 #ifdef SANDBOX_HAS_NETWORK
@@ -39,19 +40,27 @@ int main(int argc, char** argv) {
         if (!IsWindowReady()) throw std::runtime_error("Graphics window initialization failed");
         SetTargetFPS(60);
         sandbox::WorldSnapshot state;
+        sandbox::SnapshotInterpolator presentation;
         std::uint64_t sequence=0;
         int frame=0;
-        bool moved=false;
+        bool moved=false, rolled=false;
         while (!WindowShouldClose() && (!smoke || frame<120)) {
+            presentation.advance(GetFrameTime());
             if (!transport->error().empty()) throw std::runtime_error(transport->error());
             if (transport->connected()) {
                 auto input = sandbox::keyboardInput(transport->playerId(),++sequence);
                 if (smoke) { input.x = sequence<60 ? 1 : 0; input.z=0; }
                 if (!transport->send(input)) throw std::runtime_error("Input rejected: "+transport->error());
             }
-            if (auto snapshot = transport->receive()) state=std::move(*snapshot);
-            for (const auto& p : state.players) if (p.id==transport->playerId() && p.position.x>static_cast<double>((p.id-1)%8)*1.5+0.5) moved=true;
-            sandbox::renderScene(state,transport->playerId(),remote.empty() ? "Embedded server" : "TCP dedicated server",transport->connected() ? "Connected" : "Connecting...");
+            if (auto snapshot = transport->receive()) {
+                state=std::move(*snapshot);
+                presentation.push(state);
+            }
+            for (const auto& p : state.players) if (p.id==transport->playerId()) {
+                if (p.position.x>static_cast<double>((p.id-1)%8)*1.5+0.5) moved=true;
+                if (p.orientation!=sandbox::Quaternion{} && p.angularVelocity.length()>0.1) rolled=true;
+            }
+            sandbox::renderScene(presentation.sample(),transport->playerId(),remote.empty() ? "Embedded server" : "TCP dedicated server",transport->connected() ? "Connected" : "Connecting...");
             ++frame;
         }
         if (smoke) if (const auto capture=std::getenv("SANDBOX_SMOKE_CAPTURE")) {
@@ -62,7 +71,7 @@ int main(int argc, char** argv) {
         }
         CloseWindow();
         transport->close(); if (server) server->stop();
-        if (smoke && !moved) throw std::runtime_error("Smoke test did not observe server movement");
+        if (smoke && (!moved || !rolled)) throw std::runtime_error("Smoke test did not observe server rolling");
         std::cout << "Client stopped successfully\n";
         return 0;
     } catch (const std::exception& e) {

@@ -21,4 +21,8 @@ struct Vector3 {
     }
 };
 inline constexpr Vector3 operator*(double s, Vector3 v) { return v*s; }
+inline constexpr double dot(Vector3 a, Vector3 b) { return a.x*b.x+a.y*b.y+a.z*b.z; }
+inline constexpr Vector3 cross(Vector3 a, Vector3 b) {
+    return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};
+}
 }

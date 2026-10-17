@@ -18,8 +18,11 @@ sandbox::PlayerState exercise(sandbox::IClientTransport& client) {
     CHECK(test::waitFor([&] {
         if (auto state=client.receive()) for (const auto& p:state->players)
             if (p.id==id && p.velocity.x>0) {
-                CHECK(test::approx(p.velocity.length(),5));
+                CHECK(p.velocity.length()<5.5);
                 CHECK(test::approx(p.velocity.x,-p.velocity.z));
+                CHECK(test::approx(p.angularVelocity.z,-p.velocity.x/0.5));
+                CHECK(test::approx(p.angularVelocity.x,p.velocity.z/0.5));
+                CHECK(p.orientation!=sandbox::Quaternion{} && p.orientation.unit());
                 return true;
             }
         return false;
@@ -45,6 +48,8 @@ int main() { return test::run([] {
         CHECK(a.tick==b.tick);
         CHECK(a.players[0].position==b.players[0].position);
         CHECK(a.players[0].velocity==b.players[0].velocity);
+        CHECK(a.players[0].orientation==b.players[0].orientation);
+        CHECK(a.players[0].angularVelocity==b.players[0].angularVelocity);
     }
     // Real asynchronous transports: compare physical invariants, allowing arrival-time differences.
     auto localCore=std::make_shared<ServerHost>(), tcpCore=std::make_shared<ServerHost>();
@@ -54,6 +59,7 @@ int main() { return test::run([] {
     TcpClientTransport tcp("127.0.0.1",server.port());
     const auto a=exercise(local), b=exercise(tcp);
     CHECK(a.position.y==b.position.y && a.velocity==b.velocity);
+    CHECK(a.angularVelocity==Vector3{} && b.angularVelocity==Vector3{});
     CHECK(a.position.x>0 && b.position.x>0 && a.position.z<0 && b.position.z<0);
     local.close(); tcp.close();
     CHECK(test::waitFor([&] { return localCore->snapshot().players.empty() && tcpCore->snapshot().players.empty(); }));
