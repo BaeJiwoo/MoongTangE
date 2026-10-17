@@ -6,6 +6,7 @@
 #include "Client/Transport/TcpClientTransport.h"
 #endif
 #include <iostream>
+#include <cstdlib>
 #include <string_view>
 int main(int argc, char** argv) {
     try {
@@ -52,6 +53,12 @@ int main(int argc, char** argv) {
             for (const auto& p : state.players) if (p.id==transport->playerId() && p.position.x>static_cast<double>((p.id-1)%8)*1.5+0.5) moved=true;
             sandbox::renderScene(state,transport->playerId(),remote.empty() ? "Embedded server" : "TCP dedicated server",transport->connected() ? "Connected" : "Connecting...");
             ++frame;
+        }
+        if (smoke) if (const auto capture=std::getenv("SANDBOX_SMOKE_CAPTURE")) {
+            Image screenshot=LoadImageFromScreen();
+            const bool saved=ExportImage(screenshot,capture);
+            UnloadImage(screenshot);
+            if (!saved) throw std::runtime_error("Could not save smoke screenshot");
         }
         CloseWindow();
         transport->close(); if (server) server->stop();

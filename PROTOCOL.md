@@ -12,7 +12,7 @@ Each frame is a 4-byte unsigned big-endian payload length followed by exactly th
 
 A player record contains ID (u32), position x/y/z (3×f64), and velocity x/y/z (3×f64). At most 32 records are allowed; IDs must be nonzero and unique. The first client message must be ClientHello. The server replies with ServerHello before sending snapshots. Unknown types, versions, truncation, trailing bytes and non-finite values are rejected.
 
-Input IDs are taken from the authenticated protocol session assignment (the Hello handshake is **not user authentication**). A packet cannot choose another player's ID. Sequences start above zero and increase strictly within a connection; x/z must be in [-1,1]. Diagonal inputs are normalized on the server. If no new input reaches the world for 120 simulation ticks, movement stops.
+Input IDs are assigned by the server to each connection (the Hello handshake is **not user authentication**). A packet cannot choose another player's ID. Sequences start above zero and increase strictly within a connection; x/z must be in [-1,1]. Diagonal inputs are normalized on the server. If no new input reaches the world for 120 simulation ticks, movement stops.
 
 The server publishes its latest snapshot approximately every 50 ms. GameWorld always advances with dt=1/60; slow scheduling can skip wall-clock catch-up after eight periods, but never changes physics dt. TCP arrival time determines the tick that consumes an input. Cross-platform bit-identical floating-point results, client prediction and lag compensation are not promised.
 
