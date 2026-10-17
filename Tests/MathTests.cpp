@@ -1,6 +1,7 @@
 #include "Common/Math/Quaternion.h"
 #include "Common/Math/Vector3.h"
 #include "TestSupport.h"
+#include <cmath>
 #include <limits>
 #include <numbers>
 

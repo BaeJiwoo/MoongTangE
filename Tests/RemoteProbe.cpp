@@ -1,4 +1,5 @@
 #include "Client/Transport/TcpClientTransport.h"
+#include "Common/SimulationConfig.h"
 #include "Common/Utility/CommandLine.h"
 #include "TestSupport.h"
 
@@ -15,8 +16,8 @@ int main(int argc, char** argv) {
         CHECK(test::waitFor([&] {
             if (auto state = client.receive()) {
                 for (const auto& p : state->players) {
-                    if (p.id == id &&
-                        p.position.x > static_cast<double>((id - 1) % 8) * 1.5 + 0.5) {
+                    if (p.id == id && p.position.x > sandbox::simulation::spawnX(id) +
+                                                         sandbox::simulation::playerRadius) {
                         return true;
                     }
                 }

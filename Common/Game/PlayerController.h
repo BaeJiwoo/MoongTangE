@@ -1,5 +1,6 @@
 #pragma once
 #include "Common/Math/Vector3.h"
+#include "Common/SimulationConfig.h"
 
 namespace sandbox {
 inline Vector3 movementForce(double x, double z) {
@@ -7,6 +8,6 @@ inline Vector3 movementForce(double x, double z) {
     if (direction.length() > 1) {
         direction = direction.normalized();
     }
-    return direction * 10.0;
+    return direction * simulation::movementForce;
 }
 } // namespace sandbox

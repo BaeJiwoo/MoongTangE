@@ -1,6 +1,7 @@
 #include "Server/Core/ServerHost.h"
 #include "Server/Core/TickScheduler.h"
 #include "TestSupport.h"
+#include <cstdint>
 
 int main() {
     return test::run([] {

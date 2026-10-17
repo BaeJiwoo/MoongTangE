@@ -1,6 +1,8 @@
 #include "Server/Core/ServerHost.h"
+#include "Common/Game/GameWorld.h"
+#include "Common/SimulationConfig.h"
 #include "Server/Core/TickScheduler.h"
-#include <limits>
+#include <utility>
 
 namespace sandbox {
 void ServerHost::start() {
@@ -105,7 +107,7 @@ void ServerHost::run(std::stop_token stop) {
         }
         world.step();
         auto state = world.snapshot();
-        if (state.tick % 3 == 0) {
+        if (state.tick % simulation::snapshotIntervalTicks == 0) {
             std::lock_guard lock(dataMutex_);
             snapshot_ = std::move(state);
         }

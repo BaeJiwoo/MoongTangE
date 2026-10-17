@@ -1,5 +1,6 @@
 #include "Common/Game/GameWorld.h"
 #include "TestSupport.h"
+#include <cstdint>
 #include <limits>
 
 int main() {

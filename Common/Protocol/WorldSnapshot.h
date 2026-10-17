@@ -1,10 +1,12 @@
 #pragma once
 #include "Common/Math/Quaternion.h"
+#include "Common/SimulationConfig.h"
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
 namespace sandbox {
-inline constexpr std::size_t maxPlayers = 32;
+inline constexpr std::size_t maxPlayers = simulation::maxPlayers;
 
 struct PlayerState {
     std::uint32_t id{};

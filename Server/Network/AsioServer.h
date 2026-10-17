@@ -1,5 +1,6 @@
 #pragma once
 #include "Server/Core/ServerHost.h"
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -11,10 +12,12 @@ public:
     ~AsioServer();
     AsioServer(const AsioServer&) = delete;
     AsioServer& operator=(const AsioServer&) = delete;
+    AsioServer(AsioServer&&) = delete;
+    AsioServer& operator=(AsioServer&&) = delete;
     std::uint16_t port() const;
 
 private:
-    struct Impl;
+    class Impl;
     std::unique_ptr<Impl> impl_;
 };
 } // namespace sandbox

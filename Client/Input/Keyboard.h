@@ -1,5 +1,6 @@
 #pragma once
 #include "Common/Protocol/InputCommand.h"
+#include <cstdint>
 #include <raylib.h>
 
 namespace sandbox {

@@ -15,6 +15,7 @@ All work is reviewed through open, unmerged PRs. Issue numbers below were return
 | 9 | #9 | `9-MULTI` | `8-NET` | Dedicated server and remote client |
 | 10 | #10 | `10-QA` | `9-MULTI` | Integration, CI and documentation |
 | 11 | [#21](https://github.com/BaeJiwoo/portable-physics-sandbox/issues/21) | `21-ROLL` | `10-QA` | Rolling inertia/friction, orientation replication and smooth patterned rendering |
+| 12 | [#23](https://github.com/BaeJiwoo/portable-physics-sandbox/issues/23) | `23-REFACTOR` | `21-ROLL` | Whole-project C++ readability, Core Guidelines and OOP review/refactoring |
 
 Review and merge from top to bottom. After each predecessor is merged, check and retarget the next PR base as appropriate. Only the user merges.
 

@@ -1,15 +1,19 @@
 #pragma once
 #include <chrono>
 #include <cmath>
+#include <exception>
 #include <iostream>
+#include <source_location>
 #include <stdexcept>
 #include <string>
 #include <thread>
 
 namespace test {
-inline void check(bool ok, const char* expression, int line) {
+inline void check(bool ok, const char* expression,
+                  std::source_location location = std::source_location::current()) {
     if (!ok) {
-        throw std::runtime_error(std::string(expression) + " at line " + std::to_string(line));
+        throw std::runtime_error(std::string(expression) + " at " + location.file_name() + ":" +
+                                 std::to_string(location.line()));
     }
 }
 
@@ -50,4 +54,4 @@ bool waitFor(F predicate, std::chrono::milliseconds timeout = std::chrono::secon
 }
 } // namespace test
 
-#define CHECK(...) test::check((__VA_ARGS__), #__VA_ARGS__, __LINE__)
+#define CHECK(...) test::check((__VA_ARGS__), #__VA_ARGS__)

@@ -1,64 +1,59 @@
 #include "Common/Utility/CommandLine.h"
+#include "Server/Core/ServerHost.h"
 #include "Server/Network/AsioServer.h"
+#include "Server/ServerOptions.h"
+#include <chrono>
 #include <csignal>
+#include <exception>
 #include <iostream>
+#include <memory>
+#include <string>
+#include <thread>
 
 namespace {
-volatile std::sig_atomic_t stopping = 0;
+// Signal handlers must use sig_atomic_t rather than locks or ordinary shared objects.
+volatile std::sig_atomic_t stopRequested = 0;
 
 void requestStop(int) {
-    stopping = 1;
+    stopRequested = 1;
+}
+
+void runServer(const sandbox::ServerOptions& options) {
+    auto core = std::make_shared<sandbox::ServerHost>();
+    core->start();
+    const std::string address = options.publicBind ? "0.0.0.0" : "127.0.0.1";
+    // Reverse destruction closes networking before the last ServerHost owner is released.
+    sandbox::AsioServer server(core, address, options.port);
+    std::cout << "Listening " << address << ':' << server.port() << std::endl;
+    if (options.publicBind) {
+        std::cerr << "Warning: unauthenticated test server; use trusted networks only.\n";
+    }
+
+    const auto started = std::chrono::steady_clock::now();
+    while (stopRequested == 0) {
+        const auto elapsed = std::chrono::steady_clock::now() - started;
+        if (options.duration.count() != 0 && elapsed >= options.duration) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
 }
 } // namespace
 
 int main(int argc, char** argv) {
     try {
-        std::uint16_t port = 27015;
-        unsigned duration = 0;
-        bool publicBind = false;
-        for (int i = 1; i < argc; ++i) {
-            const std::string_view arg(argv[i]);
-            if (arg == "--help") {
-                std::cout << "DedicatedServer [--port 27015] [--public] [--run-for seconds]\n";
-                return 0;
-            }
-            if (arg == "--public") {
-                publicBind = true;
-                continue;
-            }
-            if ((arg == "--port" || arg == "--run-for") && i + 1 < argc) {
-                const auto value = sandbox::unsignedOption(
-                    argv[++i], arg == "--port" ? 65535u : 86400u, arg == "--port");
-                if (arg == "--port") {
-                    port = static_cast<std::uint16_t>(value);
-                } else {
-                    duration = value;
-                }
-                continue;
-            }
-            throw std::invalid_argument("Unknown or incomplete option: " + std::string(arg));
+        const auto arguments = sandbox::commandLineArguments(argc, argv);
+        const auto options = sandbox::parseServerOptions(arguments);
+        if (options.showHelp) {
+            std::cout << "DedicatedServer [--port 27015] [--public] [--run-for seconds]\n";
+            return 0;
         }
         std::signal(SIGINT, requestStop);
         std::signal(SIGTERM, requestStop);
-        auto core = std::make_shared<sandbox::ServerHost>();
-        core->start();
-        const std::string address = publicBind ? "0.0.0.0" : "127.0.0.1";
-        {
-            sandbox::AsioServer server(core, address, port);
-            std::cout << "Listening " << address << ':' << server.port() << std::endl;
-            if (publicBind) {
-                std::cerr << "Warning: unauthenticated test server; use trusted networks only.\n";
-            }
-            const auto start = std::chrono::steady_clock::now();
-            while (!stopping && (!duration || std::chrono::steady_clock::now() - start <
-                                                  std::chrono::seconds(duration))) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            }
-        }
-        core->stop();
+        runServer(options);
         return 0;
-    } catch (const std::exception& e) {
-        std::cerr << e.what() << '\n';
+    } catch (const std::exception& error) {
+        std::cerr << error.what() << '\n';
         return 1;
     }
 }

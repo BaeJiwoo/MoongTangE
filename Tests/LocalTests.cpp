@@ -1,8 +1,16 @@
 #include "Client/Transport/LocalTransport.h"
 #include "TestSupport.h"
+#include <memory>
+#include <optional>
 
 int main() {
     return test::run([] {
+        CHECK(test::throws([] {
+            sandbox::LocalTransport invalid(nullptr);
+        }));
+        CHECK(test::throws([] {
+            sandbox::LocalTransport invalid(std::make_shared<sandbox::ServerHost>());
+        }));
         auto server = std::make_shared<sandbox::ServerHost>();
         server->start();
         sandbox::LocalTransport a(server), b(server);

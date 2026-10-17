@@ -1,6 +1,7 @@
 #pragma once
 #include "Common/Protocol/InputCommand.h"
 #include "Common/Protocol/WorldSnapshot.h"
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -8,7 +9,12 @@ namespace sandbox {
 // Call from one consumer thread. Implementations own their background synchronization.
 class IClientTransport {
 public:
+    IClientTransport() = default;
     virtual ~IClientTransport() = default;
+    IClientTransport(const IClientTransport&) = delete;
+    IClientTransport& operator=(const IClientTransport&) = delete;
+    IClientTransport(IClientTransport&&) = delete;
+    IClientTransport& operator=(IClientTransport&&) = delete;
     virtual bool connected() const = 0;
     virtual std::uint32_t playerId() const = 0;
     virtual bool send(InputCommand input) = 0;
