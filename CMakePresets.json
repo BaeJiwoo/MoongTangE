@@ -1,0 +1,21 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "browse",
+      "displayName": "MoongTangE",
+      "description": "Provide project and dependency headers for C++ code navigation.",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "MOONGTANGE_BUILD_CLIENT": "ON",
+        "MOONGTANGE_BUILD_NETWORK": "ON"
+      }
+    }
+  ]
+}
