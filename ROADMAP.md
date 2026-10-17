@@ -26,3 +26,4 @@ Deferred: UDP, client prediction, lag compensation, physics rollback, sphere/sph
 | Issue | Branch | PR base | Scope |
 | --- | --- | --- | --- |
 | #25 | `25-SERVER` | `main` | ServerApplication lifecycle, regression tests and server architecture documentation |
+| #26 | `26-PROTOBUF` | `25-SERVER` | Pinned Protobuf, generated network schema, protocol v3 and codec boundary |

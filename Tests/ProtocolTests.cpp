@@ -1,159 +1,218 @@
-#include "Common/Protocol/Wire.h"
+#include "Network/Protocol/Codec.h"
 #include "TestSupport.h"
-#include <algorithm>
-#include <cstddef>
+#include "game.pb.h"
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <string>
 
 namespace {
 using namespace sandbox;
 
-void codecBounds() {
-    // Public codec helpers reject unsafe shift widths and truncated integers.
-    wire::Writer writer;
-    CHECK(test::throws([&] {
-        writer.integer(1, 0);
-    }));
-    CHECK(test::throws([&] {
-        writer.integer(1, 9);
-    }));
-    CHECK(test::throws([&] {
-        writer.integer(256, 1);
-    }));
-    writer.integer(std::numeric_limits<std::uint64_t>::max(), 8);
-    const auto integerBytes = writer.take();
-    CHECK(writer.take().empty());
-    wire::Reader reader(integerBytes);
-    CHECK(test::throws([&] {
-        reader.integer(0);
-    }));
-    CHECK(test::throws([&] {
-        reader.integer(9);
-    }));
-    CHECK(reader.integer(8) == std::numeric_limits<std::uint64_t>::max());
-    reader.end();
-    CHECK(test::throws([&] {
-        reader.integer(1);
-    }));
+template <class Message> wire::Bytes packet(wire::Type kind, const Message& message) {
+    const auto bytes = message.SerializeAsString();
+    wire::Bytes result{static_cast<std::uint8_t>(kind)};
+    result.insert(result.end(), bytes.begin(), bytes.end());
+    return result;
+}
+
+proto::WorldSnapshot protobufSnapshot(const WorldSnapshot& state) {
+    const auto bytes = wire::snapshot(state);
+    proto::WorldSnapshot message;
+    CHECK(message.ParseFromArray(bytes.data() + 1, static_cast<int>(bytes.size() - 1)));
+    return message;
+}
+
+void framingAndVersionNegotiation() {
+    // Known Protobuf bytes: field 1, varint wire type, protocol version 3.
+    CHECK(wire::clientHello() == wire::Bytes{1, 8, 3});
+    CHECK(wire::frame(wire::clientHello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 3});
+    wire::readClientHello(wire::Bytes{1, 8, 3});
+    CHECK(wire::readServerHello(wire::serverHello(42)) == 42);
+    for (const auto& bad : {wire::Bytes{}, wire::Bytes{1}, wire::Bytes{1, 8}, wire::Bytes{1, 0, 2},
+                            wire::Bytes{1, 8, 2}, wire::Bytes{1, 8, 99}, wire::Bytes{2, 8, 3},
+                            wire::Bytes{1, 8, 3, 0}, wire::Bytes{255}}) {
+        CHECK(test::throws([&] {
+            wire::readClientHello(bad);
+        }));
+    }
     CHECK(test::throws([] {
         wire::serverHello(0);
     }));
-}
-
-void helloValidation() {
-    const auto hello = wire::clientHello();
-    CHECK(hello == wire::Bytes{1, 0, 2});
-    CHECK(wire::frame(hello) == wire::Bytes{0, 0, 0, 3, 1, 0, 2});
     CHECK(test::throws([] {
-        wire::readClientHello(wire::Bytes{1, 0, 1});
+        wire::readServerHello(wire::Bytes{2, 8, 3});
     }));
-    CHECK(wire::readServerHello(wire::serverHello(42)) == 42);
-    auto bad = hello;
-    bad[2] = 99;
-    CHECK(test::throws([&] {
-        wire::readClientHello(bad);
+    CHECK(wire::isDisconnect(wire::disconnect()));
+    CHECK(!wire::isDisconnect(wire::clientHello()));
+    CHECK(test::throws([] {
+        wire::isDisconnect(wire::Bytes{5, 0});
     }));
-}
-
-void inputAndFrameValidation() {
-    wire::Bytes bad;
-    InputCommand input{7, 0x0102030405060708, 0.5, -1};
-    auto bytes = wire::input(input);
-    CHECK(bytes[1] == 1 && bytes[8] == 8);
-    const auto restored = wire::readInput(bytes, 7);
-    CHECK(restored.sequence == input.sequence && restored.x == input.x && restored.z == input.z);
-    for (std::size_t i = 0; i < bytes.size(); ++i) {
+    for (const auto& bad : {wire::Bytes{}, wire::Bytes{0, 0, 1}, wire::Bytes{0, 0, 0, 0},
+                            wire::Bytes{0, 0, 32, 1}, wire::Bytes{0, 0, 0, 1, 0}}) {
         CHECK(test::throws([&] {
-            wire::readInput(std::span(bytes).first(i), 7);
+            wire::frameSize(bad);
         }));
     }
-    bad = bytes;
-    bad.push_back(0);
-    CHECK(test::throws([&] {
-        wire::readInput(bad, 7);
-    }));
-    bad = bytes;
-    bad[9] = 0x7f;
-    bad[10] = 0xf8;
-    for (int i = 11; i < 17; ++i) {
-        bad[i] = 0;
-    }
-    CHECK(test::throws([&] {
-        wire::readInput(bad, 7);
-    }));
+    CHECK(wire::frameSize(wire::Bytes{0, 0, 32, 0}) == wire::maxFrame);
     CHECK(test::throws([] {
-        wire::frameSize(wire::Bytes{0, 0, 0, 0});
-    }));
-    CHECK(test::throws([] {
-        wire::frameSize(wire::Bytes{0, 0, 16, 1});
+        wire::frame({});
     }));
     CHECK(test::throws([] {
         wire::frame(wire::Bytes(wire::maxFrame + 1));
     }));
+    auto oversized = wire::Bytes(wire::maxFrame + 1, 0);
+    oversized.front() = 1;
+    CHECK(test::throws([&] {
+        wire::readClientHello(oversized);
+    }));
+
+    // Unknown groups are legal Protobuf, but nesting must remain bounded.
+    auto nested = wire::clientHello();
+    nested.insert(nested.end(), {0x7b, 0x7c}); // Empty group, field 15.
+    wire::readClientHello(nested);
+    nested = wire::clientHello();
+    nested.insert(nested.end(), 32, 0x7b);
+    nested.insert(nested.end(), 32, 0x7c);
+    CHECK(test::throws([&] {
+        wire::readClientHello(nested);
+    }));
 }
 
-void snapshotValidation() {
-    wire::Bytes bad;
-    WorldSnapshot state{42, {{1, {2, 0.5, 3}, {4, 0, 5}}, {2, {}, {}}}};
-    state.players[0].orientation = Quaternion::fromRotation({0.3, 0.2, -0.7});
-    state.players[0].angularVelocity = {10, 0, -8};
-    const auto decoded = wire::readSnapshot(wire::snapshot(state));
-    CHECK(decoded.tick == 42 && decoded.players.size() == 2);
-    CHECK(decoded.players[0].position == state.players[0].position);
-    CHECK(decoded.players[0].velocity == state.players[0].velocity);
-    CHECK(decoded.players[0].orientation == state.players[0].orientation);
-    CHECK(decoded.players[0].angularVelocity == state.players[0].angularVelocity);
-    auto snap = wire::snapshot(state);
-    for (std::size_t i = 0; i < snap.size(); ++i) {
+void inputsUseSessionIdentityAndValidatePresence() {
+    const InputCommand input{42, std::numeric_limits<std::uint64_t>::max(), -0.0, -1.0};
+    const auto bytes = wire::input(input);
+    const auto restored = wire::readInput(bytes, 7);
+    CHECK(restored.playerId == 7 && restored.sequence == input.sequence);
+    CHECK(restored.x == input.x && std::signbit(restored.x) && restored.z == -1);
+    for (std::size_t size = 0; size < bytes.size(); ++size) {
         CHECK(test::throws([&] {
-            wire::readSnapshot(std::span(snap).first(i));
+            wire::readInput(std::span(bytes).first(size), 7);
         }));
     }
-    bad = snap;
-    std::fill(bad.begin() + 63, bad.begin() + 95, std::uint8_t{0}); // Zero quaternion.
+    proto::InputCommand message;
+    message.set_sequence(1);
+    message.set_x(0);
     CHECK(test::throws([&] {
-        wire::readSnapshot(bad);
+        wire::readInput(packet(wire::Type::Input, message), 7);
     }));
-    bad[63] = 0x40; // Finite but non-unit quaternion (w=2).
+    message.set_z(0);
+    CHECK(wire::readInput(packet(wire::Type::Input, message), 7).x == 0);
     CHECK(test::throws([&] {
-        wire::readSnapshot(bad);
+        wire::readInput(packet(wire::Type::Input, message), 0);
     }));
-    bad = snap;
-    bad[95] = 0x7f;
-    bad[96] = 0xf8; // NaN angular velocity.
-    CHECK(test::throws([&] {
-        wire::readSnapshot(bad);
-    }));
-    state.players[0].orientation = {0, 0, 0, 0};
-    CHECK(test::throws([&] {
-        wire::snapshot(state);
-    }));
-    state.players[0].orientation = {};
-    state.players[0].angularVelocity.x = std::numeric_limits<double>::infinity();
-    CHECK(test::throws([&] {
-        wire::snapshot(state);
-    }));
-    state.players[0].angularVelocity = {};
-    state.players[1].id = 1;
-    CHECK(test::throws([&] {
-        wire::snapshot(state);
-    }));
-    state.players.clear();
-    for (std::uint32_t id = 1; id <= maxPlayers; ++id) {
-        state.players.push_back({id, {}, {}});
+    for (const double bad :
+         {2.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+        message.set_x(bad);
+        CHECK(test::throws([&] {
+            wire::readInput(packet(wire::Type::Input, message), 7);
+        }));
+        CHECK(test::throws([&] {
+            wire::input({7, 1, bad, 0});
+        }));
     }
-    const auto full = wire::snapshot(state);
-    CHECK(full.size() == 3467 && full.size() <= wire::maxFrame);
-    CHECK(wire::readSnapshot(full).players.size() == maxPlayers);
+    message.set_x(0);
+    message.set_sequence(0);
+    CHECK(test::throws([&] {
+        wire::readInput(packet(wire::Type::Input, message), 7);
+    }));
+    // Unknown fields support additive schema evolution; they cannot assign identity.
+    message.set_sequence(2);
+    auto extended = packet(wire::Type::Input, message);
+    extended.insert(extended.end(), {0x78, 99}); // Unknown field 15 = 99.
+    CHECK(wire::readInput(extended, 7).playerId == 7);
+    auto malformed = bytes;
+    malformed.push_back(0); // Invalid Protobuf tag.
+    CHECK(test::throws([&] {
+        wire::readInput(malformed, 7);
+    }));
+}
+
+void snapshotsValidateAllGameInvariants() {
+    const WorldSnapshot state{
+        42, {{7, {1, 0.5, -3}, {2, 0, 1}, Quaternion::fromRotation({0.1, 0, 0.2}), {2, 3, -4}}}};
+    const auto original = protobufSnapshot(state);
+    const auto restored = wire::readSnapshot(wire::snapshot(state));
+    CHECK(restored.tick == state.tick && restored.players.size() == 1);
+    CHECK(restored.players[0].position == state.players[0].position);
+    CHECK(restored.players[0].velocity == state.players[0].velocity);
+    CHECK(restored.players[0].orientation == state.players[0].orientation);
+    CHECK(restored.players[0].angularVelocity == state.players[0].angularVelocity);
+    CHECK(wire::readSnapshot(wire::snapshot({0, {}})).tick == 0);
+    auto reject = [](const proto::WorldSnapshot& message) {
+        CHECK(test::throws([&] {
+            wire::readSnapshot(packet(wire::Type::Snapshot, message));
+        }));
+    };
+    auto bad = original;
+    bad.clear_server_tick();
+    reject(bad);
+    bad = original;
+    bad.mutable_players(0)->set_id(0);
+    reject(bad);
+    bad = original;
+    bad.add_players()->CopyFrom(original.players(0));
+    reject(bad);
+    bad = original;
+    bad.mutable_players(0)->clear_orientation();
+    reject(bad);
+    bad = original;
+    bad.mutable_players(0)->mutable_position()->clear_x();
+    reject(bad);
+    bad = original;
+    bad.mutable_players(0)->mutable_orientation()->set_w(0);
+    reject(bad);
+    bad = original;
+    bad.mutable_players(0)->mutable_angular_velocity()->set_x(
+        std::numeric_limits<double>::quiet_NaN());
+    reject(bad);
+    bad = original;
+    bad.clear_players();
+    for (std::uint32_t id = 1; id <= maxPlayers + 1; ++id) {
+        auto& record = *bad.add_players();
+        record.CopyFrom(original.players(0));
+        record.set_id(id);
+    }
+    reject(bad);
+    auto invalidState = state;
+    invalidState.players.push_back(state.players[0]);
+    CHECK(test::throws([&] {
+        wire::snapshot(invalidState);
+    }));
+    invalidState = state;
+    invalidState.players[0].orientation = {0, 0, 0, 0};
+    CHECK(test::throws([&] {
+        wire::snapshot(invalidState);
+    }));
+}
+
+void maximumSnapshotFitsBoundedFrame() {
+    WorldSnapshot state{std::numeric_limits<std::uint64_t>::max(), {}};
+    // Largest varints, all vector/quaternion components present, all 32 records.
+    for (std::uint32_t index = 0; index < maxPlayers; ++index) {
+        state.players.push_back({std::numeric_limits<std::uint32_t>::max() - index,
+                                 {1, 2, 3},
+                                 {4, 5, 6},
+                                 {0.5, 0.5, 0.5, 0.5},
+                                 {7, 8, 9}});
+    }
+    const auto bytes = wire::snapshot(state);
+    CHECK(bytes.size() == 4300 && bytes.size() <= wire::maxFrame);
+    CHECK(wire::readSnapshot(bytes).players.size() == maxPlayers);
+    const auto framed = wire::frame(bytes);
+    CHECK(wire::frameSize(std::span(framed).first(wire::frameHeaderBytes)) == bytes.size());
+    state.players.push_back({1, {}, {}});
+    CHECK(test::throws([&] {
+        wire::snapshot(state);
+    }));
 }
 } // namespace
 
 int main() {
     return test::run([] {
-        codecBounds();
-        helloValidation();
-        inputAndFrameValidation();
-        snapshotValidation();
+        framingAndVersionNegotiation();
+        inputsUseSessionIdentityAndValidatePresence();
+        snapshotsValidateAllGameInvariants();
+        maximumSnapshotFitsBoundedFrame();
     });
 }

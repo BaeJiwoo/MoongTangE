@@ -1,0 +1,47 @@
+syntax = "proto3";
+package sandbox.proto;
+
+// Presence is explicit for values whose omission must not silently become zero.
+message Vector3 {
+  optional double x = 1;
+  optional double y = 2;
+  optional double z = 3;
+}
+
+message Quaternion {
+  optional double w = 1;
+  optional double x = 2;
+  optional double y = 3;
+  optional double z = 4;
+}
+
+message ClientHello {
+  uint32 protocol_version = 1;
+}
+
+message ServerHello {
+  uint32 protocol_version = 1;
+  uint32 player_id = 2;
+}
+
+message InputCommand {
+  uint64 sequence = 1;
+  optional double x = 2;
+  optional double z = 3;
+  // Player identity comes from the server-assigned session, never this message.
+}
+
+message PlayerState {
+  uint32 id = 1;
+  Vector3 position = 2;
+  Vector3 velocity = 3;
+  Quaternion orientation = 4;
+  Vector3 angular_velocity = 5;
+}
+
+message WorldSnapshot {
+  optional uint64 server_tick = 1;
+  repeated PlayerState players = 2;
+}
+
+message Disconnect {}

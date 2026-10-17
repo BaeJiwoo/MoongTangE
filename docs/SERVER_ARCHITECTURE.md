@@ -13,6 +13,7 @@
 | `PhysicsWorld` | 중력, 평면 접촉, 마찰, 구름 저항과 자세 갱신 | 입력 수신·렌더링 |
 | `AsioServer` | TCP 연결, Hello, 입력 검증·전달, Snapshot 송신 | 게임 월드 직접 변경 |
 | `TcpChannel` | 길이 프레이밍, 부분 송수신, 타임아웃과 전송 큐 | 물리·게임 규칙 |
+| `NetworkProtocol` | Protobuf 메시지와 게임 자료형 변환, 메시지 값·크기 검증 | 물리 상태 소유·소켓 I/O |
 | `LocalTransport` / `TcpClientTransport` | 동일한 클라이언트 전송 인터페이스 구현 | 클라이언트에서 권위 물리 계산 |
 
 ## 소유권과 스레드
@@ -64,6 +65,26 @@ sequenceDiagram
 싱글플레이의 `ClientApplication`은 `ServerHost`를 시작하고 `LocalTransport`로 입력과 Snapshot을 교환합니다. 소켓과 `ServerApplication`은 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
 
 `Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerRuntime` 빌드 대상은 `ServerApplication` 구현을 제공하고, `TcpTransport`를 통해 서버 네트워크 계층을 사용합니다. `SANDBOX_BUILD_NETWORK=OFF`이면 독립 서버와 `ServerRuntime`을 빌드하지 않습니다.
+
+## Protobuf와 게임 자료형의 경계
+
+`Network/Protocol/game.proto`가 메시지 형식의 원본입니다. CMake가 고정한 protoc 36.2로 `build/generated/game.pb.h`와 `game.pb.cc`를 생성하며 C++ 런타임 7.36.2와 연결합니다. `Network/Protocol/Codec.cpp`만 게임 자료형과 생성된 Protobuf 객체 사이를 변환합니다. 공개 `Codec.h`에는 생성된 타입을 노출하지 않습니다.
+
+```mermaid
+flowchart LR
+    Transport[TcpTransport] --> Codec[NetworkProtocol: Codec]
+    Codec --> Common[Common: 게임 자료형]
+    Codec --> Generated[ProtocolMessages: 생성 코드]
+    Generated --> Protobuf[Protobuf 런타임]
+    Host[ServerCore] --> Common
+    Local[LocalTransport] --> Host
+```
+
+게임 월드·물리·LocalTransport는 Protobuf에 의존하지 않습니다. 네트워크를 끈 코어 구성에는 Protobuf와 Abseil 다운로드·빌드가 없습니다. 생성된 메시지를 게임 객체로 사용하거나 상속하지 않고 변환 경계를 둡니다.
+
+TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + Protobuf 본문**입니다. 종류별 필수 값, 입력 범위, ID, 중복 플레이어, quaternion 정규화와 유한한 실수를 변환 시 검증합니다. 플레이어 ID는 클라이언트 입력 메시지에 없으며 접속 세션의 ID를 서버에서 주입합니다.
+
+최대 메시지는 8KiB이며, 최대 길이 ID·Tick과 32명 전체 상태를 넣은 Snapshot은 종류 바이트를 포함해 4,300바이트입니다. 이를 수용하기 위해 이전 4KiB 한도를 올렸습니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는 16으로 제한합니다. 프로토콜 버전은 3이며 이전 v1/v2 Hello는 거부합니다. 알 수 없는 Protobuf 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
 
 ## 시작과 종료
 

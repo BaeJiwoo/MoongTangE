@@ -1,6 +1,6 @@
 #include "Server/Network/AsioServer.h"
-#include "Common/Protocol/Wire.h"
 #include "Common/SimulationConfig.h"
+#include "Network/Protocol/Codec.h"
 #include "Network/TcpChannel.h"
 #include <asio.hpp>
 #include <chrono>
