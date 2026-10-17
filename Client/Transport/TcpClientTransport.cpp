@@ -14,12 +14,14 @@
 #include <utility>
 
 namespace MoongTangE {
+
 class TcpClientTransport::ClientNetworkRuntime
 {
   public:
     ClientNetworkRuntime(const std::string& host, std::uint16_t port)
     {
         BeginConnection(host, port);
+
         m_networkThread = std::thread([this] {
             m_ioContext.run();
         });
@@ -64,7 +66,9 @@ class TcpClientTransport::ClientNetworkRuntime
         if (!input.Valid()) {
             return false;
         }
+
         auto data = wire::input(input);
+
         std::lock_guard lock(m_stateMutex);
         if (m_stopped || m_playerId == 0 || input.playerId != m_playerId ||
             m_queuedInputs >= MAX_QUEUED_INPUTS) {
@@ -78,6 +82,7 @@ class TcpClientTransport::ClientNetworkRuntime
                     std::lock_guard queueLock(m_stateMutex);
                     --m_queuedInputs;
                 }
+
                 if (m_channel) {
                     m_channel->Send(data);
                 }
@@ -97,9 +102,11 @@ class TcpClientTransport::ClientNetworkRuntime
             if (m_stopped) {
                 return;
             }
+
             m_stopped = true;
             m_playerId = 0;
         }
+
         asio::post(m_ioContext, [this] {
             Fail("Client closed");
             m_workGuard.reset();
@@ -121,6 +128,7 @@ class TcpClientTransport::ClientNetworkRuntime
                 Fail("Connect/handshake timeout");
             }
         });
+
         m_resolver.async_resolve(
             host, std::to_string(port),
             [this](asio::error_code error, asio::ip::tcp::resolver::results_type endpoints) {
@@ -131,6 +139,7 @@ class TcpClientTransport::ClientNetworkRuntime
                     Fail(error.message());
                     return;
                 }
+
                 ConnectSocket(endpoints);
             });
     }
@@ -146,6 +155,7 @@ class TcpClientTransport::ClientNetworkRuntime
                                     Fail(error.message());
                                     return;
                                 }
+
                                 StartHandshake();
                             });
     }
@@ -161,6 +171,7 @@ class TcpClientTransport::ClientNetworkRuntime
                 m_terminal = true;
                 RecordFailure(std::move(reason));
             });
+
         m_channel->Send(wire::client_hello());
     }
 
@@ -172,6 +183,7 @@ class TcpClientTransport::ClientNetworkRuntime
             m_handshakeTimer.cancel();
             return;
         }
+
         auto state = wire::read_snapshot(data);
         if (state.tick > m_lastReceivedTick) {
             m_lastReceivedTick = state.tick;
@@ -192,10 +204,13 @@ class TcpClientTransport::ClientNetworkRuntime
     {
         m_terminal = true;
         RecordFailure(std::move(reason));
+
         m_resolver.cancel();
         m_handshakeTimer.cancel();
+
         asio::error_code ignored;
         m_socket.close(ignored);
+
         if (m_channel) {
             m_channel->Close("Connection failed");
         }
@@ -204,6 +219,7 @@ class TcpClientTransport::ClientNetworkRuntime
     asio::io_context m_ioContext;
     asio::executor_work_guard<asio::io_context::executor_type> m_workGuard{
         m_ioContext.get_executor()};
+
     asio::ip::tcp::resolver m_resolver{m_ioContext};
     asio::ip::tcp::socket m_socket{m_ioContext};
     asio::steady_timer m_handshakeTimer{m_ioContext};
@@ -259,4 +275,5 @@ void TcpClientTransport::Close()
 {
     m_networkRuntime->Stop();
 }
+
 } // namespace MoongTangE

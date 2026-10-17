@@ -1,9 +1,11 @@
 #pragma once
+
 #include "Common/SimulationConfig.h"
 
 #include <chrono>
 
 namespace MoongTangE {
+
 class TickScheduler
 {
   public:
@@ -17,4 +19,5 @@ class TickScheduler
     static constexpr unsigned MAX_CATCH_UP_TICKS = 8;
     Clock::time_point m_nextTick;
 };
+
 } // namespace MoongTangE

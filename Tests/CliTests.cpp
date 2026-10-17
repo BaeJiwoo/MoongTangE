@@ -11,6 +11,7 @@ int main()
 {
     return MoongTangE::test::run([] {
         MOONGTANGE_CHECK(MoongTangE::command_line_arguments(0, nullptr).empty());
+
         MOONGTANGE_CHECK(MoongTangE::unsigned_option("27015", 65535) == 27015);
         MOONGTANGE_CHECK(MoongTangE::unsigned_option("0", 65535, true) == 0);
         for (auto bad : {"", "-1", "65536", "10x", "0", "1.5"}) {
@@ -18,6 +19,7 @@ int main()
                 MoongTangE::unsigned_option(bad, 65535);
             }));
         }
+
         MOONGTANGE_CHECK(MoongTangE::endpoint_option("localhost:27015").host == "localhost");
         MOONGTANGE_CHECK(MoongTangE::endpoint_option("[::1]:1234").host == "::1");
         for (auto bad : {"localhost", ":1234", "host:0", "[::1]:x", "::1:1234", "[]:1234",
@@ -26,6 +28,7 @@ int main()
                 MoongTangE::endpoint_option(bad);
             }));
         }
+
         using namespace std::string_view_literals;
         MOONGTANGE_CHECK(!MoongTangE::parse_client_options({}).remote);
         const auto remote = MoongTangE::parse_client_options(
@@ -41,6 +44,7 @@ int main()
                 MoongTangE::parse_client_options(arguments);
             }));
         }
+
         const auto server =
             MoongTangE::parse_server_options(std::array{"--port"sv, "0"sv, "--run-for"sv, "2"sv});
         MOONGTANGE_CHECK(server.m_port == 0 && server.m_runDuration.count() == 2 &&

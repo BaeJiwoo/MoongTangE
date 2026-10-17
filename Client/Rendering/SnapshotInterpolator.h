@@ -1,4 +1,5 @@
 #pragma once
+
 #include "Common/Protocol/WorldSnapshot.h"
 #include "Common/SimulationConfig.h"
 
@@ -6,6 +7,7 @@
 #include <cmath>
 
 namespace MoongTangE {
+
 // Presentation-only, approximately one snapshot interval behind; never predicts physics.
 class SnapshotInterpolator
 {
@@ -22,6 +24,7 @@ class SnapshotInterpolator
         if (m_initialized && next.tick <= m_target.tick) {
             return;
         }
+
         m_from = m_initialized ? Sample() : next;
         if (m_initialized) {
             const double tickInterval =
@@ -30,6 +33,7 @@ class SnapshotInterpolator
         } else {
             m_duration = DEFAULT_INTERVAL;
         }
+
         m_target = next;
         m_elapsed = 0;
         m_initialized = true;
@@ -39,6 +43,7 @@ class SnapshotInterpolator
     {
         WorldSnapshot result = m_target;
         const double fraction = std::clamp(m_elapsed / m_duration, 0.0, 1.0);
+
         for (auto& player : result.players) {
             const auto previous = std::find_if(m_from.players.begin(), m_from.players.end(),
                                                [&](const PlayerState& candidate) {
@@ -66,8 +71,10 @@ class SnapshotInterpolator
 
     WorldSnapshot m_from;
     WorldSnapshot m_target;
+
     double m_elapsed{};
     double m_duration{DEFAULT_INTERVAL};
     bool m_initialized{};
 };
+
 } // namespace MoongTangE

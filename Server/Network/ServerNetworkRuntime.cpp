@@ -7,6 +7,7 @@
 #include <utility>
 
 namespace MoongTangE {
+
 ServerNetworkRuntime::ServerNetworkRuntime(std::shared_ptr<ServerHost> host,
                                            const std::string& address, std::uint16_t port)
     : m_serverHost(std::move(host)), m_acceptor(m_ioContext), m_snapshotTimer(m_ioContext)
@@ -14,13 +15,16 @@ ServerNetworkRuntime::ServerNetworkRuntime(std::shared_ptr<ServerHost> host,
     if (!m_serverHost || !m_serverHost->Running()) {
         throw std::invalid_argument("ServerCore is not running");
     }
+
     const asio::ip::tcp::endpoint endpoint(asio::ip::make_address(address), port);
     m_acceptor.open(endpoint.protocol());
     m_acceptor.bind(endpoint);
     m_acceptor.listen();
     m_boundPort = m_acceptor.local_endpoint().port();
+
     AcceptNextConnection();
     ScheduleSnapshotBroadcast();
+
     m_networkThread = std::thread([this] {
         m_ioContext.run();
     });
@@ -47,6 +51,7 @@ void ServerNetworkRuntime::CloseAllSessions()
     asio::error_code ignored;
     m_acceptor.close(ignored);
     m_snapshotTimer.cancel();
+
     // Closing invokes removal callbacks; iterate a snapshot, not the modified map.
     const auto sessions = m_sessions;
     for (const auto& [channel, playerId] : sessions) {
@@ -64,6 +69,7 @@ void ServerNetworkRuntime::AcceptNextConnection()
         if (!error && m_sessions.size() < MAX_CONNECTIONS) {
             AddSession(std::move(socket));
         }
+
         if (m_acceptor.is_open()) {
             AcceptNextConnection();
         }
@@ -74,6 +80,7 @@ void ServerNetworkRuntime::AddSession(asio::ip::tcp::socket socket)
 {
     auto channel = std::make_shared<TcpChannel>(std::move(socket));
     m_sessions.emplace(channel, 0);
+
     // Weak callbacks avoid a channel -> callback -> channel ownership cycle.
     const std::weak_ptr<TcpChannel> weakChannel = channel;
     channel->Start(
@@ -122,8 +129,10 @@ void ServerNetworkRuntime::BroadcastLatestSnapshot()
     if (state.tick == 0 || state.tick == m_lastPublishedTick) {
         return;
     }
+
     m_lastPublishedTick = state.tick;
     const auto bytes = wire::snapshot(state);
+
     // Send() can disconnect a slow peer and remove it from m_sessions.
     const auto sessions = m_sessions;
     for (const auto& [channel, playerId] : sessions) {
@@ -140,8 +149,10 @@ void ServerNetworkRuntime::ScheduleSnapshotBroadcast()
         if (error || m_stopping) {
             return;
         }
+
         BroadcastLatestSnapshot();
         ScheduleSnapshotBroadcast();
     });
 }
+
 } // namespace MoongTangE

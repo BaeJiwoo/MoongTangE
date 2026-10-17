@@ -1,4 +1,5 @@
 #pragma once
+
 #include "Common/Math/Vector3.h"
 
 #include <algorithm>
@@ -6,6 +7,7 @@
 #include <stdexcept>
 
 namespace MoongTangE {
+
 // Raw quaternion value. Rotation consumers validate unit length at their boundary.
 struct Quaternion
 {
@@ -39,6 +41,7 @@ struct Quaternion
         if (!Finite() || !std::isfinite(magnitude) || magnitude < MIN_NORM) {
             throw std::invalid_argument("Invalid quaternion");
         }
+
         return {w / magnitude, x / magnitude, y / magnitude, z / magnitude};
     }
 
@@ -64,9 +67,11 @@ struct Quaternion
         if (!rotation.Finite() || !std::isfinite(angle)) {
             throw std::invalid_argument("Invalid rotation");
         }
+
         if (angle < SMALL_ANGLE) {
             return Quaternion{1, rotation.x * 0.5, rotation.y * 0.5, rotation.z * 0.5}.Normalized();
         }
+
         const auto scaledAxis = rotation * (std::sin(angle * 0.5) / angle);
         return {std::cos(angle * 0.5), scaledAxis.x, scaledAxis.y, scaledAxis.z};
     }
@@ -89,8 +94,10 @@ inline Quaternion interpolate(Quaternion from, Quaternion to, double fraction)
         fromWeight = std::sin((1 - fraction) * angle) / std::sin(angle);
         toWeight = std::sin(fraction * angle) / std::sin(angle);
     }
+
     return Quaternion{fromWeight * from.w + toWeight * to.w, fromWeight * from.x + toWeight * to.x,
                       fromWeight * from.y + toWeight * to.y, fromWeight * from.z + toWeight * to.z}
         .Normalized();
 }
+
 } // namespace MoongTangE

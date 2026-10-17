@@ -5,6 +5,7 @@
 #include <utility>
 
 namespace MoongTangE {
+
 TcpChannel::TcpChannel(Socket socket)
     : m_socket(std::move(socket)), m_readDeadline(m_socket.get_executor())
 {
@@ -15,9 +16,11 @@ void TcpChannel::Start(MessageHandler onMessage, CloseHandler onClose)
     if (m_started || m_closed || weak_from_this().expired() || !onMessage || !onClose) {
         throw std::logic_error("A channel starts once with both handlers installed");
     }
+
     m_onMessage = std::move(onMessage);
     m_onClose = std::move(onClose);
     m_started = true;
+
     asio::error_code error;
     m_socket.set_option(asio::ip::tcp::no_delay(true), error);
     ReadFrameHeader();
@@ -32,6 +35,7 @@ void TcpChannel::Send(const wire::Bytes& payload)
         Close("Slow peer: send queue full");
         return;
     }
+
     auto bytes = std::make_shared<wire::Bytes>(wire::frame(payload));
     const bool idle = m_outboundFrames.empty();
     m_outboundFrames.push_back(std::move(bytes));
@@ -45,6 +49,7 @@ void TcpChannel::Close(std::string reason)
     if (m_closed) {
         return;
     }
+
     m_closed = true;
     asio::error_code ignored;
     m_readDeadline.cancel();
@@ -52,6 +57,7 @@ void TcpChannel::Close(std::string reason)
     m_socket.shutdown(Socket::shutdown_both, ignored);
     m_socket.close(ignored);
     m_outboundFrames.clear();
+
     if (m_onClose) {
         m_onClose(std::move(reason));
     }
@@ -69,12 +75,14 @@ void TcpChannel::ReadFrameHeader()
             self->Close("Read timeout");
         }
     });
+
     asio::async_read(m_socket, asio::buffer(m_frameHeader),
                      [self](asio::error_code error, std::size_t) {
                          if (error) {
                              self->Close(error.message());
                              return;
                          }
+
                          try {
                              self->m_frameBody.resize(wire::frame_size(self->m_frameHeader));
                              self->ReadFrameBody();
@@ -93,6 +101,7 @@ void TcpChannel::ReadFrameBody()
                              self->Close(error.message());
                              return;
                          }
+
                          try {
                              if (!self->m_closed) {
                                  self->m_onMessage(self->m_frameBody);
@@ -100,6 +109,7 @@ void TcpChannel::ReadFrameBody()
                          } catch (const std::exception& failure) {
                              self->Close(failure.what());
                          }
+
                          self->ReadFrameHeader();
                      });
 }
@@ -118,10 +128,12 @@ void TcpChannel::WriteNextFrame()
                           if (self->m_closed) {
                               return;
                           }
+
                           self->m_outboundFrames.pop_front();
                           if (!self->m_outboundFrames.empty()) {
                               self->WriteNextFrame();
                           }
                       });
 }
+
 } // namespace MoongTangE

@@ -1,4 +1,5 @@
 #pragma once
+
 #include "Common/Game/PlayerController.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "Common/Protocol/InputCommand.h"
@@ -9,6 +10,7 @@
 #include <map>
 
 namespace MoongTangE {
+
 // Only the server tick thread owns and mutates a GameWorld.
 class GameWorld
 {
@@ -18,6 +20,7 @@ class GameWorld
         if (id == 0 || m_players.size() >= MAX_PLAYERS || m_players.contains(id)) {
             return false;
         }
+
         Player player;
         player.body.position.x = simulation::spawn_x(id);
         m_players.emplace(id, player);
@@ -36,6 +39,7 @@ class GameWorld
             input.sequence <= player->second.input.sequence) {
             return false;
         }
+
         player->second.input = input;
         player->second.inputTick = m_tick;
         return true;
@@ -50,6 +54,7 @@ class GameWorld
                 inputFresh ? movement_force(player.input.x, player.input.z) : Vector3{};
             m_physics.Step(player.body, PhysicsWorld::FIXED_DELTA, force);
         }
+
         ++m_tick;
     }
 
@@ -57,6 +62,7 @@ class GameWorld
     {
         WorldSnapshot result{m_tick, {}};
         result.players.reserve(m_players.size());
+
         for (const auto& [id, player] : m_players) {
             const auto& body = player.body;
             result.players.push_back(
@@ -69,6 +75,7 @@ class GameWorld
     struct Player
     {
         RigidBody body;
+
         InputCommand input;
         std::uint64_t inputTick{};
     };
@@ -77,4 +84,5 @@ class GameWorld
     PhysicsWorld m_physics;
     std::uint64_t m_tick{};
 };
+
 } // namespace MoongTangE

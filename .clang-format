@@ -29,4 +29,8 @@ SortIncludes: CaseSensitive
 IncludeBlocks: Regroup
 NamespaceIndentation: None
 FixNamespaceComments: true
+WrapNamespaceBodyWithEmptyLines: Always
+MaxEmptyLinesToKeep: 1
+KeepEmptyLines:
+  AtStartOfBlock: false
 SeparateDefinitionBlocks: Always

@@ -1,4 +1,5 @@
 #pragma once
+
 #include "Common/Utility/CommandLine.h"
 
 #include <optional>
@@ -8,6 +9,7 @@
 #include <string_view>
 
 namespace MoongTangE {
+
 struct ClientOptions
 {
     bool smoke{};
@@ -20,12 +22,14 @@ inline ClientOptions parse_client_options(std::span<const std::string_view> argu
     ClientOptions options;
     bool singleRequested = false;
     OptionReader reader(arguments);
+
     while (!reader.Empty()) {
         const auto argument = reader.Next();
         if (argument == "--help") {
             options.showHelp = true;
             return options;
         }
+
         if (argument == "--single") {
             singleRequested = true;
         } else if (argument == "--smoke") {
@@ -36,9 +40,12 @@ inline ClientOptions parse_client_options(std::span<const std::string_view> argu
             throw std::invalid_argument("Unknown option: " + std::string(argument));
         }
     }
+
     if (singleRequested && options.remote) {
         throw std::invalid_argument("Choose --single or --connect");
     }
+
     return options;
 }
+
 } // namespace MoongTangE

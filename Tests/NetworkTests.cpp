@@ -11,12 +11,14 @@
 #include <vector>
 
 namespace {
+
 using namespace MoongTangE;
 
 MoongTangE::wire::Bytes read_frame(asio::ip::tcp::socket& socket)
 {
     std::array<std::uint8_t, wire::FRAME_HEADER_BYTES> header{};
     asio::read(socket, asio::buffer(header));
+
     MoongTangE::wire::Bytes data(MoongTangE::wire::frame_size(header));
     asio::read(socket, asio::buffer(data));
     return data;
@@ -43,10 +45,12 @@ void channel_starts_once_and_closes_once()
         auto onClose = [&](std::string) {
             ++closeCalls;
         };
+
         channel->Start(onMessage, onClose);
         MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
             channel->Start(onMessage, onClose);
         }));
+
         channel->Close();
         channel->Close();
         channelIo.run();
@@ -60,20 +64,24 @@ void consumed_snapshots_cannot_rewind()
     asio::ip::tcp::acceptor listener(io, {asio::ip::make_address("127.0.0.1"), 0});
     TcpClientTransport client("127.0.0.1", listener.local_endpoint().port());
     auto peer = listener.accept();
+
     wire::read_client_hello(read_frame(peer));
     auto send = [&](const wire::Bytes& payload) {
         const auto bytes = wire::frame(payload);
         asio::write(peer, asio::buffer(bytes));
     };
+
     send(wire::server_hello(1));
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         return client.Connected();
     }));
+
     send(wire::snapshot({42, {{1, {}, {}}}}));
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         const auto state = client.Receive();
         return state && state->tick == 42;
     }));
+
     send(wire::snapshot({41, {{1, {}, {}}}}));
     // TCP ordering makes this terminal message a barrier after the stale snapshot.
     send(wire::Bytes{255});
@@ -89,6 +97,7 @@ void clients_receive_authoritative_rolling(const AsioServer& server, ServerHost&
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         return first.Connected() && second.Connected();
     }));
+
     const auto firstId = first.PlayerId();
     MOONGTANGE_CHECK(firstId && firstId != second.PlayerId());
     MOONGTANGE_CHECK(!first.Send({second.PlayerId(), 1, 1, 0}));
@@ -108,6 +117,7 @@ void clients_receive_authoritative_rolling(const AsioServer& server, ServerHost&
         }
         return false;
     }));
+
     first.Close();
     first.Close();
     second.Close();
@@ -123,16 +133,19 @@ void fragmented_frames_and_disconnect(const AsioServer& server)
     {
         asio::ip::tcp::socket raw(io);
         raw.connect(endpoint);
+
         const auto greeting = wire::frame(wire::client_hello());
         for (const auto byte : greeting) {
             asio::write(raw, asio::buffer(&byte, 1));
         }
         const auto id = wire::read_server_hello(read_frame(raw));
         MOONGTANGE_CHECK(id);
+
         const auto command = wire::frame(wire::input({id, 1, 1, 0}));
         for (const auto byte : command) {
             asio::write(raw, asio::buffer(&byte, 1));
         }
+
         bool moved = false;
         for (int i = 0; i < 40 && !moved; ++i) {
             const auto state = wire::read_snapshot(read_frame(raw));
@@ -143,6 +156,7 @@ void fragmented_frames_and_disconnect(const AsioServer& server)
             }
         }
         MOONGTANGE_CHECK(moved);
+
         const auto goodbye = wire::frame(wire::disconnect());
         asio::write(raw, asio::buffer(goodbye));
         MOONGTANGE_CHECK(closed(raw));
@@ -171,9 +185,11 @@ void connection_failure_and_early_close(const AsioServer& server)
         TcpClientTransport abandoned("127.0.0.1", server.Port());
         abandoned.Close();
     }
+
     asio::ip::tcp::acceptor reserve(io, {asio::ip::make_address("127.0.0.1"), 0});
     const auto unused = reserve.local_endpoint().port();
     reserve.close();
+
     TcpClientTransport refused("127.0.0.1", unused);
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         return !refused.Error().empty();
@@ -190,6 +206,7 @@ void shutdown_with_active_clients(const std::shared_ptr<ServerHost>& core)
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
             return first.Connected() && second.Connected();
         }));
+
         shutting.reset();
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
             return !first.Connected() && !second.Connected();
@@ -204,9 +221,11 @@ int main()
     return MoongTangE::test::run([] {
         channel_starts_once_and_closes_once();
         consumed_snapshots_cannot_rewind();
+
         auto core = std::make_shared<MoongTangE::ServerHost>();
         core->Start();
         MoongTangE::AsioServer server(core, "127.0.0.1", 0);
+
         clients_receive_authoritative_rolling(server, *core);
         fragmented_frames_and_disconnect(server);
         malformed_frames_are_rejected(server);

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <charconv>
 #include <cstdint>
 #include <span>
@@ -9,11 +10,13 @@
 #include <vector>
 
 namespace MoongTangE {
+
 inline unsigned unsigned_option(std::string_view text, unsigned maximum, bool allowZero = false)
 {
     if (text.empty()) {
         throw std::invalid_argument("Empty numeric option");
     }
+
     unsigned value{};
     const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
     if (error != std::errc{} || end != text.data() + text.size() || value > maximum ||
@@ -35,6 +38,7 @@ inline Endpoint endpoint_option(std::string_view text)
     if (separator == std::string_view::npos || separator == 0) {
         throw std::invalid_argument("Expected host:port or [IPv6]:port");
     }
+
     std::string host(text.substr(0, separator));
     const bool bracketed = host.front() == '[' && host.back() == ']';
     if (bracketed) {
@@ -42,9 +46,11 @@ inline Endpoint endpoint_option(std::string_view text)
     } else if (host.find(':') != std::string::npos) {
         throw std::invalid_argument("Enclose IPv6 addresses in brackets");
     }
+
     if (host.empty() || host.find_first_of("[]") != std::string::npos) {
         throw std::invalid_argument("Invalid or empty host");
     }
+
     constexpr unsigned MAX_PORT = 65535;
     return {host,
             static_cast<std::uint16_t>(unsigned_option(text.substr(separator + 1), MAX_PORT))};
@@ -56,6 +62,7 @@ inline std::vector<std::string_view> command_line_arguments(int argc, char** arg
     if (argc <= 1) {
         return result;
     }
+
     const std::span arguments(argv, static_cast<std::size_t>(argc));
     for (const auto argument : arguments.subspan(1)) {
         result.emplace_back(argument);
@@ -79,6 +86,7 @@ class OptionReader
         if (Empty()) {
             throw std::invalid_argument("Missing command-line argument");
         }
+
         return m_arguments[m_position++];
     }
 
@@ -87,6 +95,7 @@ class OptionReader
         if (Empty()) {
             throw std::invalid_argument("Missing value for " + std::string(option));
         }
+
         return Next();
     }
 
@@ -94,4 +103,5 @@ class OptionReader
     std::span<const std::string_view> m_arguments;
     std::size_t m_position{};
 };
+
 } // namespace MoongTangE

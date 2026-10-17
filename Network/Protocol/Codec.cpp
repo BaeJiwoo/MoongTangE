@@ -8,10 +8,12 @@
 
 namespace MoongTangE::wire {
 namespace {
+
 template <class Message> Bytes encode(MessageType kind, const Message& message)
 {
     const auto size = message.ByteSizeLong();
     require(size < MAX_FRAME_BYTES);
+
     Bytes data(size + 1);
     data.front() = static_cast<std::uint8_t>(kind);
     require(message.SerializeToArray(data.data() + 1, static_cast<int>(size)));
@@ -21,10 +23,12 @@ template <class Message> Bytes encode(MessageType kind, const Message& message)
 template <class Message> Message decode(std::span<const std::uint8_t> data, MessageType expected)
 {
     require(data.size() <= MAX_FRAME_BYTES && type(data) == expected);
+
     const auto payload = data.subspan(1);
     google::protobuf::io::CodedInputStream stream(payload.data(), static_cast<int>(payload.size()));
     stream.SetTotalBytesLimit(static_cast<int>(MAX_FRAME_BYTES));
     stream.SetRecursionLimit(16);
+
     Message message;
     require(message.ParseFromCodedStream(&stream) && stream.ConsumedEntireMessage());
     return message;
@@ -62,6 +66,7 @@ Quaternion read_quaternion(const proto::Quaternion& message)
     require(value.Unit());
     return value;
 }
+
 } // namespace
 
 void require(bool condition)
@@ -110,6 +115,7 @@ std::uint32_t read_server_hello(std::span<const std::uint8_t> data)
 Bytes input(InputCommand command)
 {
     require(command.Valid());
+
     proto::InputCommand message;
     message.set_sequence(command.sequence);
     message.set_x(command.x);
@@ -129,11 +135,14 @@ InputCommand read_input(std::span<const std::uint8_t> data, std::uint32_t sessio
 Bytes snapshot(const WorldSnapshot& state)
 {
     require(state.players.size() <= MAX_PLAYERS);
+
     proto::WorldSnapshot message;
     message.set_server_tick(state.tick);
+
     std::set<std::uint32_t> ids;
     for (const auto& player : state.players) {
         require(player.id != 0 && ids.insert(player.id).second);
+
         auto& record = *message.add_players();
         record.set_id(player.id);
         write_vector(*record.mutable_position(), player.position);
@@ -148,13 +157,16 @@ WorldSnapshot read_snapshot(std::span<const std::uint8_t> data)
 {
     const auto message = decode<proto::WorldSnapshot>(data, MessageType::SNAPSHOT);
     require(message.has_server_tick() && message.players_size() <= static_cast<int>(MAX_PLAYERS));
+
     WorldSnapshot state{message.server_tick(), {}};
     state.players.reserve(static_cast<std::size_t>(message.players_size()));
+
     std::set<std::uint32_t> ids;
     for (const auto& record : message.players()) {
         require(record.id() != 0 && ids.insert(record.id()).second);
         require(record.has_position() && record.has_velocity() && record.has_orientation() &&
                 record.has_angular_velocity());
+
         state.players.push_back(
             {record.id(), read_vector(record.position()), read_vector(record.velocity()),
              read_quaternion(record.orientation()), read_vector(record.angular_velocity())});
@@ -172,6 +184,7 @@ bool is_disconnect(std::span<const std::uint8_t> data)
     if (type(data) != MessageType::DISCONNECT) {
         return false;
     }
+
     (void)decode<proto::Disconnect>(data, MessageType::DISCONNECT);
     return true;
 }
@@ -179,12 +192,14 @@ bool is_disconnect(std::span<const std::uint8_t> data)
 Bytes frame(std::span<const std::uint8_t> payload)
 {
     require(!payload.empty() && payload.size() <= MAX_FRAME_BYTES);
+
     const auto size = static_cast<std::uint32_t>(payload.size());
     Bytes data;
     data.reserve(FRAME_HEADER_BYTES + size);
     for (unsigned remaining = FRAME_HEADER_BYTES; remaining > 0; --remaining) {
         data.push_back(static_cast<std::uint8_t>(size >> ((remaining - 1) * 8)));
     }
+
     data.insert(data.end(), payload.begin(), payload.end());
     return data;
 }
@@ -192,11 +207,14 @@ Bytes frame(std::span<const std::uint8_t> payload)
 std::uint32_t frame_size(std::span<const std::uint8_t> header)
 {
     require(header.size() == FRAME_HEADER_BYTES);
+
     std::uint32_t size = 0;
     for (const auto byte : header) {
         size = (size << 8) | byte;
     }
+
     require(size > 0 && size <= MAX_FRAME_BYTES);
     return size;
 }
+
 } // namespace MoongTangE::wire

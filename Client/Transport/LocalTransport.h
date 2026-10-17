@@ -1,4 +1,5 @@
 #pragma once
+
 #include "Common/Transport/IClientTransport.h"
 #include "Server/Core/ServerHost.h"
 
@@ -10,6 +11,7 @@
 #include <utility>
 
 namespace MoongTangE {
+
 class LocalTransport final : public IClientTransport
 {
   public:
@@ -18,6 +20,7 @@ class LocalTransport final : public IClientTransport
         if (!m_serverHost) {
             throw std::invalid_argument("Local transport requires a server");
         }
+
         m_playerId = m_serverHost->Connect();
         if (m_playerId == 0) {
             throw std::runtime_error("Local server unavailable or full");
@@ -54,10 +57,12 @@ class LocalTransport final : public IClientTransport
         if (!Connected()) {
             return {};
         }
+
         auto state = m_serverHost->Snapshot();
         if (!state.tick || state.tick == m_lastReceivedTick) {
             return {};
         }
+
         m_lastReceivedTick = state.tick;
         return state;
     }
@@ -80,4 +85,5 @@ class LocalTransport final : public IClientTransport
     std::uint32_t m_playerId{};
     std::uint64_t m_lastReceivedTick{};
 };
+
 } // namespace MoongTangE

@@ -1,9 +1,11 @@
 #pragma once
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
 namespace MoongTangE {
+
 struct Vector3
 {
     double x{}, y{}, z{};
@@ -40,10 +42,12 @@ struct Vector3
         if (!Finite()) {
             throw std::invalid_argument("Cannot normalize a non-finite vector");
         }
+
         const double scale = std::max({std::abs(x), std::abs(y), std::abs(z)});
         if (scale == 0) {
             return {};
         }
+
         const Vector3 v{x / scale, y / scale, z / scale};
         return v * (1.0 / v.Length());
     }
@@ -63,4 +67,5 @@ inline constexpr Vector3 cross(Vector3 a, Vector3 b)
 {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
+
 } // namespace MoongTangE

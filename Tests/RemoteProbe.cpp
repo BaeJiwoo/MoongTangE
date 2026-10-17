@@ -12,6 +12,7 @@ int main(int argc, char** argv)
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
             return client.Connected();
         }));
+
         const auto id = client.PlayerId();
         MOONGTANGE_CHECK(client.Send({id, 1, 1, 0}));
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
@@ -25,6 +26,7 @@ int main(int argc, char** argv)
             }
             return false;
         }));
+
         client.Close();
     });
 }

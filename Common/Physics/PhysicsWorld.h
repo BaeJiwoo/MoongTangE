@@ -1,4 +1,5 @@
 #pragma once
+
 #include "Common/Physics/Collision/SpherePlane.h"
 #include "Common/SimulationConfig.h"
 
@@ -7,6 +8,7 @@
 #include <stdexcept>
 
 namespace MoongTangE {
+
 struct PhysicsMaterial
 {
     double friction{0.8};
@@ -33,6 +35,7 @@ class PhysicsWorld
     void Step(RigidBody& body, double dt = FIXED_DELTA, Vector3 groundForce = {}) const
     {
         ValidateStep(body, dt, groundForce);
+
         groundForce.y = 0;
         ApplyForces(body, dt, groundForce);
         body.position.y += body.velocity.y * dt;
@@ -43,6 +46,7 @@ class PhysicsWorld
 
         body.position.x += body.velocity.x * dt;
         body.position.z += body.velocity.z * dt;
+
         const auto rotation = Quaternion::FromRotation(body.angularVelocity * dt);
         body.orientation = (rotation * body.orientation).Normalized();
     }
@@ -70,6 +74,7 @@ class PhysicsWorld
         if (grounded) {
             body.velocity = body.velocity + groundForce * (dt / body.mass);
         }
+
         body.velocity = body.velocity + Vector3{0, -simulation::GRAVITY, 0} * dt;
     }
 
@@ -87,6 +92,7 @@ class PhysicsWorld
         if (speed == 0) {
             return;
         }
+
         // Bound the contact torque so resistance alone cannot reverse the spin.
         const double change = m_material.rollingResistance * body.mass * simulation::GRAVITY *
                               body.radius * dt / body.Inertia();
@@ -98,6 +104,7 @@ class PhysicsWorld
         const Vector3 contactArm{0, -body.radius, 0};
         const Vector3 slip =
             Vector3{body.velocity.x, 0, body.velocity.z} + cross(body.angularVelocity, contactArm);
+
         // Solid-sphere I = 2/5 mr^2: one contact impulse changes translation and rotation.
         const double inverseEffectiveMass =
             1.0 / body.mass + body.radius * body.radius / body.Inertia();
@@ -107,6 +114,7 @@ class PhysicsWorld
         if (magnitude > limit) {
             impulse = impulse * (limit / magnitude);
         }
+
         body.velocity = body.velocity + impulse * (1.0 / body.mass);
         body.angularVelocity =
             body.angularVelocity + cross(contactArm, impulse) * (1.0 / body.Inertia());
@@ -133,9 +141,11 @@ class PhysicsWorld
         ApplyGroundDrag(body, dt);
         ApplyRollingResistance(body, dt);
         ApplyContactFriction(body, normalImpulse);
+
         SleepIfResting(body, groundForce);
     }
 
     PhysicsMaterial m_material;
 };
+
 } // namespace MoongTangE

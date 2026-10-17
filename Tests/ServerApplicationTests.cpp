@@ -10,6 +10,7 @@
 #include <thread>
 
 namespace {
+
 using namespace std::chrono_literals;
 
 // A failing assertion also stops and joins the application before it is destroyed.
@@ -52,6 +53,7 @@ void requested_stop_disconnects_clients()
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         return application.Port() != 0;
     }));
+
     MoongTangE::TcpClientTransport client("127.0.0.1", application.Port());
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         return client.Connected();
@@ -59,6 +61,7 @@ void requested_stop_disconnects_clients()
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         return client.Receive().has_value();
     }));
+
     application.RequestStop();
     application.RequestStop();
     running.Finish();
@@ -89,6 +92,7 @@ void startup_failure_and_prior_cancellation()
         unavailable.Run();
     }));
     MOONGTANGE_CHECK(unavailable.Port() == 0);
+
     MoongTangE::ServerApplication cancelled({.m_port = reserved.local_endpoint().port()});
     cancelled.RequestStop();
     cancelled.Run();
@@ -97,6 +101,7 @@ void startup_failure_and_prior_cancellation()
         MoongTangE::ServerApplication invalid({.m_runDuration = -1s});
     }));
 }
+
 } // namespace
 
 int main()

@@ -1,4 +1,5 @@
 #pragma once
+
 #include <chrono>
 #include <cmath>
 #include <exception>
@@ -9,6 +10,7 @@
 #include <thread>
 
 namespace MoongTangE::test {
+
 inline void check(bool ok, const char* expression,
                   std::source_location location = std::source_location::current())
 {
@@ -57,6 +59,7 @@ bool wait_for(F predicate, std::chrono::milliseconds timeout = std::chrono::seco
     }
     return predicate();
 }
+
 } // namespace MoongTangE::test
 
 #define MOONGTANGE_CHECK(...) ::MoongTangE::test::check((__VA_ARGS__), #__VA_ARGS__)

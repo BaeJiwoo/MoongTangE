@@ -1,4 +1,5 @@
 #pragma once
+
 #include "Common/Math/Vector3.h"
 #include "Common/Protocol/WorldSnapshot.h"
 
@@ -7,10 +8,12 @@
 #include <vector>
 
 namespace MoongTangE {
+
 class SceneRenderer
 {
   public:
     SceneRenderer();
+
     void Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
               const char* status) const;
 
@@ -22,8 +25,10 @@ class SceneRenderer
     };
 
     static std::vector<BallTriangle> MakeBallGeometry();
+
     void DrawBall(const PlayerState& player, bool own) const;
 
     std::vector<BallTriangle> m_ballGeometry;
 };
+
 } // namespace MoongTangE

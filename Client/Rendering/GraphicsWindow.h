@@ -1,8 +1,10 @@
 #pragma once
+
 #include <raylib.h>
 #include <stdexcept>
 
 namespace MoongTangE {
+
 // A single window owns the graphics context. Destruction closes it on every exit path.
 class GraphicsWindow
 {
@@ -14,6 +16,7 @@ class GraphicsWindow
         if (!IsWindowReady()) {
             throw std::runtime_error("Graphics window initialization failed");
         }
+
         SetTargetFPS(60);
     }
 
@@ -60,4 +63,5 @@ class GraphicsWindow
         Image m_image;
     };
 };
+
 } // namespace MoongTangE

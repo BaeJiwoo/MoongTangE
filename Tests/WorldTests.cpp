@@ -12,16 +12,19 @@ int main()
         MOONGTANGE_CHECK(world.AddPlayer(2));
         MOONGTANGE_CHECK(!world.AddPlayer(1));
         MOONGTANGE_CHECK(!world.AddPlayer(0));
+
         MOONGTANGE_CHECK(world.Apply({1, 1, 1, 1}));
         MOONGTANGE_CHECK(!world.Apply({1, 1, -1, -1}));
         MOONGTANGE_CHECK(!world.Apply({3, 1, 1, 0}));
         MOONGTANGE_CHECK(!world.Apply({1, 2, 2, 0}));
         MOONGTANGE_CHECK(!world.Apply({1, 2, std::numeric_limits<double>::infinity(), 0}));
+
         for (int i = 0; i < 20; ++i) {
             world.Step();
         }
         MOONGTANGE_CHECK(world.Snapshot().players[0].position.x ==
                          0); // No steering before ground contact.
+
         for (int i = 20; i < 60; ++i) {
             world.Step();
         }
@@ -30,6 +33,7 @@ int main()
         MOONGTANGE_CHECK(s.players[0].position.x > 0 && s.players[0].velocity.x > 0);
         MOONGTANGE_CHECK(
             MoongTangE::test::approx(s.players[0].velocity.x, s.players[0].velocity.z));
+
         MoongTangE::GameWorld straight;
         MOONGTANGE_CHECK(straight.AddPlayer(1));
         MOONGTANGE_CHECK(straight.Apply({1, 1, 1, 0}));
@@ -43,6 +47,7 @@ int main()
         MOONGTANGE_CHECK(s.players[0].orientation != MoongTangE::Quaternion{});
         MOONGTANGE_CHECK(s.players[1].position.x == 1.5);
         MOONGTANGE_CHECK(s.players[0].position.y == 0.5);
+
         for (int i = 60; i < 120; ++i) {
             world.Step();
         }
@@ -51,15 +56,19 @@ int main()
         MOONGTANGE_CHECK(world.Snapshot().players[0].velocity.Length() > 0);
         MOONGTANGE_CHECK(world.Snapshot().players[0].velocity.Length() <
                          speed); // Expiry stops force, not motion.
+
         for (int i = 0; i < 600; ++i) {
             world.Step();
         }
         MOONGTANGE_CHECK(world.Snapshot().players[0].velocity.x == 0);
+
         MOONGTANGE_CHECK(world.Apply({1, 2, 0, 0}));
         world.Step();
         MOONGTANGE_CHECK(world.Snapshot().players[0].velocity == MoongTangE::Vector3{});
+
         world.RemovePlayer(2);
         MOONGTANGE_CHECK(world.Snapshot().players.size() == 1);
+
         for (std::uint32_t id = 2; id <= 32; ++id) {
             MOONGTANGE_CHECK(world.AddPlayer(id));
         }

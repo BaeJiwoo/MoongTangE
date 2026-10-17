@@ -1,7 +1,9 @@
 #pragma once
+
 #include "Common/Physics/RigidBody.h"
 
 namespace MoongTangE {
+
 inline void resolve_ground(RigidBody& body)
 {
     if (body.position.y <= body.radius) {
@@ -11,4 +13,5 @@ inline void resolve_ground(RigidBody& body)
         }
     }
 }
+
 } // namespace MoongTangE

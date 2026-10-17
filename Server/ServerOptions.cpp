@@ -6,16 +6,19 @@
 #include <string>
 
 namespace MoongTangE {
+
 ServerOptions parse_server_options(std::span<const std::string_view> arguments)
 {
     ServerOptions options;
     OptionReader reader(arguments);
+
     while (!reader.Empty()) {
         const auto argument = reader.Next();
         if (argument == "--help") {
             options.m_showHelp = true;
             return options;
         }
+
         if (argument == "--public") {
             options.m_publicBind = true;
         } else if (argument == "--port") {
@@ -30,6 +33,8 @@ ServerOptions parse_server_options(std::span<const std::string_view> arguments)
             throw std::invalid_argument("Unknown option: " + std::string(argument));
         }
     }
+
     return options;
 }
+
 } // namespace MoongTangE

@@ -1,4 +1,5 @@
 #pragma once
+
 #include "Network/Protocol/Codec.h"
 
 #include <array>
@@ -12,6 +13,7 @@
 #include <string>
 
 namespace MoongTangE {
+
 // All operations/callbacks run on one io_context thread. Async work retains shared ownership.
 class TcpChannel : public std::enable_shared_from_this<TcpChannel>
 {
@@ -21,6 +23,7 @@ class TcpChannel : public std::enable_shared_from_this<TcpChannel>
     using CloseHandler = std::function<void(std::string)>;
 
     explicit TcpChannel(Socket socket);
+
     void Start(MessageHandler onMessage, CloseHandler onClose);
     void Send(const wire::Bytes& payload);
     void Close(std::string reason = "Connection closed");
@@ -28,18 +31,25 @@ class TcpChannel : public std::enable_shared_from_this<TcpChannel>
   private:
     static constexpr std::size_t MAX_QUEUED_FRAMES = 32;
     static constexpr auto READ_TIMEOUT = std::chrono::seconds(10);
+
     void ReadFrameHeader();
     void ReadFrameBody();
+
     void WriteNextFrame();
 
     Socket m_socket;
     asio::steady_timer m_readDeadline;
+
     std::array<std::uint8_t, wire::FRAME_HEADER_BYTES> m_frameHeader{};
     wire::Bytes m_frameBody;
+
     std::deque<std::shared_ptr<wire::Bytes>> m_outboundFrames;
+
     MessageHandler m_onMessage;
     CloseHandler m_onClose;
+
     bool m_started{};
     bool m_closed{};
 };
+
 } // namespace MoongTangE

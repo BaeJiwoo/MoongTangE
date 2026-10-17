@@ -13,10 +13,12 @@ int main()
         MOONGTANGE_CHECK(MoongTangE::test::throws([] {
             MoongTangE::LocalTransport invalid(std::make_shared<MoongTangE::ServerHost>());
         }));
+
         auto server = std::make_shared<MoongTangE::ServerHost>();
         server->Start();
         MoongTangE::LocalTransport a(server), b(server);
         MOONGTANGE_CHECK(a.Connected() && b.Connected() && a.PlayerId() != b.PlayerId());
+
         MOONGTANGE_CHECK(!a.Send({b.PlayerId(), 1, 1, 0}));
         MOONGTANGE_CHECK(a.Send({a.PlayerId(), 1, 1, 0}));
         std::optional<MoongTangE::WorldSnapshot> state;
@@ -28,14 +30,17 @@ int main()
                                                   -state->players[0].velocity.x / 0.5));
         MOONGTANGE_CHECK(state->players[0].orientation != MoongTangE::Quaternion{});
         MOONGTANGE_CHECK(state->players[1].velocity.x == 0);
+
         a.Close();
         a.Close();
         MOONGTANGE_CHECK(!a.Connected());
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
             return server->Snapshot().players.size() == 1;
         }));
+
         server->Stop();
         MOONGTANGE_CHECK(!b.Connected());
+
         server->Start();
         MOONGTANGE_CHECK(!b.Connected());
     });

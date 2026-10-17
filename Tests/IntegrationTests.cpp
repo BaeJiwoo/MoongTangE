@@ -9,11 +9,13 @@
 #include <memory>
 
 namespace {
+
 MoongTangE::PlayerState exercise(MoongTangE::IClientTransport& client)
 {
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         return client.Connected();
     }));
+
     MoongTangE::PlayerState result;
     const auto id = client.PlayerId();
     auto settled = [&] {
@@ -28,6 +30,7 @@ MoongTangE::PlayerState exercise(MoongTangE::IClientTransport& client)
         return false;
     };
     MOONGTANGE_CHECK(MoongTangE::test::wait_for(settled));
+
     MOONGTANGE_CHECK(client.Send({id, 1, 1, -1}));
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         if (auto state = client.Receive()) {
@@ -47,6 +50,7 @@ MoongTangE::PlayerState exercise(MoongTangE::IClientTransport& client)
         }
         return false;
     }));
+
     MOONGTANGE_CHECK(client.Send({id, 2, 0, 0}));
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         if (auto state = client.Receive()) {
@@ -65,16 +69,20 @@ MoongTangE::PlayerState exercise(MoongTangE::IClientTransport& client)
 void deterministic_transport_equivalence()
 {
     using namespace MoongTangE;
+
     // Identical input schedule: serialize/decode the TCP path, then compare every tick.
     GameWorld direct, serialized;
     MOONGTANGE_CHECK(direct.AddPlayer(1));
     MOONGTANGE_CHECK(serialized.AddPlayer(1));
+
     for (std::uint64_t tick = 0; tick < 600; ++tick) {
         InputCommand input{1, tick + 1, tick < 200 ? 1.0 : -1.0, tick % 120 < 60 ? 1.0 : 0.0};
         MOONGTANGE_CHECK(direct.Apply(input));
         MOONGTANGE_CHECK(serialized.Apply(wire::read_input(wire::input(input), 1)));
+
         direct.Step();
         serialized.Step();
+
         auto a = direct.Snapshot(), b = wire::read_snapshot(wire::snapshot(serialized.Snapshot()));
         MOONGTANGE_CHECK(a.tick == b.tick);
         MOONGTANGE_CHECK(a.players[0].position == b.players[0].position);
@@ -87,24 +95,29 @@ void deterministic_transport_equivalence()
 void asynchronous_transport_invariants()
 {
     using namespace MoongTangE;
+
     // Real asynchronous transports: compare physical invariants, allowing arrival-time
     // differences.
     auto localCore = std::make_shared<ServerHost>(), tcpCore = std::make_shared<ServerHost>();
     localCore->Start();
     tcpCore->Start();
+
     LocalTransport local(localCore);
     AsioServer server(tcpCore, "127.0.0.1", 0);
     TcpClientTransport tcp("127.0.0.1", server.Port());
+
     const auto a = exercise(local), b = exercise(tcp);
     MOONGTANGE_CHECK(a.position.y == b.position.y && a.velocity == b.velocity);
     MOONGTANGE_CHECK(a.angularVelocity == Vector3{} && b.angularVelocity == Vector3{});
     MOONGTANGE_CHECK(a.position.x > 0 && b.position.x > 0 && a.position.z < 0 && b.position.z < 0);
+
     local.Close();
     tcp.Close();
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         return localCore->Snapshot().players.empty() && tcpCore->Snapshot().players.empty();
     }));
 }
+
 } // namespace
 
 int main()
