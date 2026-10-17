@@ -1,21 +1,38 @@
 #include "Client/Input/Keyboard.h"
 #include "Client/Rendering/Scene.h"
 #include "Client/Transport/LocalTransport.h"
+#include "Common/Utility/CommandLine.h"
+#ifdef SANDBOX_HAS_NETWORK
+#include "Client/Transport/TcpClientTransport.h"
+#endif
 #include <iostream>
 #include <string_view>
 int main(int argc, char** argv) {
-    bool smoke=false;
+    try {
+    bool smoke=false, single=false;
+    std::string remote;
     for (int i=1; i<argc; ++i) {
         const std::string_view arg(argv[i]);
-        if (arg == "--single") continue;
+        if (arg == "--single") { single=true; continue; }
+        if (arg == "--connect" && i+1<argc) { remote=argv[++i]; continue; }
         if (arg == "--smoke") { smoke=true; continue; }
-        if (arg == "--help") { std::cout << "Client --single [--smoke]\n"; return 0; }
+        if (arg == "--help") { std::cout << "Client [--single | --connect host:port] [--smoke]\n"; return 0; }
         std::cerr << "Unknown option: " << arg << '\n'; return 2;
     }
-    try {
-        auto server = std::make_shared<sandbox::ServerHost>();
-        server->start();
-        std::unique_ptr<sandbox::IClientTransport> transport = std::make_unique<sandbox::LocalTransport>(server);
+        if (single && !remote.empty()) throw std::invalid_argument("Choose --single or --connect");
+        std::shared_ptr<sandbox::ServerHost> server;
+        std::unique_ptr<sandbox::IClientTransport> transport;
+        if (remote.empty()) {
+            server=std::make_shared<sandbox::ServerHost>(); server->start();
+            transport=std::make_unique<sandbox::LocalTransport>(server);
+        } else {
+#ifdef SANDBOX_HAS_NETWORK
+            const auto [host,port]=sandbox::endpointOption(remote);
+            transport=std::make_unique<sandbox::TcpClientTransport>(host,port);
+#else
+            throw std::runtime_error("This build has TCP networking disabled");
+#endif
+        }
         SetConfigFlags(FLAG_MSAA_4X_HINT | (smoke ? FLAG_WINDOW_HIDDEN : FLAG_WINDOW_RESIZABLE));
         InitWindow(1100,720,"Portable Physics Sandbox");
         if (!IsWindowReady()) throw std::runtime_error("Graphics window initialization failed");
@@ -25,16 +42,19 @@ int main(int argc, char** argv) {
         int frame=0;
         bool moved=false;
         while (!WindowShouldClose() && (!smoke || frame<120)) {
-            auto input = sandbox::keyboardInput(transport->playerId(),++sequence);
-            if (smoke) { input.x = frame<60 ? 1 : 0; input.z=0; }
-            if (!transport->send(input)) throw std::runtime_error("Input rejected: "+transport->error());
+            if (!transport->error().empty()) throw std::runtime_error(transport->error());
+            if (transport->connected()) {
+                auto input = sandbox::keyboardInput(transport->playerId(),++sequence);
+                if (smoke) { input.x = sequence<60 ? 1 : 0; input.z=0; }
+                if (!transport->send(input)) throw std::runtime_error("Input rejected: "+transport->error());
+            }
             if (auto snapshot = transport->receive()) state=std::move(*snapshot);
-            for (const auto& p : state.players) if (p.id==transport->playerId() && p.position.x>0.5) moved=true;
-            sandbox::renderScene(state,transport->playerId(),"Embedded server", "Connected");
+            for (const auto& p : state.players) if (p.id==transport->playerId() && p.position.x>static_cast<double>((p.id-1)%8)*1.5+0.5) moved=true;
+            sandbox::renderScene(state,transport->playerId(),remote.empty() ? "Embedded server" : "TCP dedicated server",transport->connected() ? "Connected" : "Connecting...");
             ++frame;
         }
         CloseWindow();
-        transport->close(); server->stop();
+        transport->close(); if (server) server->stop();
         if (smoke && !moved) throw std::runtime_error("Smoke test did not observe server movement");
         std::cout << "Client stopped successfully\n";
         return 0;
