@@ -66,9 +66,11 @@ sequenceDiagram
 
 싱글플레이의 `ClientApplication`은 `ServerHost`를 시작하고 `LocalTransport`로 입력과 Snapshot을 교환합니다. 소켓과 `ServerApplication`은 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
 
-`Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication` 구현을 제공하고, `TcpTransport`와 `ServerOptions`를 연결합니다. `SANDBOX_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며, Asio를 직접 포함하는 `ServerNetworkRuntime.h`의 독립 컴파일도 생략합니다.
+`Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication` 구현을 제공하고, `TcpTransport`와 `ServerOptions`를 연결합니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며, Asio를 직접 포함하는 `ServerNetworkRuntime.h`의 독립 컴파일도 생략합니다.
 
 ## 명명과 헤더·구현 분리
+
+모든 프로젝트 C++ 코드는 `MoongTangE` 최상위 네임스페이스를 사용합니다. 공통 상수는 `MoongTangE::simulation`, 전송 코덱은 `MoongTangE::wire`, `package MoongTangE.proto`에서 생성되는 메시지는 `MoongTangE::proto`, 테스트 보조 함수는 `MoongTangE::test`에 속합니다. Client·Common·Network·Server·Tests의 선언과 호출부를 같은 이름으로 맞춥니다. CMake 옵션·컴파일 매크로·화면 캡처 환경변수는 각각 `MOONGTANGE_BUILD_CLIENT`, `MOONGTANGE_BUILD_NETWORK`, `MOONGTANGE_HAS_NETWORK`, `MOONGTANGE_SMOKE_CAPTURE`를 사용하며, 테스트 검증 매크로는 `MOONGTANGE_CHECK`입니다. CMake 내부 도우미와 변수는 `moongtange_` 접두사를 사용합니다.
 
 서버와 공유 TCP 채널은 멤버 변수에 `m_` 접두사(`m_networkThread`), 고정 상수에 `UPPER_SNAKE_CASE`(`MAX_PENDING_COMMANDS`)를 사용합니다. `ServerOptions`의 필드는 `m_port`, `m_runDuration`, `m_publicBind`, `m_showHelp`입니다. 함수·매개변수·런타임 지역 변수는 lowerCamelCase이며, 변경하지 않는다는 이유로 `const`를 붙인 지역 Snapshot 복사도 이 규칙을 따릅니다. 공통 시뮬레이션과 프로토콜의 상수도 대문자로 통일했습니다.
 

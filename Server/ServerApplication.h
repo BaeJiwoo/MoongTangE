@@ -3,7 +3,7 @@
 #include <atomic>
 #include <cstdint>
 
-namespace sandbox {
+namespace MoongTangE {
 // Single-use application. run() owns the server lifetime on its calling thread.
 // requestStop() and port() may be called concurrently; destruction requires run() to return.
 class ServerApplication {
@@ -26,4 +26,4 @@ private:
     std::atomic<bool> m_stopRequested{false};
     std::atomic<std::uint16_t> m_boundPort{};
 };
-} // namespace sandbox
+} // namespace MoongTangE

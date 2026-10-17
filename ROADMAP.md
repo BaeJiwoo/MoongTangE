@@ -27,4 +27,4 @@ Deferred: UDP, client prediction, lag compensation, physics rollback, sphere/sph
 | --- | --- | --- | --- |
 | #25 | `25-SERVER` | `main` | ServerApplication lifecycle, regression tests and server architecture documentation |
 | #26 | `26-PROTOBUF` | `25-SERVER` | Pinned Protobuf, generated network schema, protocol v3 and codec boundary |
-| [#29](https://github.com/BaeJiwoo/MoongTangE/issues/29) | `29-NAMING` | `main` | Server names, m_ members, uppercase constants, header/source separation, collapsible function documentation and MoongTangE branding |
+| [#29](https://github.com/BaeJiwoo/MoongTangE/issues/29) | `29-NAMING` | `main` | Server names, m_ members, uppercase constants, header/source separation, collapsible function documentation and MoongTangE branding/namespaces/build identifiers across all code |

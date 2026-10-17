@@ -4,7 +4,7 @@
 #include "Client/Transport/LocalTransport.h"
 #include "Common/SimulationConfig.h"
 #include "Server/Core/ServerHost.h"
-#ifdef SANDBOX_HAS_NETWORK
+#ifdef MOONGTANGE_HAS_NETWORK
 #include "Client/Transport/TcpClientTransport.h"
 #endif
 #include <cstdlib>
@@ -14,7 +14,7 @@
 #include <string>
 #include <utility>
 
-namespace sandbox {
+namespace MoongTangE {
 namespace {
 constexpr int smokeFrames = 120;
 constexpr std::uint64_t smokePushFrames = 60;
@@ -26,7 +26,7 @@ std::unique_ptr<IClientTransport> makeTransport(const ClientOptions& options) {
         // LocalTransport retains shared ownership; releasing it stops the embedded server.
         return std::make_unique<LocalTransport>(std::move(server));
     }
-#ifdef SANDBOX_HAS_NETWORK
+#ifdef MOONGTANGE_HAS_NETWORK
     return std::make_unique<TcpClientTransport>(options.remote->host, options.remote->port);
 #else
     throw std::runtime_error("This build has TCP networking disabled");
@@ -56,7 +56,7 @@ void ClientApplication::run() {
     }
 
     if (options_.smoke) {
-        if (const auto capture = std::getenv("SANDBOX_SMOKE_CAPTURE")) {
+        if (const auto capture = std::getenv("MOONGTANGE_SMOKE_CAPTURE")) {
             window.saveScreenshot(capture);
         }
         validateSmokeProgress();
@@ -102,4 +102,4 @@ void ClientApplication::validateSmokeProgress() const {
         throw std::runtime_error("Smoke test did not observe server rolling");
     }
 }
-} // namespace sandbox
+} // namespace MoongTangE

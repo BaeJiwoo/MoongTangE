@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace sandbox {
+namespace MoongTangE {
 ServerOptions parseServerOptions(std::span<const std::string_view> arguments) {
     ServerOptions options;
     OptionReader reader(arguments);
@@ -29,4 +29,4 @@ ServerOptions parseServerOptions(std::span<const std::string_view> arguments) {
     }
     return options;
 }
-} // namespace sandbox
+} // namespace MoongTangE

@@ -1,5 +1,5 @@
 include(FetchContent)
-if(SANDBOX_BUILD_NETWORK)
+if(MOONGTANGE_BUILD_NETWORK)
   FetchContent_Declare(asio
     URL https://codeload.github.com/chriskohlhoff/asio/tar.gz/8806a6803cde7054c3049d3666d3ec36786568c5
     URL_HASH SHA256=ca7f6c14f2bf91e61c7e81fb693f2f8fc86f93e85520d5fc7fd035d0f666bb35
@@ -14,7 +14,7 @@ if(SANDBOX_BUILD_NETWORK)
     target_link_libraries(AsioStandalone INTERFACE ws2_32 mswsock)
   endif()
 endif()
-if(SANDBOX_BUILD_CLIENT)
+if(MOONGTANGE_BUILD_CLIENT)
   set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
   set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(raylib

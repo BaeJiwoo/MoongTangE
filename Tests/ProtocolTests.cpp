@@ -8,7 +8,7 @@
 #include <string>
 
 namespace {
-using namespace sandbox;
+using namespace MoongTangE;
 
 template <class Message> wire::Bytes packet(wire::MessageType kind, const Message& message) {
     const auto bytes = message.SerializeAsString();
@@ -20,50 +20,50 @@ template <class Message> wire::Bytes packet(wire::MessageType kind, const Messag
 proto::WorldSnapshot protobufSnapshot(const WorldSnapshot& state) {
     const auto bytes = wire::snapshot(state);
     proto::WorldSnapshot message;
-    CHECK(message.ParseFromArray(bytes.data() + 1, static_cast<int>(bytes.size() - 1)));
+    MOONGTANGE_CHECK(message.ParseFromArray(bytes.data() + 1, static_cast<int>(bytes.size() - 1)));
     return message;
 }
 
 void framingAndVersionNegotiation() {
     // Known Protobuf bytes: field 1, varint wire type, protocol version 3.
-    CHECK(wire::clientHello() == wire::Bytes{1, 8, 3});
-    CHECK(wire::frame(wire::clientHello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 3});
+    MOONGTANGE_CHECK(wire::clientHello() == wire::Bytes{1, 8, 3});
+    MOONGTANGE_CHECK(wire::frame(wire::clientHello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 3});
     wire::readClientHello(wire::Bytes{1, 8, 3});
-    CHECK(wire::readServerHello(wire::serverHello(42)) == 42);
+    MOONGTANGE_CHECK(wire::readServerHello(wire::serverHello(42)) == 42);
     for (const auto& bad : {wire::Bytes{}, wire::Bytes{1}, wire::Bytes{1, 8}, wire::Bytes{1, 0, 2},
                             wire::Bytes{1, 8, 2}, wire::Bytes{1, 8, 99}, wire::Bytes{2, 8, 3},
                             wire::Bytes{1, 8, 3, 0}, wire::Bytes{255}}) {
-        CHECK(test::throws([&] {
+        MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
             wire::readClientHello(bad);
         }));
     }
-    CHECK(test::throws([] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([] {
         wire::serverHello(0);
     }));
-    CHECK(test::throws([] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([] {
         wire::readServerHello(wire::Bytes{2, 8, 3});
     }));
-    CHECK(wire::isDisconnect(wire::disconnect()));
-    CHECK(!wire::isDisconnect(wire::clientHello()));
-    CHECK(test::throws([] {
+    MOONGTANGE_CHECK(wire::isDisconnect(wire::disconnect()));
+    MOONGTANGE_CHECK(!wire::isDisconnect(wire::clientHello()));
+    MOONGTANGE_CHECK(MoongTangE::test::throws([] {
         wire::isDisconnect(wire::Bytes{5, 0});
     }));
     for (const auto& bad : {wire::Bytes{}, wire::Bytes{0, 0, 1}, wire::Bytes{0, 0, 0, 0},
                             wire::Bytes{0, 0, 32, 1}, wire::Bytes{0, 0, 0, 1, 0}}) {
-        CHECK(test::throws([&] {
+        MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
             wire::frameSize(bad);
         }));
     }
-    CHECK(wire::frameSize(wire::Bytes{0, 0, 32, 0}) == wire::MAX_FRAME_BYTES);
-    CHECK(test::throws([] {
+    MOONGTANGE_CHECK(wire::frameSize(wire::Bytes{0, 0, 32, 0}) == wire::MAX_FRAME_BYTES);
+    MOONGTANGE_CHECK(MoongTangE::test::throws([] {
         wire::frame({});
     }));
-    CHECK(test::throws([] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([] {
         wire::frame(wire::Bytes(wire::MAX_FRAME_BYTES + 1));
     }));
     auto oversized = wire::Bytes(wire::MAX_FRAME_BYTES + 1, 0);
     oversized.front() = 1;
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::readClientHello(oversized);
     }));
 
@@ -74,7 +74,7 @@ void framingAndVersionNegotiation() {
     nested = wire::clientHello();
     nested.insert(nested.end(), 32, 0x7b);
     nested.insert(nested.end(), 32, 0x7c);
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::readClientHello(nested);
     }));
 }
@@ -83,47 +83,47 @@ void inputsUseSessionIdentityAndValidatePresence() {
     const InputCommand input{42, std::numeric_limits<std::uint64_t>::max(), -0.0, -1.0};
     const auto bytes = wire::input(input);
     const auto restored = wire::readInput(bytes, 7);
-    CHECK(restored.playerId == 7 && restored.sequence == input.sequence);
-    CHECK(restored.x == input.x && std::signbit(restored.x) && restored.z == -1);
+    MOONGTANGE_CHECK(restored.playerId == 7 && restored.sequence == input.sequence);
+    MOONGTANGE_CHECK(restored.x == input.x && std::signbit(restored.x) && restored.z == -1);
     for (std::size_t size = 0; size < bytes.size(); ++size) {
-        CHECK(test::throws([&] {
+        MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
             wire::readInput(std::span(bytes).first(size), 7);
         }));
     }
     proto::InputCommand message;
     message.set_sequence(1);
     message.set_x(0);
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::readInput(packet(wire::MessageType::INPUT, message), 7);
     }));
     message.set_z(0);
-    CHECK(wire::readInput(packet(wire::MessageType::INPUT, message), 7).x == 0);
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(wire::readInput(packet(wire::MessageType::INPUT, message), 7).x == 0);
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::readInput(packet(wire::MessageType::INPUT, message), 0);
     }));
     for (const double bad :
          {2.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
         message.set_x(bad);
-        CHECK(test::throws([&] {
+        MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
             wire::readInput(packet(wire::MessageType::INPUT, message), 7);
         }));
-        CHECK(test::throws([&] {
+        MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
             wire::input({7, 1, bad, 0});
         }));
     }
     message.set_x(0);
     message.set_sequence(0);
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::readInput(packet(wire::MessageType::INPUT, message), 7);
     }));
     // Unknown fields support additive schema evolution; they cannot assign identity.
     message.set_sequence(2);
     auto extended = packet(wire::MessageType::INPUT, message);
     extended.insert(extended.end(), {0x78, 99}); // Unknown field 15 = 99.
-    CHECK(wire::readInput(extended, 7).playerId == 7);
+    MOONGTANGE_CHECK(wire::readInput(extended, 7).playerId == 7);
     auto malformed = bytes;
     malformed.push_back(0); // Invalid Protobuf tag.
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::readInput(malformed, 7);
     }));
 }
@@ -133,14 +133,14 @@ void snapshotsValidateAllGameInvariants() {
         42, {{7, {1, 0.5, -3}, {2, 0, 1}, Quaternion::fromRotation({0.1, 0, 0.2}), {2, 3, -4}}}};
     const auto original = protobufSnapshot(state);
     const auto restored = wire::readSnapshot(wire::snapshot(state));
-    CHECK(restored.tick == state.tick && restored.players.size() == 1);
-    CHECK(restored.players[0].position == state.players[0].position);
-    CHECK(restored.players[0].velocity == state.players[0].velocity);
-    CHECK(restored.players[0].orientation == state.players[0].orientation);
-    CHECK(restored.players[0].angularVelocity == state.players[0].angularVelocity);
-    CHECK(wire::readSnapshot(wire::snapshot({0, {}})).tick == 0);
+    MOONGTANGE_CHECK(restored.tick == state.tick && restored.players.size() == 1);
+    MOONGTANGE_CHECK(restored.players[0].position == state.players[0].position);
+    MOONGTANGE_CHECK(restored.players[0].velocity == state.players[0].velocity);
+    MOONGTANGE_CHECK(restored.players[0].orientation == state.players[0].orientation);
+    MOONGTANGE_CHECK(restored.players[0].angularVelocity == state.players[0].angularVelocity);
+    MOONGTANGE_CHECK(wire::readSnapshot(wire::snapshot({0, {}})).tick == 0);
     auto reject = [](const proto::WorldSnapshot& message) {
-        CHECK(test::throws([&] {
+        MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
             wire::readSnapshot(packet(wire::MessageType::SNAPSHOT, message));
         }));
     };
@@ -176,12 +176,12 @@ void snapshotsValidateAllGameInvariants() {
     reject(bad);
     auto invalidState = state;
     invalidState.players.push_back(state.players[0]);
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::snapshot(invalidState);
     }));
     invalidState = state;
     invalidState.players[0].orientation = {0, 0, 0, 0};
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::snapshot(invalidState);
     }));
 }
@@ -197,19 +197,20 @@ void maximumSnapshotFitsBoundedFrame() {
                                  {7, 8, 9}});
     }
     const auto bytes = wire::snapshot(state);
-    CHECK(bytes.size() == 4300 && bytes.size() <= wire::MAX_FRAME_BYTES);
-    CHECK(wire::readSnapshot(bytes).players.size() == MAX_PLAYERS);
+    MOONGTANGE_CHECK(bytes.size() == 4300 && bytes.size() <= wire::MAX_FRAME_BYTES);
+    MOONGTANGE_CHECK(wire::readSnapshot(bytes).players.size() == MAX_PLAYERS);
     const auto framed = wire::frame(bytes);
-    CHECK(wire::frameSize(std::span(framed).first(wire::FRAME_HEADER_BYTES)) == bytes.size());
+    MOONGTANGE_CHECK(wire::frameSize(std::span(framed).first(wire::FRAME_HEADER_BYTES)) ==
+                     bytes.size());
     state.players.push_back({1, {}, {}});
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::snapshot(state);
     }));
 }
 } // namespace
 
 int main() {
-    return test::run([] {
+    return MoongTangE::test::run([] {
         framingAndVersionNegotiation();
         inputsUseSessionIdentityAndValidatePresence();
         snapshotsValidateAllGameInvariants();

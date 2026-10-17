@@ -10,7 +10,7 @@
 #include <string>
 #include <utility>
 
-namespace sandbox {
+namespace MoongTangE {
 namespace {
 std::shared_ptr<ServerHost> startServerCore() {
     auto serverCore = std::make_shared<ServerHost>();
@@ -75,4 +75,4 @@ void ServerApplication::requestStop() noexcept {
 std::uint16_t ServerApplication::port() const noexcept {
     return m_boundPort.load();
 }
-} // namespace sandbox
+} // namespace MoongTangE

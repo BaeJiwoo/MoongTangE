@@ -4,7 +4,7 @@
 #include "Server/Core/TickScheduler.h"
 #include <utility>
 
-namespace sandbox {
+namespace MoongTangE {
 ServerHost::~ServerHost() {
     stop();
 }
@@ -122,4 +122,4 @@ void ServerHost::run(std::stop_token stopToken) {
         std::this_thread::sleep_until(scheduler.advance());
     }
 }
-} // namespace sandbox
+} // namespace MoongTangE

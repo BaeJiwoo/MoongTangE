@@ -4,7 +4,7 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace sandbox {
+namespace MoongTangE {
 // Raw quaternion value. Rotation consumers validate unit length at their boundary.
 struct Quaternion {
     double w{1};
@@ -83,4 +83,4 @@ inline Quaternion interpolate(Quaternion from, Quaternion to, double fraction) {
                       fromWeight * from.y + toWeight * to.y, fromWeight * from.z + toWeight * to.z}
         .normalized();
 }
-} // namespace sandbox
+} // namespace MoongTangE

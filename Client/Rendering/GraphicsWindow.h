@@ -2,7 +2,7 @@
 #include <raylib.h>
 #include <stdexcept>
 
-namespace sandbox {
+namespace MoongTangE {
 // A single window owns the graphics context. Destruction closes it on every exit path.
 class GraphicsWindow {
 public:
@@ -53,4 +53,4 @@ private:
         Image image_;
     };
 };
-} // namespace sandbox
+} // namespace MoongTangE

@@ -4,7 +4,7 @@
 #include <numbers>
 
 namespace {
-using namespace sandbox;
+using namespace MoongTangE;
 
 double kineticEnergy(const RigidBody& body) {
     return 0.5 * body.mass * dot(body.velocity, body.velocity) +
@@ -15,17 +15,17 @@ void gravityAndGroundContact() {
     PhysicsWorld physics;
     RigidBody body;
     physics.step(body);
-    CHECK(test::approx(body.velocity.y, -9.81 / 60));
-    CHECK(test::approx(body.position.y, 2 - 9.81 / 3600));
+    MOONGTANGE_CHECK(MoongTangE::test::approx(body.velocity.y, -9.81 / 60));
+    MOONGTANGE_CHECK(MoongTangE::test::approx(body.position.y, 2 - 9.81 / 3600));
     for (int tick = 0; tick < 3600; ++tick) {
         physics.step(body);
-        CHECK(body.position.y >= body.radius);
+        MOONGTANGE_CHECK(body.position.y >= body.radius);
     }
-    CHECK(body.position.y == 0.5 && body.velocity.y == 0);
+    MOONGTANGE_CHECK(body.position.y == 0.5 && body.velocity.y == 0);
     body.position.y = -10;
     body.velocity.y = -1000;
     physics.step(body);
-    CHECK(body.position.y == 0.5 && body.velocity.y == 0);
+    MOONGTANGE_CHECK(body.position.y == 0.5 && body.velocity.y == 0);
 }
 
 void rollingDistanceMatchesRotation() {
@@ -39,11 +39,13 @@ void rollingDistanceMatchesRotation() {
         for (int tick = 0; tick < 120; ++tick) {
             noResistance.step(rolling);
             const auto expected = Quaternion::fromRotation({0, 0, -rolling.position.x / radius});
-            CHECK((rolling.orientation.rotate({1, 0, 0}) - expected.rotate({1, 0, 0})).length() <
-                  1e-9);
+            MOONGTANGE_CHECK(
+                (rolling.orientation.rotate({1, 0, 0}) - expected.rotate({1, 0, 0})).length() <
+                1e-9);
         }
-        CHECK(test::approx(rolling.position.x, 2 * std::numbers::pi * radius));
-        CHECK(test::approx(std::abs(rolling.orientation.w), 1));
+        MOONGTANGE_CHECK(
+            MoongTangE::test::approx(rolling.position.x, 2 * std::numbers::pi * radius));
+        MOONGTANGE_CHECK(MoongTangE::test::approx(std::abs(rolling.orientation.w), 1));
     }
 }
 
@@ -55,22 +57,23 @@ void slidingConvertsToRollingAndCoastsToRest() {
     double previousEnergy = kineticEnergy(sliding);
     for (int tick = 0; tick < 120; ++tick) {
         noResistance.step(sliding);
-        CHECK(kineticEnergy(sliding) <= previousEnergy + 1e-10);
+        MOONGTANGE_CHECK(kineticEnergy(sliding) <= previousEnergy + 1e-10);
         previousEnergy = kineticEnergy(sliding);
     }
-    CHECK(test::approx(sliding.velocity.x, 15.0 / 7));
-    CHECK(test::approx(sliding.angularVelocity.z, -sliding.velocity.x / sliding.radius));
+    MOONGTANGE_CHECK(MoongTangE::test::approx(sliding.velocity.x, 15.0 / 7));
+    MOONGTANGE_CHECK(
+        MoongTangE::test::approx(sliding.angularVelocity.z, -sliding.velocity.x / sliding.radius));
 
     const PhysicsWorld physics;
     const double start = sliding.position.x;
     physics.step(sliding);
-    CHECK(sliding.velocity.x > 0 && sliding.position.x > start);
+    MOONGTANGE_CHECK(sliding.velocity.x > 0 && sliding.position.x > start);
     for (int tick = 0; tick < 600; ++tick) {
         const double before = kineticEnergy(sliding);
         physics.step(sliding);
-        CHECK(kineticEnergy(sliding) <= before + 1e-10);
+        MOONGTANGE_CHECK(kineticEnergy(sliding) <= before + 1e-10);
     }
-    CHECK(sliding.velocity == Vector3{} && sliding.angularVelocity == Vector3{});
+    MOONGTANGE_CHECK(sliding.velocity == Vector3{} && sliding.angularVelocity == Vector3{});
 }
 
 void oppositeInputBrakesBeforeReversing() {
@@ -81,13 +84,13 @@ void oppositeInputBrakesBeforeReversing() {
         physics.step(driven, PhysicsWorld::fixedDelta, {10, 0, 0});
     }
     const double speed = driven.velocity.x;
-    CHECK(speed > 3 && speed < 5.5);
+    MOONGTANGE_CHECK(speed > 3 && speed < 5.5);
     physics.step(driven, PhysicsWorld::fixedDelta, {-10, 0, 0});
-    CHECK(driven.velocity.x > 0 && driven.velocity.x < speed);
+    MOONGTANGE_CHECK(driven.velocity.x > 0 && driven.velocity.x < speed);
     for (int tick = 0; tick < 120; ++tick) {
         physics.step(driven, PhysicsWorld::fixedDelta, {-10, 0, 0});
     }
-    CHECK(driven.velocity.x < 0);
+    MOONGTANGE_CHECK(driven.velocity.x < 0);
 }
 
 void airborneSpinIgnoresGroundForces() {
@@ -99,8 +102,8 @@ void airborneSpinIgnoresGroundForces() {
     for (int tick = 0; tick < 600; ++tick) {
         physics.step(airborne, PhysicsWorld::fixedDelta, {10, 0, 0});
     }
-    CHECK(airborne.velocity.x == 2 && airborne.velocity.z == 3);
-    CHECK(airborne.angularVelocity == Vector3{1, 2, 3} && airborne.orientation.unit());
+    MOONGTANGE_CHECK(airborne.velocity.x == 2 && airborne.velocity.z == 3);
+    MOONGTANGE_CHECK(airborne.angularVelocity == Vector3{1, 2, 3} && airborne.orientation.unit());
 }
 
 void repeatedSimulationKeepsNormalizedOrientation() {
@@ -111,33 +114,33 @@ void repeatedSimulationKeepsNormalizedOrientation() {
     for (int tick = 0; tick < 36000; ++tick) {
         physics.step(first, PhysicsWorld::fixedDelta, {6, 0, 8});
         physics.step(second, PhysicsWorld::fixedDelta, {6, 0, 8});
-        CHECK(first.orientation.unit());
+        MOONGTANGE_CHECK(first.orientation.unit());
     }
-    CHECK(first.position == second.position && first.orientation == second.orientation &&
-          first.angularVelocity == second.angularVelocity);
+    MOONGTANGE_CHECK(first.position == second.position && first.orientation == second.orientation &&
+                     first.angularVelocity == second.angularVelocity);
 }
 
 void invalidStateIsRejected() {
     const PhysicsWorld physics;
     RigidBody body;
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         physics.step(body, 0);
     }));
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         physics.step(body, -1);
     }));
     body.orientation = {0, 0, 0, 0};
-    CHECK(test::throws([&] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         physics.step(body);
     }));
-    CHECK(test::throws([] {
+    MOONGTANGE_CHECK(MoongTangE::test::throws([] {
         PhysicsWorld invalid({-1, 0, 0});
     }));
 }
 } // namespace
 
 int main() {
-    return test::run([] {
+    return MoongTangE::test::run([] {
         gravityAndGroundContact();
         rollingDistanceMatchesRotation();
         slidingConvertsToRollingAndCoastsToRest();

@@ -2,6 +2,8 @@
 
 MoongTangE는 C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 서비스입니다.
 
+C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키지는 `MoongTangE.proto`입니다. 빌드 옵션·매크로·환경변수도 `MOONGTANGE_` 접두사로 통일합니다.
+
 ## 목표
 
 - Windows, Linux, macOS에서 빌드 가능한 CMake 모노레포
@@ -32,6 +34,8 @@ MoongTangE는 C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 서�
 
 CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 네트워크 자동 테스트에는 Python 3도 필요합니다. 첫 구성 시 고정된 외부 소스를 다운로드하므로 인터넷 연결이 필요합니다. 다운로드는 SHA-256으로 검증합니다.
 
+기존 빌드 폴더도 아래의 현재 옵션 이름으로 다시 구성하세요. 전체 빌드는 `MOONGTANGE_BUILD_CLIENT=ON`, `MOONGTANGE_BUILD_NETWORK=ON`이 기본값이고, 코어 전용 구성은 두 옵션을 명시적으로 `OFF`로 지정합니다.
+
 네트워크 구성에서는 고정된 Protobuf와 Abseil 소스, 동일 릴리스의 `protoc`도 빌드합니다. 첫 전체 빌드는 이 의존성 컴파일 때문에 더 오래 걸립니다. 별도 Protobuf 설치는 필요하지 않으며 `.proto`로 생성한 파일은 빌드 폴더에만 저장됩니다.
 
 ```sh
@@ -50,10 +54,10 @@ sudo apt-get install libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev lib
 
 macOS에서는 Xcode Command Line Tools와 CMake를 사용합니다.
 
-서버만 빌드하려면 `-DSANDBOX_BUILD_CLIENT=OFF`를 추가하세요. 외부 라이브러리 없이 코어와 테스트만 빌드하려면 아래 구성을 사용합니다.
+서버만 빌드하려면 `-DMOONGTANGE_BUILD_CLIENT=OFF`를 추가하세요. 외부 라이브러리 없이 코어와 테스트만 빌드하려면 아래 구성을 사용합니다.
 
 ```sh
-cmake -S . -B build-core -DSANDBOX_BUILD_CLIENT=OFF -DSANDBOX_BUILD_NETWORK=OFF
+cmake -S . -B build-core -DMOONGTANGE_BUILD_CLIENT=OFF -DMOONGTANGE_BUILD_NETWORK=OFF
 cmake --build build-core --config Release
 ctest --test-dir build-core -C Release --output-on-failure
 ```
@@ -87,7 +91,7 @@ W/A/S/D를 누르면 바닥의 공에 힘이 가해져 서서히 가속합니다
 
 서버 기본 바인딩은 `127.0.0.1`입니다. 신뢰할 수 있는 테스트 LAN에서만 `--public`을 사용해 `0.0.0.0`으로 바인딩하세요. 이 프로토콜에는 사용자 인증이나 암호화가 없으므로 인터넷에 공개하지 마세요. 방화벽 포트 개방은 자동으로 수행하지 않습니다.
 
-`DedicatedServer --run-for 5`는 5초 후 정상 종료합니다. 포트 0은 운영체제가 사용 가능한 테스트 포트를 선택하며 실제 주소가 출력됩니다. `Client --single --smoke` 또는 `Client --connect host:port --smoke`는 숨겨진 그래픽 창에서 서버 이동을 확인한 뒤 자동 종료합니다. `--smoke`도 OpenGL 환경이 필요합니다. 환경변수 `SANDBOX_SMOKE_CAPTURE`를 지정하면 종료 직전 화면을 해당 PNG 경로에 저장합니다.
+`DedicatedServer --run-for 5`는 5초 후 정상 종료합니다. 포트 0은 운영체제가 사용 가능한 테스트 포트를 선택하며 실제 주소가 출력됩니다. `Client --single --smoke` 또는 `Client --connect host:port --smoke`는 숨겨진 그래픽 창에서 서버 이동을 확인한 뒤 자동 종료합니다. `--smoke`도 OpenGL 환경이 필요합니다. 환경변수 `MOONGTANGE_SMOKE_CAPTURE`를 지정하면 종료 직전 화면을 해당 PNG 경로에 저장합니다.
 
 ## 구조와 동작
 

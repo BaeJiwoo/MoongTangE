@@ -9,7 +9,7 @@
 #include <mutex>
 #include <thread>
 
-namespace sandbox {
+namespace MoongTangE {
 class ServerHost {
 public:
     static constexpr std::size_t MAX_PENDING_COMMANDS = 1024;
@@ -55,4 +55,4 @@ private:
     std::atomic<bool> m_running{false};
     std::jthread m_tickThread;
 };
-} // namespace sandbox
+} // namespace MoongTangE

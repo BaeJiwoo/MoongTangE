@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-namespace sandbox {
+namespace MoongTangE {
 struct ClientOptions {
     bool smoke{};
     bool showHelp{};
@@ -38,4 +38,4 @@ inline ClientOptions parseClientOptions(std::span<const std::string_view> argume
     }
     return options;
 }
-} // namespace sandbox
+} // namespace MoongTangE

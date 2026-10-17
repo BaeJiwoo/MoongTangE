@@ -1,5 +1,5 @@
 syntax = "proto3";
-package sandbox.proto;
+package MoongTangE.proto;
 
 // Presence is explicit for values whose omission must not silently become zero.
 message Vector3 {

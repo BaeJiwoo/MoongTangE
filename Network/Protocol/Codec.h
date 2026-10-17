@@ -5,7 +5,7 @@
 #include <span>
 #include <vector>
 
-namespace sandbox::wire {
+namespace MoongTangE::wire {
 using Bytes = std::vector<std::uint8_t>;
 inline constexpr std::uint32_t PROTOCOL_VERSION = 3;
 inline constexpr std::uint32_t MAX_FRAME_BYTES = 8192;
@@ -34,4 +34,4 @@ bool isDisconnect(std::span<const std::uint8_t> data);
 // TCP boundaries remain independent of Protobuf's message encoding.
 Bytes frame(std::span<const std::uint8_t> payload);
 std::uint32_t frameSize(std::span<const std::uint8_t> header);
-} // namespace sandbox::wire
+} // namespace MoongTangE::wire

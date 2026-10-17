@@ -23,7 +23,7 @@ def main():
                 options.build_dir.resolve() / "generated")
     if not all(path.is_dir() for path in includes):
         parser.error("Build the full project, including generated Protobuf headers, before analysis.")
-    flags = ["-std=c++20", "-I" + str(ROOT), "-DASIO_STANDALONE", "-DSANDBOX_HAS_NETWORK"]
+    flags = ["-std=c++20", "-I" + str(ROOT), "-DASIO_STANDALONE", "-DMOONGTANGE_HAS_NETWORK"]
     for path in includes:
         flags.extend(("-isystem", str(path)))
     if os.name == "nt":

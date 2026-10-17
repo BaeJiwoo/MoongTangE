@@ -2,7 +2,7 @@
 #include "Common/SimulationConfig.h"
 #include <chrono>
 
-namespace sandbox {
+namespace MoongTangE {
 class TickScheduler {
 public:
     using Clock = std::chrono::steady_clock;
@@ -15,4 +15,4 @@ private:
     static constexpr unsigned MAX_CATCH_UP_TICKS = 8;
     Clock::time_point m_nextTick;
 };
-} // namespace sandbox
+} // namespace MoongTangE

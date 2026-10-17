@@ -4,7 +4,7 @@
 #include <span>
 #include <string_view>
 
-namespace sandbox {
+namespace MoongTangE {
 struct ServerOptions {
     std::uint16_t m_port{27015};
     std::chrono::seconds m_runDuration{};
@@ -13,4 +13,4 @@ struct ServerOptions {
 };
 
 ServerOptions parseServerOptions(std::span<const std::string_view> arguments);
-} // namespace sandbox
+} // namespace MoongTangE

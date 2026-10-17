@@ -2,7 +2,7 @@
 #include "Common/Math/Quaternion.h"
 #include "Common/SimulationConfig.h"
 
-namespace sandbox {
+namespace MoongTangE {
 struct RigidBody {
     Vector3 position{0, simulation::SPAWN_HEIGHT, 0};
     Vector3 velocity{};
@@ -15,4 +15,4 @@ struct RigidBody {
         return 0.4 * mass * radius * radius;
     }
 };
-} // namespace sandbox
+} // namespace MoongTangE

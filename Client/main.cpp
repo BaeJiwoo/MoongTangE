@@ -6,13 +6,13 @@
 
 int main(int argc, char** argv) {
     try {
-        const auto arguments = sandbox::commandLineArguments(argc, argv);
-        const auto options = sandbox::parseClientOptions(arguments);
+        const auto arguments = MoongTangE::commandLineArguments(argc, argv);
+        const auto options = MoongTangE::parseClientOptions(arguments);
         if (options.showHelp) {
             std::cout << "Client [--single | --connect host:port] [--smoke]\n";
             return 0;
         }
-        sandbox::ClientApplication application(options);
+        MoongTangE::ClientApplication application(options);
         application.run();
         std::cout << "Client stopped successfully\n";
         return 0;

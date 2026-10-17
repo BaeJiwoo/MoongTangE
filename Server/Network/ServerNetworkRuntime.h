@@ -11,7 +11,7 @@
 #include <string>
 #include <thread>
 
-namespace sandbox {
+namespace MoongTangE {
 class TcpChannel;
 
 // Owns the server network thread, connection sessions and snapshot publication.
@@ -50,4 +50,4 @@ private:
     bool m_stopping{};
     std::thread m_networkThread;
 };
-} // namespace sandbox
+} // namespace MoongTangE

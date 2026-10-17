@@ -1,6 +1,6 @@
 #include "Server/Core/TickScheduler.h"
 
-namespace sandbox {
+namespace MoongTangE {
 TickScheduler::TickScheduler(Clock::time_point now) : m_nextTick(now) {}
 
 TickScheduler::Clock::time_point TickScheduler::advance(Clock::time_point now) {
@@ -10,4 +10,4 @@ TickScheduler::Clock::time_point TickScheduler::advance(Clock::time_point now) {
     }
     return m_nextTick;
 }
-} // namespace sandbox
+} // namespace MoongTangE

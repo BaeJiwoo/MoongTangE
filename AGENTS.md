@@ -1,6 +1,6 @@
 # Project development rules
 
-- The service and CMake project name is `MoongTangE`; use it in window titles, on-screen branding and documentation. The repository is `BaeJiwoo/MoongTangE`.
+- The service, CMake project and C++ root namespace are `MoongTangE`. The Protobuf package is `MoongTangE.proto`; project macros, build options and environment variables use `MOONGTANGE_`, and CMake helper names use `moongtange_`. Apply these names across Client, Common, Network, Server, Tests, tools, CI and documentation. The repository is `BaeJiwoo/MoongTangE`.
 
 - Follow `CROSS_PLATFORM_3D_PHYSICS_GAME.md` and preserve existing user changes.
 - C++20; Common must have no raylib, Asio, or operating system dependencies.

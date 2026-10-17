@@ -4,7 +4,7 @@
 #include <set>
 #include <stdexcept>
 
-namespace sandbox::wire {
+namespace MoongTangE::wire {
 namespace {
 template <class Message> Bytes encode(MessageType kind, const Message& message) {
     const auto size = message.ByteSizeLong();
@@ -177,4 +177,4 @@ std::uint32_t frameSize(std::span<const std::uint8_t> header) {
     require(size > 0 && size <= MAX_FRAME_BYTES);
     return size;
 }
-} // namespace sandbox::wire
+} // namespace MoongTangE::wire

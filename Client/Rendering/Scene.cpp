@@ -6,7 +6,7 @@
 #include <raylib.h>
 #include <rlgl.h>
 
-namespace sandbox {
+namespace MoongTangE {
 namespace {
 constexpr int ballRings = 20;
 constexpr int ballSectors = 32;
@@ -110,4 +110,4 @@ void SceneRenderer::draw(const WorldSnapshot& state, std::uint32_t playerId, con
     drawOverlay(state.tick, playerId, mode, status);
     EndDrawing();
 }
-} // namespace sandbox
+} // namespace MoongTangE

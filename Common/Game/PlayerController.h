@@ -2,7 +2,7 @@
 #include "Common/Math/Vector3.h"
 #include "Common/SimulationConfig.h"
 
-namespace sandbox {
+namespace MoongTangE {
 inline Vector3 movementForce(double x, double z) {
     Vector3 direction{x, 0, z};
     if (direction.length() > 1) {
@@ -10,4 +10,4 @@ inline Vector3 movementForce(double x, double z) {
     }
     return direction * simulation::MOVEMENT_FORCE;
 }
-} // namespace sandbox
+} // namespace MoongTangE

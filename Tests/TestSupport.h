@@ -8,7 +8,7 @@
 #include <string>
 #include <thread>
 
-namespace test {
+namespace MoongTangE::test {
 inline void check(bool ok, const char* expression,
                   std::source_location location = std::source_location::current()) {
     if (!ok) {
@@ -52,6 +52,6 @@ bool waitFor(F predicate, std::chrono::milliseconds timeout = std::chrono::secon
     }
     return predicate();
 }
-} // namespace test
+} // namespace MoongTangE::test
 
-#define CHECK(...) test::check((__VA_ARGS__), #__VA_ARGS__)
+#define MOONGTANGE_CHECK(...) ::MoongTangE::test::check((__VA_ARGS__), #__VA_ARGS__)

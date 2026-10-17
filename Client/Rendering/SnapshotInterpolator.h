@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace sandbox {
+namespace MoongTangE {
 // Presentation-only, approximately one snapshot interval behind; never predicts physics.
 class SnapshotInterpolator {
 public:
@@ -64,4 +64,4 @@ private:
     double duration_{defaultInterval};
     bool initialized_{};
 };
-} // namespace sandbox
+} // namespace MoongTangE

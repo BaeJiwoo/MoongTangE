@@ -5,6 +5,7 @@
 ## 현재 서버 명명·파일 구성 — Issue #29
 
 - 서비스 이름은 `MoongTangE`입니다. CMake 프로젝트명, 클라이언트 창·화면 제목, README와 저장소 링크를 함께 갱신했습니다.
+- Client·Common·Network·Server·Tests 전체의 최상위 네임스페이스도 `MoongTangE`입니다. Protobuf 패키지는 `MoongTangE.proto`, 빌드 옵션·컴파일 매크로·환경변수는 `MOONGTANGE_`, CMake 내부 도우미는 `moongtange_`로 통일했습니다. CI·정적 분석 명령·문서의 사용 예도 함께 변경했습니다. 생성 메시지의 정규화된 타입 이름은 바뀌지만 필드 번호와 전송 바이트는 유지합니다.
 - `AsioServer::Impl`은 `ServerNetworkRuntime`으로 바꾸고 별도 `.h/.cpp`로 분리했습니다. `AsioServer`는 전방 선언과 `unique_ptr`로 구현을 숨기며, 네트워크 스레드·세션·Snapshot 타이머는 runtime이 소유합니다.
 - 서버 및 공유 `TcpChannel`의 데이터 멤버는 `m_`를 사용합니다. `ServerOptions`와 내부 `WorldCommand`도 값 타입을 유지하면서 멤버 접두사를 적용했습니다. 고정 상수·열거 값은 대문자이며, 런타임의 `const` 지역 변수는 lowerCamelCase입니다.
 - `WorldCommandType`과 `wire::MessageType`은 종류가 무엇인지 이름으로 드러냅니다. 공유 시뮬레이션·프로토콜 상수 이름은 모든 클라이언트·테스트 호출부까지 갱신하며 값과 wire 형식은 유지합니다.

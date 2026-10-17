@@ -10,7 +10,7 @@
 #include <memory>
 #include <string>
 
-namespace sandbox {
+namespace MoongTangE {
 // All operations/callbacks run on one io_context thread. Async work retains shared ownership.
 class TcpChannel : public std::enable_shared_from_this<TcpChannel> {
 public:
@@ -40,4 +40,4 @@ private:
     bool m_started{};
     bool m_closed{};
 };
-} // namespace sandbox
+} // namespace MoongTangE

@@ -2,7 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace sandbox::simulation {
+namespace MoongTangE::simulation {
 inline constexpr std::uint32_t TICKS_PER_SECOND = 60;
 inline constexpr double FIXED_DELTA = 1.0 / TICKS_PER_SECOND;
 inline constexpr std::uint64_t SNAPSHOT_INTERVAL_TICKS = 3;
@@ -20,4 +20,4 @@ inline constexpr double MOVEMENT_FORCE = 10.0;
 inline constexpr double spawnX(std::uint32_t playerId) {
     return static_cast<double>((playerId - 1) % SPAWN_COLUMNS) * SPAWN_SPACING;
 }
-} // namespace sandbox::simulation
+} // namespace MoongTangE::simulation

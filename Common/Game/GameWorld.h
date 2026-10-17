@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <map>
 
-namespace sandbox {
+namespace MoongTangE {
 // Only the server tick thread owns and mutates a GameWorld.
 class GameWorld {
 public:
@@ -69,4 +69,4 @@ private:
     PhysicsWorld physics_;
     std::uint64_t tick_{};
 };
-} // namespace sandbox
+} // namespace MoongTangE
