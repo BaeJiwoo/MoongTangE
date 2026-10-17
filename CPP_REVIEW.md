@@ -1,5 +1,7 @@
 # C++ 가독성·설계 리뷰 — Issue #23
 
+이 문서의 본문은 #23 당시의 리뷰 기록입니다. 서버 실행 클래스와 Protobuf 전환 이후의 구조는 [서버 구조 문서](docs/SERVER_ARCHITECTURE.md), 현재 메시지 형식은 [PROTOCOL.md](PROTOCOL.md)를 참고하세요. 당시 `Wire.h`의 수동 직렬화는 #26에서 `Network/Protocol/Codec.*`와 `.proto` 스키마로 대체합니다.
+
 ## 범위와 기준
 
 `Client`, `Common`, `Network`, `Server`, `Tests`의 프로젝트 소유 C++ 전체를 검토했습니다. 정리 후 범위는 `.cpp` 18개와 `.h` 27개입니다. CMake, CI, 테스트 실행 도구도 함께 점검했습니다. 다운로드한 raylib/Asio 소스와 빌드 산출물은 수정 대상에서 제외했습니다.
@@ -87,7 +89,7 @@ python -m pip install clang-format==22.1.3
 python Tools/check_format.py
 # 자동 정리: python Tools/check_format.py --fix
 
-# 전체 CMake 구성으로 Asio/raylib 소스가 준비된 뒤 실행
+# 전체 빌드로 의존성과 Protobuf 생성 헤더가 준비된 뒤 실행
 python Tools/run_tidy.py --clang-tidy /path/to/clang-tidy --build-dir build
 
 cmake --build build --config Release --parallel 4

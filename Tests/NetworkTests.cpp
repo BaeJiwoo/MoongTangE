@@ -134,7 +134,7 @@ void fragmentedFramesAndDisconnect(const AsioServer& server) {
             }
         }
         CHECK(moved);
-        const auto goodbye = wire::frame(wire::Bytes{5});
+        const auto goodbye = wire::frame(wire::disconnect());
         asio::write(raw, asio::buffer(goodbye));
         CHECK(closed(raw));
     }
@@ -143,7 +143,7 @@ void fragmentedFramesAndDisconnect(const AsioServer& server) {
 void malformedFramesAreRejected(const AsioServer& server) {
     asio::io_context io;
     const asio::ip::tcp::endpoint endpoint(asio::ip::make_address("127.0.0.1"), server.port());
-    for (const auto& bad : std::vector<wire::Bytes>{{0, 0, 16, 1},
+    for (const auto& bad : std::vector<wire::Bytes>{{0, 0, 32, 1},
                                                     {0, 0, 0, 0},
                                                     wire::frame(wire::Bytes{1, 0, 1}),
                                                     wire::frame(wire::input({1, 1, 0, 0}))}) {

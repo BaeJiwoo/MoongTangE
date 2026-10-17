@@ -1,5 +1,5 @@
 #pragma once
-#include "Common/Protocol/Wire.h"
+#include "Network/Protocol/Codec.h"
 #include <array>
 #include <asio.hpp>
 #include <chrono>

@@ -1,5 +1,5 @@
 #include "Client/Transport/TcpClientTransport.h"
-#include "Common/Protocol/Wire.h"
+#include "Network/Protocol/Codec.h"
 #include "Network/TcpChannel.h"
 #include <asio.hpp>
 #include <chrono>

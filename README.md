@@ -5,7 +5,7 @@ C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 프로젝트입니�
 ## 목표
 
 - Windows, Linux, macOS에서 빌드 가능한 CMake 모노레포
-- `Common`: 외부 물리 엔진을 사용하지 않는 수학, 물리, 게임 상태 및 프로토콜
+- `Common`: 외부 라이브러리에 의존하지 않는 수학, 자체 물리와 게임 자료형
 - `Server`: 싱글플레이와 멀티플레이가 공유하는 서버 코어 및 독립 실행 서버
 - `Client`: raylib 3D 렌더링, WASD 입력, 로컬 및 TCP 전송
 - 서버 권위 방식의 60Hz 물리 시뮬레이션과 20Hz 상태 전송
@@ -23,6 +23,7 @@ C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 프로젝트입니�
 | 언어 | C++20 |
 | 빌드 | CMake |
 | 네트워크 | Standalone Asio 1.38.2, TCP |
+| 직렬화 | Protobuf 36.2 (C++ 런타임 7.36.2), 프로토콜 v3 |
 | 렌더링 | raylib 6.0 |
 | 테스트 | CTest |
 | CI | GitHub Actions |
@@ -30,6 +31,8 @@ C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 프로젝트입니�
 ## 빌드
 
 CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 네트워크 자동 테스트에는 Python 3도 필요합니다. 첫 구성 시 고정된 외부 소스를 다운로드하므로 인터넷 연결이 필요합니다. 다운로드는 SHA-256으로 검증합니다.
+
+네트워크 구성에서는 고정된 Protobuf와 Abseil 소스, 동일 릴리스의 `protoc`도 빌드합니다. 첫 전체 빌드는 이 의존성 컴파일 때문에 더 오래 걸립니다. 별도 Protobuf 설치는 필요하지 않으며 `.proto`로 생성한 파일은 빌드 폴더에만 저장됩니다.
 
 ```sh
 git clone https://github.com/BaeJiwoo/portable-physics-sandbox.git
@@ -91,20 +94,21 @@ W/A/S/D를 누르면 바닥의 공에 힘이 가해져 서서히 가속합니다
 서버 구성 요소, 스레드와 소유권, 입력 처리 및 종료 순서는 [서버 구조 문서](docs/SERVER_ARCHITECTURE.md)에 설명되어 있습니다.
 
 ```text
-Common/       수학, 자체 물리, GameWorld, 프로토콜, 전송 인터페이스
+Common/       수학, 자체 물리, GameWorld, 입력·Snapshot 자료형, 전송 인터페이스
+Server/       실행 진입점, 옵션, ServerApplication 수명 관리
 Server/Core/  재사용 가능한 ServerCore, 60Hz Tick, 제한된 명령 큐
 Server/Network/ Asio TCP 서버 (렌더링 의존성 없음)
 Client/       raylib 화면과 키보드, LocalTransport/TcpClientTransport
-Network/      양쪽에서 사용하는 비동기 TCP 프레이밍과 자원 제한
+Network/      비동기 TCP 프레이밍, 자원 제한, Protobuf 스키마와 메시지 변환
 Tests/        단위 테스트, 루프백, 프로세스 통합 테스트
 cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 ```
 
-싱글플레이는 같은 프로세스의 ServerCore에 메시지를 전달합니다. 멀티플레이는 TCP 입력을 같은 ServerCore의 큐로 전달합니다. 이동과 회전 물리는 Tick 스레드에서만 변경됩니다. 클라이언트는 약 20Hz로 받은 Snapshot의 위치와 자세를 화면에서 보간합니다. 약 50ms의 표시 지연이 추가되며 클라이언트 예측은 하지 않습니다. 회전 데이터가 추가된 프로토콜 v2를 사용하므로 클라이언트와 서버를 함께 업데이트해야 합니다. 자세한 메시지 규격과 제한은 [PROTOCOL.md](PROTOCOL.md)를 참고하세요.
+싱글플레이는 같은 프로세스의 ServerCore에 메시지를 전달합니다. 멀티플레이는 Protobuf로 해석한 TCP 입력을 같은 ServerCore의 큐로 전달합니다. 이동과 회전 물리는 Tick 스레드에서만 변경됩니다. 클라이언트는 약 20Hz로 받은 Snapshot의 위치와 자세를 화면에서 보간합니다. 약 50ms의 표시 지연이 추가되며 클라이언트 예측은 하지 않습니다. Protobuf 기반 프로토콜 v3는 기존 수동 직렬화 v1/v2와 호환되지 않으므로 클라이언트와 서버를 함께 업데이트해야 합니다. 자세한 메시지 규격과 제한은 [PROTOCOL.md](PROTOCOL.md)를 참고하세요.
 
 ## 테스트와 제한
 
-- CTest: 벡터/quaternion, 낙하/충돌/구름/관성, 게임 월드, 서버 수명/큐, ServerApplication 실행·종료, 로컬 전송, 프로토콜, 화면 보간, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속. 전체 12개, 외부 의존성 없는 구성 8개입니다.
+- CTest: 벡터/quaternion, 낙하/충돌/구름/관성, 게임 월드, 서버 수명/큐, ServerApplication 실행·종료, 로컬 전송, Protobuf 프로토콜, 화면 보간, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속. 전체 12개, 외부 의존성 없는 구성 7개입니다. Protobuf 프로토콜 테스트는 네트워크 구성에 포함됩니다.
 - 동일 Tick 입력 일정의 로컬 계산과 직렬화 경로는 매 Tick 비교합니다. 실제 비동기 전송은 입력 도착 시점이 다르므로 이동 속도·방향·바닥 정지 등 물리 조건을 비교합니다.
 - CI: Windows/MSVC, Linux/GCC, macOS/Clang에서 전체 빌드와 테스트, 외부 의존성 없는 코어 구성을 검증합니다. GUI 실행은 CI 필수 항목이 아니며 실제 결과는 [Actions](https://github.com/BaeJiwoo/portable-physics-sandbox/actions)에서 확인하세요.
 - 공과 평면의 충돌만 구현합니다. 공끼리의 충돌, 경사면, 클라이언트 예측, UDP, 물리 롤백 및 사용자 인증은 후속 범위입니다.

@@ -1,7 +1,7 @@
 #include "Client/Transport/LocalTransport.h"
 #include "Client/Transport/TcpClientTransport.h"
 #include "Common/Game/GameWorld.h"
-#include "Common/Protocol/Wire.h"
+#include "Network/Protocol/Codec.h"
 #include "Server/Network/AsioServer.h"
 #include "TestSupport.h"
 #include <cstdint>
