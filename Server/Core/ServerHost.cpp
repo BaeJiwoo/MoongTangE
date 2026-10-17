@@ -39,6 +39,7 @@ bool ServerHost::submit(InputCommand input) {
 }
 WorldSnapshot ServerHost::snapshot() const { std::lock_guard lock(dataMutex_); return snapshot_; }
 std::size_t ServerHost::pending() const { std::lock_guard lock(dataMutex_); return commands_.size(); }
+bool ServerHost::hasClient(std::uint32_t id) const { std::lock_guard lock(dataMutex_); return running_ && connections_.contains(id); }
 void ServerHost::run(std::stop_token stop) {
     GameWorld world;
     TickScheduler scheduler;

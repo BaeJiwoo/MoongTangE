@@ -17,6 +17,7 @@ public:
     bool submit(InputCommand input);
     WorldSnapshot snapshot() const;
     std::size_t pending() const;
+    bool hasClient(std::uint32_t id) const;
 private:
     enum class Kind { Join, Input, Leave };
     struct Command { Kind kind; std::uint32_t id; InputCommand input{}; };
