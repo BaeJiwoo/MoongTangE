@@ -4,8 +4,8 @@ int main() { return test::run([] {
     sandbox::PhysicsWorld physics;
     sandbox::RigidBody body;
     physics.step(body);
-    CHECK(test::near(body.velocity.y, -9.81/60));
-    CHECK(test::near(body.position.y, 2-9.81/3600));
+    CHECK(test::approx(body.velocity.y, -9.81/60));
+    CHECK(test::approx(body.position.y, 2-9.81/3600));
     for (int i=0; i<3600; ++i) {
         physics.step(body);
         CHECK(body.position.y >= body.radius);
@@ -20,7 +20,7 @@ int main() { return test::run([] {
     a.velocity.x = b.velocity.x = 3;
     for (int i=0; i<600; ++i) { physics.step(a); physics.step(b); }
     CHECK(a.position == b.position && a.velocity == b.velocity);
-    CHECK(test::near(a.position.x, 30));
+    CHECK(test::approx(a.position.x, 30));
     CHECK(test::throws([&] { physics.step(body, 0); }));
     CHECK(test::throws([&] { physics.step(body, -1); }));
 }); }
