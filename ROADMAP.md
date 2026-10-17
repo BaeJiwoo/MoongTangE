@@ -1,6 +1,6 @@
 # Development roadmap
 
-All work is reviewed through open, unmerged PRs. Issue numbers below were returned by GitHub.
+All work is reviewed through issue-specific PRs. Issue numbers below were returned by GitHub. The table records the original stacked bases; during an authorized merge, each PR is retargeted to main after its predecessor merges.
 
 | Order | Issue | Branch | PR base | Scope |
 | --- | --- | --- | --- | --- |
@@ -17,6 +17,6 @@ All work is reviewed through open, unmerged PRs. Issue numbers below were return
 | 11 | [#21](https://github.com/BaeJiwoo/portable-physics-sandbox/issues/21) | `21-ROLL` | `10-QA` | Rolling inertia/friction, orientation replication and smooth patterned rendering |
 | 12 | [#23](https://github.com/BaeJiwoo/portable-physics-sandbox/issues/23) | `23-REFACTOR` | `21-ROLL` | Whole-project C++ readability, Core Guidelines and OOP review/refactoring |
 
-Review and merge from top to bottom. After each predecessor is merged, check and retarget the next PR base as appropriate. Only the user merges.
+Review and merge from top to bottom only with explicit user authorization. Use merge commits to preserve the stack's ancestry. After each predecessor is merged, verify that main matches the predecessor's tree, retarget the next PR to main, and recheck its head commit, CI and issue link. Confirm that merging closes the linked issue; retain issue history and work branches.
 
 Deferred: UDP, client prediction, lag compensation, physics rollback, sphere/sphere collision, and production authentication.

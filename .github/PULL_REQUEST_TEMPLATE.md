@@ -1,5 +1,7 @@
 Related Issue: #
 
+Closes #
+
 ## Change and design
 
 ## Validation
@@ -14,4 +16,4 @@ List the base branch and preceding PR. Recheck the base after predecessors are m
 - [ ] Tests and CI reviewed
 - [ ] Merge order reviewed by the user
 
-Keep this PR open; do not merge or enable auto-merge.
+Keep this PR open until the user explicitly authorizes merging. Review the code and checks before merging; do not enable auto-merge. For a stacked PR, merge its predecessor first and retarget this PR to main so the closing keyword takes effect.
