@@ -9,6 +9,14 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned formatter
+        run: python3 -m pip install clang-format==22.1.3
+      - name: Check project C++ formatting
+        run: python3 Tools/check_format.py
   build:
     strategy:
       fail-fast: false

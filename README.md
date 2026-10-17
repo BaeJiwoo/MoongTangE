@@ -12,9 +12,9 @@ C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 프로젝트입니�
 
 ## 개발 상태
 
-싱글플레이, TCP 멀티플레이, 자체 구름 물리와 자동 테스트가 구현되어 있습니다. 모든 개발 PR은 리뷰를 위해 미병합 상태로 유지합니다. 전체 구현은 마지막 작업 브랜치인 `21-ROLL`에 있으며, `main`에는 초기 README만 있습니다.
+싱글플레이, TCP 멀티플레이, 자체 구름 물리와 자동 테스트가 구현되어 있습니다. 기본 브랜치는 `main`이며, 전체 구현과 C++ 설계 정리는 이슈별 PR을 순서대로 리뷰하고 병합하여 통합합니다.
 
-초기 README 이후 모든 개발 변경은 실제 GitHub 이슈 번호를 사용하는 작업 브랜치에서 진행합니다. 의존성이 있는 변경은 Stacked PR로 제출하며, PR은 사용자가 리뷰하고 직접 병합할 수 있도록 열린 상태로 유지합니다.
+모든 개발 변경은 실제 GitHub 이슈 번호를 사용하는 작업 브랜치에서 진행합니다. 의존성이 있는 변경은 Stacked PR로 제출합니다. 사용자에게 명시적인 병합 요청을 받은 경우에만 코드 리뷰와 검증 후 병합하며, 그 외에는 PR을 열린 상태로 유지합니다.
 
 ## 기술 스택
 
@@ -32,7 +32,7 @@ C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 프로젝트입니�
 CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 네트워크 자동 테스트에는 Python 3도 필요합니다. 첫 구성 시 고정된 외부 소스를 다운로드하므로 인터넷 연결이 필요합니다. 다운로드는 SHA-256으로 검증합니다.
 
 ```sh
-git clone --branch 21-ROLL https://github.com/BaeJiwoo/portable-physics-sandbox.git
+git clone https://github.com/BaeJiwoo/portable-physics-sandbox.git
 cd portable-physics-sandbox
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel 2
@@ -111,6 +111,8 @@ cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 
 ## 리뷰와 병합
 
-[ROADMAP.md](ROADMAP.md)의 순서대로 PR을 리뷰하세요. 후속 PR은 선행 미병합 브랜치를 Base로 사용합니다. 선행 PR을 병합한 뒤 다음 PR의 Base를 확인하고 필요하면 `main`으로 재지정하세요. 에이전트는 PR을 병합하거나 자동 병합을 활성화하지 않습니다.
+C++ 전체 가독성·OOP 리뷰 결과와 적용한 C++ Core Guidelines 항목은 [CPP_REVIEW.md](CPP_REVIEW.md)에 정리했습니다. `.clang-format`과 `.clang-tidy`가 검사 규칙을 정의하며, `python Tools/check_format.py`로 서식을 검증합니다. CTest가 활성화된 빌드는 프로젝트 헤더의 독립 컴파일도 검사합니다.
+
+[ROADMAP.md](ROADMAP.md)의 순서대로 PR을 리뷰하세요. 후속 PR은 선행 미병합 브랜치를 Base로 사용합니다. 병합 승인을 받은 경우, 선행 PR을 merge commit으로 병합한 뒤 다음 PR의 Base를 `main`으로 재지정하고 변경 범위와 검증 결과를 다시 확인합니다. PR 본문에 `Closes #이슈번호`를 포함하면 `main`에 병합할 때 해당 이슈가 자동으로 닫힙니다. 이슈 기록과 작업 브랜치는 보존하며 자동 병합은 활성화하지 않습니다.
 
 의존성과 재배포 시 라이선스 고지는 [THIRD_PARTY.md](THIRD_PARTY.md), 개발 규칙은 [AGENTS.md](AGENTS.md)에 정리되어 있습니다.

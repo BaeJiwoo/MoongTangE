@@ -1,44 +1,86 @@
 #pragma once
 #include "Common/Math/Vector3.h"
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
+
 namespace sandbox {
+// Raw quaternion value. Rotation consumers validate unit length at their boundary.
 struct Quaternion {
-    double w{1}, x{}, y{}, z{};
+    double w{1};
+    double x{};
+    double y{};
+    double z{};
+
     constexpr bool operator==(const Quaternion&) const = default;
-    bool finite() const { return std::isfinite(w) && Vector3{x,y,z}.finite(); }
-    double norm() const { return std::hypot(std::hypot(w,x),std::hypot(y,z)); }
-    bool unit() const { return finite() && std::abs(norm()-1)<1e-6; }
+
+    bool finite() const {
+        return std::isfinite(w) && Vector3{x, y, z}.finite();
+    }
+
+    double norm() const {
+        return std::hypot(std::hypot(w, x), std::hypot(y, z));
+    }
+
+    bool unit() const {
+        constexpr double unitTolerance = 1e-6;
+        return finite() && std::abs(norm() - 1) < unitTolerance;
+    }
+
     Quaternion normalized() const {
-        const double n=norm();
-        if (!finite() || !std::isfinite(n) || n<1e-12) throw std::invalid_argument("Invalid quaternion");
-        return {w/n,x/n,y/n,z/n};
+        constexpr double minimumNorm = 1e-12;
+        const double magnitude = norm();
+        if (!finite() || !std::isfinite(magnitude) || magnitude < minimumNorm) {
+            throw std::invalid_argument("Invalid quaternion");
+        }
+        return {w / magnitude, x / magnitude, y / magnitude, z / magnitude};
     }
-    Quaternion operator*(Quaternion q) const {
-        return {w*q.w-x*q.x-y*q.y-z*q.z,
-                w*q.x+x*q.w+y*q.z-z*q.y,
-                w*q.y-x*q.z+y*q.w+z*q.x,
-                w*q.z+x*q.y-y*q.x+z*q.w};
+
+    Quaternion operator*(Quaternion other) const {
+        return {w * other.w - x * other.x - y * other.y - z * other.z,
+                w * other.x + x * other.w + y * other.z - z * other.y,
+                w * other.y - x * other.z + y * other.w + z * other.x,
+                w * other.z + x * other.y - y * other.x + z * other.w};
     }
-    Vector3 rotate(Vector3 v) const {
-        const Vector3 u{x,y,z};
-        return v+2.0*cross(u,cross(u,v)+w*v);
+
+    // Precondition: this quaternion is unit length.
+    Vector3 rotate(Vector3 vector) const {
+        const Vector3 imaginary{x, y, z};
+        return vector + 2.0 * cross(imaginary, cross(imaginary, vector) + w * vector);
     }
+
     static Quaternion fromRotation(Vector3 rotation) {
-        const double angle=rotation.length();
-        if (!rotation.finite() || !std::isfinite(angle)) throw std::invalid_argument("Invalid rotation");
-        if (angle<1e-12) return Quaternion{1,rotation.x*0.5,rotation.y*0.5,rotation.z*0.5}.normalized();
-        const auto axis=rotation*(std::sin(angle*0.5)/angle);
-        return {std::cos(angle*0.5),axis.x,axis.y,axis.z};
+        constexpr double smallAngle = 1e-12;
+        const double angle = rotation.length();
+        if (!rotation.finite() || !std::isfinite(angle)) {
+            throw std::invalid_argument("Invalid rotation");
+        }
+        if (angle < smallAngle) {
+            return Quaternion{1, rotation.x * 0.5, rotation.y * 0.5, rotation.z * 0.5}.normalized();
+        }
+        const auto scaledAxis = rotation * (std::sin(angle * 0.5) / angle);
+        return {std::cos(angle * 0.5), scaledAxis.x, scaledAxis.y, scaledAxis.z};
     }
 };
-// q and -q represent the same rotation; choose the shortest arc.
-inline Quaternion interpolate(Quaternion a, Quaternion b, double t) {
-    double d=a.w*b.w+a.x*b.x+a.y*b.y+a.z*b.z;
-    if (d<0) { b={-b.w,-b.x,-b.y,-b.z}; d=-d; }
-    double u=1-t, v=t;
-    if (d<0.9995) {
-        const double angle=std::acos(std::clamp(d,-1.0,1.0));
-        u=std::sin((1-t)*angle)/std::sin(angle); v=std::sin(t*angle)/std::sin(angle);
+
+// Unit inputs, fraction in [0,1]. q and -q represent the same rotation; take the shortest arc.
+inline Quaternion interpolate(Quaternion from, Quaternion to, double fraction) {
+    double alignment = from.w * to.w + from.x * to.x + from.y * to.y + from.z * to.z;
+    if (alignment < 0) {
+        to = {-to.w, -to.x, -to.y, -to.z};
+        alignment = -alignment;
     }
-    return Quaternion{u*a.w+v*b.w,u*a.x+v*b.x,u*a.y+v*b.y,u*a.z+v*b.z}.normalized();
+
+    double fromWeight = 1 - fraction;
+    double toWeight = fraction;
+    constexpr double linearThreshold = 0.9995;
+    if (alignment < linearThreshold) {
+        const double angle = std::acos(std::clamp(alignment, -1.0, 1.0));
+        fromWeight = std::sin((1 - fraction) * angle) / std::sin(angle);
+        toWeight = std::sin(fraction * angle) / std::sin(angle);
+    }
+    return Quaternion{fromWeight * from.w + toWeight * to.w, fromWeight * from.x + toWeight * to.x,
+                      fromWeight * from.y + toWeight * to.y, fromWeight * from.z + toWeight * to.z}
+        .normalized();
 }
-}
+} // namespace sandbox
