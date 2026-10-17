@@ -17,7 +17,8 @@ inline constexpr std::uint32_t SPAWN_COLUMNS = 8;
 inline constexpr double MOVEMENT_FORCE = 10.0;
 
 // Player IDs are assigned by the server and are nonzero.
-inline constexpr double spawnX(std::uint32_t playerId) {
+inline constexpr double spawn_x(std::uint32_t playerId)
+{
     return static_cast<double>((playerId - 1) % SPAWN_COLUMNS) * SPAWN_SPACING;
 }
 } // namespace MoongTangE::simulation

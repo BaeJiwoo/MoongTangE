@@ -1,12 +1,15 @@
 #include "Network/Protocol/Codec.h"
+
 #include "game.pb.h"
+
 #include <google/protobuf/io/coded_stream.h>
 #include <set>
 #include <stdexcept>
 
 namespace MoongTangE::wire {
 namespace {
-template <class Message> Bytes encode(MessageType kind, const Message& message) {
+template <class Message> Bytes encode(MessageType kind, const Message& message)
+{
     const auto size = message.ByteSizeLong();
     require(size < MAX_FRAME_BYTES);
     Bytes data(size + 1);
@@ -15,7 +18,8 @@ template <class Message> Bytes encode(MessageType kind, const Message& message) 
     return data;
 }
 
-template <class Message> Message decode(std::span<const std::uint8_t> data, MessageType expected) {
+template <class Message> Message decode(std::span<const std::uint8_t> data, MessageType expected)
+{
     require(data.size() <= MAX_FRAME_BYTES && type(data) == expected);
     const auto payload = data.subspan(1);
     google::protobuf::io::CodedInputStream stream(payload.data(), static_cast<int>(payload.size()));
@@ -26,55 +30,63 @@ template <class Message> Message decode(std::span<const std::uint8_t> data, Mess
     return message;
 }
 
-void writeVector(proto::Vector3& message, Vector3 value) {
-    require(value.finite());
+void write_vector(proto::Vector3& message, Vector3 value)
+{
+    require(value.Finite());
     message.set_x(value.x);
     message.set_y(value.y);
     message.set_z(value.z);
 }
 
-Vector3 readVector(const proto::Vector3& message) {
+Vector3 read_vector(const proto::Vector3& message)
+{
     require(message.has_x() && message.has_y() && message.has_z());
     const Vector3 value{message.x(), message.y(), message.z()};
-    require(value.finite());
+    require(value.Finite());
     return value;
 }
 
-void writeQuaternion(proto::Quaternion& message, Quaternion value) {
-    require(value.unit());
+void write_quaternion(proto::Quaternion& message, Quaternion value)
+{
+    require(value.Unit());
     message.set_w(value.w);
     message.set_x(value.x);
     message.set_y(value.y);
     message.set_z(value.z);
 }
 
-Quaternion readQuaternion(const proto::Quaternion& message) {
+Quaternion read_quaternion(const proto::Quaternion& message)
+{
     require(message.has_w() && message.has_x() && message.has_y() && message.has_z());
     const Quaternion value{message.w(), message.x(), message.y(), message.z()};
-    require(value.unit());
+    require(value.Unit());
     return value;
 }
 } // namespace
 
-void require(bool condition) {
+void require(bool condition)
+{
     if (!condition) {
         throw std::invalid_argument("Invalid protocol message");
     }
 }
 
-MessageType type(std::span<const std::uint8_t> data) {
+MessageType type(std::span<const std::uint8_t> data)
+{
     require(!data.empty() && data.front() >= static_cast<unsigned>(MessageType::CLIENT_HELLO) &&
             data.front() <= static_cast<unsigned>(MessageType::DISCONNECT));
     return static_cast<MessageType>(data.front());
 }
 
-Bytes clientHello() {
+Bytes client_hello()
+{
     proto::ClientHello message;
     message.set_protocol_version(PROTOCOL_VERSION);
     return encode(MessageType::CLIENT_HELLO, message);
 }
 
-Bytes serverHello(std::uint32_t playerId) {
+Bytes server_hello(std::uint32_t playerId)
+{
     require(playerId != 0);
     proto::ServerHello message;
     message.set_protocol_version(PROTOCOL_VERSION);
@@ -82,19 +94,22 @@ Bytes serverHello(std::uint32_t playerId) {
     return encode(MessageType::SERVER_HELLO, message);
 }
 
-void readClientHello(std::span<const std::uint8_t> data) {
+void read_client_hello(std::span<const std::uint8_t> data)
+{
     const auto message = decode<proto::ClientHello>(data, MessageType::CLIENT_HELLO);
     require(message.protocol_version() == PROTOCOL_VERSION);
 }
 
-std::uint32_t readServerHello(std::span<const std::uint8_t> data) {
+std::uint32_t read_server_hello(std::span<const std::uint8_t> data)
+{
     const auto message = decode<proto::ServerHello>(data, MessageType::SERVER_HELLO);
     require(message.protocol_version() == PROTOCOL_VERSION && message.player_id() != 0);
     return message.player_id();
 }
 
-Bytes input(InputCommand command) {
-    require(command.valid());
+Bytes input(InputCommand command)
+{
+    require(command.Valid());
     proto::InputCommand message;
     message.set_sequence(command.sequence);
     message.set_x(command.x);
@@ -102,15 +117,17 @@ Bytes input(InputCommand command) {
     return encode(MessageType::INPUT, message);
 }
 
-InputCommand readInput(std::span<const std::uint8_t> data, std::uint32_t sessionId) {
+InputCommand read_input(std::span<const std::uint8_t> data, std::uint32_t sessionId)
+{
     const auto message = decode<proto::InputCommand>(data, MessageType::INPUT);
     require(message.has_x() && message.has_z());
     const InputCommand command{sessionId, message.sequence(), message.x(), message.z()};
-    require(command.valid());
+    require(command.Valid());
     return command;
 }
 
-Bytes snapshot(const WorldSnapshot& state) {
+Bytes snapshot(const WorldSnapshot& state)
+{
     require(state.players.size() <= MAX_PLAYERS);
     proto::WorldSnapshot message;
     message.set_server_tick(state.tick);
@@ -119,15 +136,16 @@ Bytes snapshot(const WorldSnapshot& state) {
         require(player.id != 0 && ids.insert(player.id).second);
         auto& record = *message.add_players();
         record.set_id(player.id);
-        writeVector(*record.mutable_position(), player.position);
-        writeVector(*record.mutable_velocity(), player.velocity);
-        writeQuaternion(*record.mutable_orientation(), player.orientation);
-        writeVector(*record.mutable_angular_velocity(), player.angularVelocity);
+        write_vector(*record.mutable_position(), player.position);
+        write_vector(*record.mutable_velocity(), player.velocity);
+        write_quaternion(*record.mutable_orientation(), player.orientation);
+        write_vector(*record.mutable_angular_velocity(), player.angularVelocity);
     }
     return encode(MessageType::SNAPSHOT, message);
 }
 
-WorldSnapshot readSnapshot(std::span<const std::uint8_t> data) {
+WorldSnapshot read_snapshot(std::span<const std::uint8_t> data)
+{
     const auto message = decode<proto::WorldSnapshot>(data, MessageType::SNAPSHOT);
     require(message.has_server_tick() && message.players_size() <= static_cast<int>(MAX_PLAYERS));
     WorldSnapshot state{message.server_tick(), {}};
@@ -138,17 +156,19 @@ WorldSnapshot readSnapshot(std::span<const std::uint8_t> data) {
         require(record.has_position() && record.has_velocity() && record.has_orientation() &&
                 record.has_angular_velocity());
         state.players.push_back(
-            {record.id(), readVector(record.position()), readVector(record.velocity()),
-             readQuaternion(record.orientation()), readVector(record.angular_velocity())});
+            {record.id(), read_vector(record.position()), read_vector(record.velocity()),
+             read_quaternion(record.orientation()), read_vector(record.angular_velocity())});
     }
     return state;
 }
 
-Bytes disconnect() {
+Bytes disconnect()
+{
     return encode(MessageType::DISCONNECT, proto::Disconnect{});
 }
 
-bool isDisconnect(std::span<const std::uint8_t> data) {
+bool is_disconnect(std::span<const std::uint8_t> data)
+{
     if (type(data) != MessageType::DISCONNECT) {
         return false;
     }
@@ -156,7 +176,8 @@ bool isDisconnect(std::span<const std::uint8_t> data) {
     return true;
 }
 
-Bytes frame(std::span<const std::uint8_t> payload) {
+Bytes frame(std::span<const std::uint8_t> payload)
+{
     require(!payload.empty() && payload.size() <= MAX_FRAME_BYTES);
     const auto size = static_cast<std::uint32_t>(payload.size());
     Bytes data;
@@ -168,7 +189,8 @@ Bytes frame(std::span<const std::uint8_t> payload) {
     return data;
 }
 
-std::uint32_t frameSize(std::span<const std::uint8_t> header) {
+std::uint32_t frame_size(std::span<const std::uint8_t> header)
+{
     require(header.size() == FRAME_HEADER_BYTES);
     std::uint32_t size = 0;
     for (const auto byte : header) {

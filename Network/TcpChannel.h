@@ -1,5 +1,6 @@
 #pragma once
 #include "Network/Protocol/Codec.h"
+
 #include <array>
 #include <asio.hpp>
 #include <chrono>
@@ -12,23 +13,24 @@
 
 namespace MoongTangE {
 // All operations/callbacks run on one io_context thread. Async work retains shared ownership.
-class TcpChannel : public std::enable_shared_from_this<TcpChannel> {
-public:
+class TcpChannel : public std::enable_shared_from_this<TcpChannel>
+{
+  public:
     using Socket = asio::ip::tcp::socket;
     using MessageHandler = std::function<void(const wire::Bytes&)>;
     using CloseHandler = std::function<void(std::string)>;
 
     explicit TcpChannel(Socket socket);
-    void start(MessageHandler onMessage, CloseHandler onClose);
-    void send(const wire::Bytes& payload);
-    void close(std::string reason = "Connection closed");
+    void Start(MessageHandler onMessage, CloseHandler onClose);
+    void Send(const wire::Bytes& payload);
+    void Close(std::string reason = "Connection closed");
 
-private:
+  private:
     static constexpr std::size_t MAX_QUEUED_FRAMES = 32;
     static constexpr auto READ_TIMEOUT = std::chrono::seconds(10);
-    void readFrameHeader();
-    void readFrameBody();
-    void writeNextFrame();
+    void ReadFrameHeader();
+    void ReadFrameBody();
+    void WriteNextFrame();
 
     Socket m_socket;
     asio::steady_timer m_readDeadline;

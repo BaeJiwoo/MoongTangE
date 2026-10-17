@@ -129,7 +129,7 @@ cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 
 ## 리뷰와 병합
 
-C++ 전체 가독성·OOP 리뷰 결과와 적용한 C++ Core Guidelines 항목은 [CPP_REVIEW.md](CPP_REVIEW.md)에 정리했습니다. `.clang-format`과 `.clang-tidy`가 검사 규칙을 정의하며, `python Tools/check_format.py`로 서식을 검증합니다. CTest가 활성화된 빌드는 프로젝트 헤더의 독립 컴파일도 검사합니다.
+C++ 전체 가독성·OOP 리뷰 결과와 현재 코드 스타일은 [CPP_REVIEW.md](CPP_REVIEW.md)에 정리했습니다. Islewright를 참고해 멤버 함수는 `Run()`, 일반 함수는 `parse_server_options()`, 비공개 멤버는 `m_networkThread`, 상수는 `FIXED_DELTA`처럼 표기합니다. `.clang-format`과 `.clang-tidy`가 서식·명명 규칙을 검사하며, `python Tools/check_format.py`로 서식을 검증합니다. CTest가 활성화된 빌드는 프로젝트 헤더의 독립 컴파일도 검사합니다.
 
 [ROADMAP.md](ROADMAP.md)의 순서대로 PR을 리뷰하세요. 후속 PR은 선행 미병합 브랜치를 Base로 사용합니다. 병합 승인을 받은 경우, 선행 PR을 merge commit으로 병합한 뒤 다음 PR의 Base를 `main`으로 재지정하고 변경 범위와 검증 결과를 다시 확인합니다. PR 본문에 `Closes #이슈번호`를 포함하면 `main`에 병합할 때 해당 이슈가 자동으로 닫힙니다. 이슈 기록과 작업 브랜치는 보존하며 자동 병합은 활성화하지 않습니다.
 

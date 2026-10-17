@@ -2,6 +2,7 @@
 #include "Common/SimulationConfig.h"
 #include "Network/Protocol/Codec.h"
 #include "Server/Core/ServerHost.h"
+
 #include <asio.hpp>
 #include <chrono>
 #include <cstddef>
@@ -15,8 +16,9 @@ namespace MoongTangE {
 class TcpChannel;
 
 // Owns the server network thread, connection sessions and snapshot publication.
-class ServerNetworkRuntime {
-public:
+class ServerNetworkRuntime
+{
+  public:
     ServerNetworkRuntime(std::shared_ptr<ServerHost> host, const std::string& address,
                          std::uint16_t port);
     ~ServerNetworkRuntime();
@@ -24,20 +26,20 @@ public:
     ServerNetworkRuntime& operator=(const ServerNetworkRuntime&) = delete;
     ServerNetworkRuntime(ServerNetworkRuntime&&) = delete;
     ServerNetworkRuntime& operator=(ServerNetworkRuntime&&) = delete;
-    std::uint16_t port() const;
+    std::uint16_t Port() const;
 
-private:
+  private:
     static constexpr std::size_t MAX_CONNECTIONS = simulation::MAX_PLAYERS * 2;
     static constexpr auto SNAPSHOT_INTERVAL = std::chrono::milliseconds(
         1000 * simulation::SNAPSHOT_INTERVAL_TICKS / simulation::TICKS_PER_SECOND);
 
-    void closeAllSessions();
-    void acceptNextConnection();
-    void addSession(asio::ip::tcp::socket socket);
-    void removeSession(const std::shared_ptr<TcpChannel>& channel);
-    void handleMessage(const std::shared_ptr<TcpChannel>& channel, const wire::Bytes& data);
-    void broadcastLatestSnapshot();
-    void scheduleSnapshotBroadcast();
+    void CloseAllSessions();
+    void AcceptNextConnection();
+    void AddSession(asio::ip::tcp::socket socket);
+    void RemoveSession(const std::shared_ptr<TcpChannel>& channel);
+    void HandleMessage(const std::shared_ptr<TcpChannel>& channel, const wire::Bytes& data);
+    void BroadcastLatestSnapshot();
+    void ScheduleSnapshotBroadcast();
 
     std::shared_ptr<ServerHost> m_serverHost;
     asio::io_context m_ioContext;

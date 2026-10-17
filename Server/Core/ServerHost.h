@@ -1,6 +1,7 @@
 #pragma once
 #include "Common/Protocol/InputCommand.h"
 #include "Common/Protocol/WorldSnapshot.h"
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -10,8 +11,9 @@
 #include <thread>
 
 namespace MoongTangE {
-class ServerHost {
-public:
+class ServerHost
+{
+  public:
     static constexpr std::size_t MAX_PENDING_COMMANDS = 1024;
 
     ServerHost() = default;
@@ -22,30 +24,36 @@ public:
 
     ~ServerHost();
 
-    void start();
-    void stop();
+    void Start();
+    void Stop();
 
-    bool running() const;
+    bool Running() const;
 
-    std::uint32_t connect();
-    void disconnect(std::uint32_t playerId);
-    bool submit(InputCommand input);
-    WorldSnapshot snapshot() const;
-    std::size_t pending() const;
-    bool hasClient(std::uint32_t playerId) const;
+    std::uint32_t Connect();
+    void Disconnect(std::uint32_t playerId);
+    bool Submit(InputCommand input);
+    WorldSnapshot Snapshot() const;
+    std::size_t Pending() const;
+    bool HasClient(std::uint32_t playerId) const;
 
-private:
-    enum class WorldCommandType { JOIN, INPUT, LEAVE };
+  private:
+    enum class WorldCommandType
+    {
+        JOIN,
+        INPUT,
+        LEAVE
+    };
 
-    struct WorldCommand {
+    struct WorldCommand
+    {
         WorldCommandType m_type{WorldCommandType::JOIN};
         std::uint32_t m_playerId{};
         InputCommand m_input{};
     };
 
-    void run(std::stop_token stopToken);
+    void Run(std::stop_token stopToken);
     // m_dataMutex protects the command queue, sequence map, snapshot and ID; m_lifecycleMutex
-    // serializes start/stop. The tick thread alone owns the GameWorld inside run().
+    // serializes start/stop. The tick thread alone owns the GameWorld inside Run().
     mutable std::mutex m_dataMutex;
     std::mutex m_lifecycleMutex;
     std::deque<WorldCommand> m_pendingCommands;

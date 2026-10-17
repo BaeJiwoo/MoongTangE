@@ -3,7 +3,8 @@
 #include "Common/SimulationConfig.h"
 
 namespace MoongTangE {
-struct RigidBody {
+struct RigidBody
+{
     Vector3 position{0, simulation::SPAWN_HEIGHT, 0};
     Vector3 velocity{};
     double radius{simulation::PLAYER_RADIUS};
@@ -11,7 +12,8 @@ struct RigidBody {
     Vector3 angularVelocity{};
     Quaternion orientation{};
 
-    double inertia() const {
+    double Inertia() const
+    {
         return 0.4 * mass * radius * radius;
     }
 };

@@ -4,53 +4,60 @@
 #include "Common/Protocol/InputCommand.h"
 #include "Common/Protocol/WorldSnapshot.h"
 #include "Common/SimulationConfig.h"
+
 #include <cstdint>
 #include <map>
 
 namespace MoongTangE {
 // Only the server tick thread owns and mutates a GameWorld.
-class GameWorld {
-public:
-    bool addPlayer(std::uint32_t id) {
-        if (id == 0 || players_.size() >= MAX_PLAYERS || players_.contains(id)) {
+class GameWorld
+{
+  public:
+    bool AddPlayer(std::uint32_t id)
+    {
+        if (id == 0 || m_players.size() >= MAX_PLAYERS || m_players.contains(id)) {
             return false;
         }
         Player player;
-        player.body.position.x = simulation::spawnX(id);
-        players_.emplace(id, player);
+        player.body.position.x = simulation::spawn_x(id);
+        m_players.emplace(id, player);
         return true;
     }
 
-    void removePlayer(std::uint32_t id) {
-        players_.erase(id);
+    void RemovePlayer(std::uint32_t id)
+    {
+        m_players.erase(id);
     }
 
-    bool apply(InputCommand input) {
-        const auto player = players_.find(input.playerId);
-        if (!input.valid() || player == players_.end() ||
+    bool Apply(InputCommand input)
+    {
+        const auto player = m_players.find(input.playerId);
+        if (!input.Valid() || player == m_players.end() ||
             input.sequence <= player->second.input.sequence) {
             return false;
         }
         player->second.input = input;
-        player->second.inputTick = tick_;
+        player->second.inputTick = m_tick;
         return true;
     }
 
-    void step() {
-        for (auto& [id, player] : players_) {
+    void Step()
+    {
+        for (auto& [id, player] : m_players) {
             (void)id;
-            const bool inputFresh = tick_ - player.inputTick < simulation::INPUT_TIMEOUT_TICKS;
+            const bool inputFresh = m_tick - player.inputTick < simulation::INPUT_TIMEOUT_TICKS;
             const auto force =
-                inputFresh ? movementForce(player.input.x, player.input.z) : Vector3{};
-            physics_.step(player.body, PhysicsWorld::fixedDelta, force);
+                inputFresh ? movement_force(player.input.x, player.input.z) : Vector3{};
+            m_physics.Step(player.body, PhysicsWorld::FIXED_DELTA, force);
         }
-        ++tick_;
+        ++m_tick;
     }
 
-    WorldSnapshot snapshot() const {
-        WorldSnapshot result{tick_, {}};
-        result.players.reserve(players_.size());
-        for (const auto& [id, player] : players_) {
+    WorldSnapshot Snapshot() const
+    {
+        WorldSnapshot result{m_tick, {}};
+        result.players.reserve(m_players.size());
+        for (const auto& [id, player] : m_players) {
             const auto& body = player.body;
             result.players.push_back(
                 {id, body.position, body.velocity, body.orientation, body.angularVelocity});
@@ -58,15 +65,16 @@ public:
         return result;
     }
 
-private:
-    struct Player {
+  private:
+    struct Player
+    {
         RigidBody body;
         InputCommand input;
         std::uint64_t inputTick{};
     };
 
-    std::map<std::uint32_t, Player> players_;
-    PhysicsWorld physics_;
-    std::uint64_t tick_{};
+    std::map<std::uint32_t, Player> m_players;
+    PhysicsWorld m_physics;
+    std::uint64_t m_tick{};
 };
 } // namespace MoongTangE

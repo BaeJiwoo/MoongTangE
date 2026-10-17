@@ -1,6 +1,8 @@
 #include "Server/ServerApplication.h"
+
 #include "Server/Core/ServerHost.h"
 #include "Server/Network/AsioServer.h"
+
 #include <asio.hpp>
 #include <chrono>
 #include <csignal>
@@ -12,20 +14,23 @@
 
 namespace MoongTangE {
 namespace {
-std::shared_ptr<ServerHost> startServerCore() {
+std::shared_ptr<ServerHost> start_server_core()
+{
     auto serverCore = std::make_shared<ServerHost>();
-    serverCore->start();
+    serverCore->Start();
     return serverCore;
 }
 } // namespace
 
-ServerApplication::ServerApplication(ServerOptions options) : m_options(std::move(options)) {
+ServerApplication::ServerApplication(ServerOptions options) : m_options(std::move(options))
+{
     if (m_options.m_runDuration < std::chrono::seconds::zero()) {
         throw std::invalid_argument("Server duration cannot be negative");
     }
 }
 
-void ServerApplication::run() {
+void ServerApplication::Run()
+{
     if (m_hasRun.exchange(true)) {
         throw std::logic_error("ServerApplication can run only once");
     }
@@ -34,7 +39,7 @@ void ServerApplication::run() {
     }
 
     // Declaration order closes networking before releasing the final server core owner.
-    const auto serverCore = startServerCore();
+    const auto serverCore = start_server_core();
     const std::string bindAddress = m_options.m_publicBind ? "0.0.0.0" : "127.0.0.1";
     AsioServer networkServer(serverCore, bindAddress, m_options.m_port);
 
@@ -44,23 +49,23 @@ void ServerApplication::run() {
     asio::steady_timer shutdownDeadline(controlContext);
     shutdownSignals.async_wait([this](asio::error_code error, int) {
         if (!error) {
-            requestStop();
+            RequestStop();
         }
     });
     if (m_options.m_runDuration > std::chrono::seconds::zero()) {
         shutdownDeadline.expires_after(m_options.m_runDuration);
         shutdownDeadline.async_wait([this](asio::error_code error) {
             if (!error) {
-                requestStop();
+                RequestStop();
             }
         });
     }
 
-    std::cout << "Listening " << bindAddress << ':' << networkServer.port() << std::endl;
+    std::cout << "Listening " << bindAddress << ':' << networkServer.Port() << std::endl;
     if (m_options.m_publicBind) {
         std::cerr << "Warning: unauthenticated test server; use trusted networks only.\n";
     }
-    m_boundPort = networkServer.port();
+    m_boundPort = networkServer.Port();
     constexpr auto STOP_POLL_INTERVAL = std::chrono::milliseconds(50);
     while (!m_stopRequested) {
         controlContext.run_for(STOP_POLL_INTERVAL);
@@ -68,11 +73,13 @@ void ServerApplication::run() {
     // Control services release their callbacks before networking and the server core shut down.
 }
 
-void ServerApplication::requestStop() noexcept {
+void ServerApplication::RequestStop() noexcept
+{
     m_stopRequested = true;
 }
 
-std::uint16_t ServerApplication::port() const noexcept {
+std::uint16_t ServerApplication::Port() const noexcept
+{
     return m_boundPort.load();
 }
 } // namespace MoongTangE

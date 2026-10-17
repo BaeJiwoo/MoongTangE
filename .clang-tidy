@@ -15,6 +15,17 @@ Checks: >-
   cppcoreguidelines-special-member-functions,
   cppcoreguidelines-virtual-class-destructor,
   modernize-use-override,
-  readability-braces-around-statements
+  readability-braces-around-statements,
+  readability-identifier-naming
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*(Client|Common|Network|Server|Tests)[/\\].*'
+CheckOptions:
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.MethodCase: CamelCase
+  readability-identifier-naming.ClassMethodCase: CamelCase
+  readability-identifier-naming.VirtualMethodCase: CamelCase
+  readability-identifier-naming.PrivateMemberCase: camelBack
+  readability-identifier-naming.PrivateMemberPrefix: m_
+  readability-identifier-naming.ConstexprVariableCase: UPPER_CASE
+  readability-identifier-naming.ClassConstantCase: UPPER_CASE
+  readability-identifier-naming.ScopedEnumConstantCase: UPPER_CASE
