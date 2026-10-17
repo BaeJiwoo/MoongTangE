@@ -3,6 +3,7 @@
 #include "Common/Protocol/WorldSnapshot.h"
 #include <optional>
 #include <string>
+
 namespace sandbox {
 // Call from one consumer thread. Implementations own their background synchronization.
 class IClientTransport {
@@ -15,4 +16,4 @@ public:
     virtual std::string error() const = 0;
     virtual void close() = 0;
 };
-}
+} // namespace sandbox
