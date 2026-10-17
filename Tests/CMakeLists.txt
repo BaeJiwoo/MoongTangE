@@ -1,0 +1,6 @@
+function(sandbox_test name source)
+  add_executable(${name} ${source})
+  target_link_libraries(${name} PRIVATE Common Threads::Threads ${ARGN})
+  add_test(NAME ${name} COMMAND ${name})
+  set_tests_properties(${name} PROPERTIES TIMEOUT 30)
+endfunction()
