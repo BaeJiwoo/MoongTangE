@@ -64,7 +64,7 @@ flowchart TD
 
 `Run()`의 지역 자원은 애플리케이션의 실행 수명을 따릅니다. `ServerHost`를 시작한 뒤 `AsioServer`를 생성합니다. `AsioServer::m_networkRuntime`이 `ServerNetworkRuntime`을 단독 소유하고, runtime의 `m_serverHost`가 코어의 공유 소유권을 유지합니다. 생성의 역순으로 파괴되어 네트워크 작업을 종료한 뒤 마지막 코어 소유자가 해제됩니다. 바인딩 실패나 출력·이벤트 루프 예외도 같은 RAII 정리 경로를 거칩니다.
 
-`ServerHost::Run()` 내부의 `GameRoomManager`와 모든 `GameWorld`는 Tick 스레드만 접근합니다. `m_dataMutex`는 `m_pendingCommands`·`m_clients`·`m_latestSnapshots`·`m_nextPlayerId`를 보호하고, `m_lifecycleMutex`는 코어의 시작과 종료를 직렬화합니다. `WorldCommand`는 `WorldCommandType::JOIN/INPUT/LEAVE`와 플레이어·입력을 묶는 값 타입입니다. 네트워크 콜백은 `Connect`, `Submit`, `Disconnect`를 호출할 뿐 월드를 직접 변경하지 않습니다.
+`ServerHost::Run()` 내부의 `GameRoomManager`와 모든 `GameWorld`는 Tick 스레드만 접근합니다. `m_dataMutex`는 `m_pendingCommands`·`m_pendingInputs`·`m_clients`·`m_latestSnapshots`·`m_nextPlayerId`를 보호하고, `m_lifecycleMutex`는 코어의 시작과 종료를 직렬화합니다. `WorldCommand`는 `WorldCommandType::JOIN/LEAVE`와 요청 ID를 묶는 값 타입입니다. 이동 입력은 별도의 `m_pendingInputs`에 유저마다 최신 값 한 개만 보관합니다. 네트워크 콜백은 `Connect`, `Submit`, `Disconnect`를 호출할 뿐 월드를 직접 변경하지 않습니다.
 
 ## 입력에서 화면까지
 
@@ -218,14 +218,14 @@ sequenceDiagram
 | `Connect()` | 요청 ID를 발급하고 JOIN을 등록합니다. 정지·요청/큐 한도·ID 고갈이면 0입니다. 아직 입장 성공을 뜻하지 않습니다. |
 | `Admission(playerId)` | PENDING, ACCEPTED(플레이어·방 ID), FULL 또는 UNAVAILABLE을 조회합니다. 입장 취소는 즉시 UNAVAILABLE입니다. |
 | `Disconnect(playerId)` | 등록된 연결을 제거하고 LEAVE 명령을 보장하여 큐에 넣습니다. |
-| `Submit(input)` | 값·연결·증가하는 시퀀스·큐 크기를 검증하고 INPUT 명령을 넣습니다. 수락 여부를 반환합니다. |
+| `Submit(input)` | 값·입장 확정·증가하는 시퀀스를 검증하고 해당 유저의 최신 입력 슬롯을 교체합니다. 수락 여부를 반환합니다. |
 | `SnapshotFor(playerId)` / `Snapshots()` | 참가자의 방 또는 모든 방의 최신 공개 Snapshot 복사본을 반환합니다. 방별 목록을 전역 월드로 합치지 않습니다. |
 | `Capacity()` | 설정된 최대 방 수 × 3을 반환합니다. |
 | `Pending()` | 잠금 아래 대기 명령 수를 조회합니다. |
 | `HasClient(playerId)` | 실행 중이고 해당 연결의 입장이 확정됐는지 확인합니다. |
-| `Run(stopToken)` (비공개) | 명령 큐를 꺼내 JOIN/INPUT/LEAVE를 적용하고 각 방을 고정 시간으로 진행합니다. 3 서버 Tick마다 방별 Snapshot을 게시합니다. 취소된 JOIN은 무시합니다. |
+| `Run(stopToken)` (비공개) | 명령·입력 큐를 꺼내 JOIN/LEAVE 후 최신 입력을 적용하고 각 방을 고정 시간으로 진행합니다. 3 서버 Tick마다 방별 Snapshot을 게시합니다. 취소된 JOIN은 무시합니다. |
 
-일반 명령 한도는 `MAX_PENDING_COMMANDS = 1024`입니다. 퇴장 명령은 최대 `Capacity() × 2`개까지 추가되어 정리가 누락되지 않습니다.
+입장·퇴장 명령의 기본 한도는 `MAX_PENDING_COMMANDS = 1024`입니다. 입력은 유저당 하나, 최대 `Capacity()`개로 별도 제한하며 한 유저의 반복 제출이 다른 유저의 슬롯을 차지하지 않습니다. 퇴장 명령은 최대 `Capacity() × 2`개까지 추가되어 정리가 누락되지 않습니다.
 
 </details>
 
@@ -380,8 +380,8 @@ TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + 
 
 ## 제한과 검증
 
-기본 8개 방 × 3명 = 24명이며 최대 방 수를 1–256으로 설정할 수 있습니다. 전체 정원은 `Capacity()`로 표시하며 요청 추적과 TCP 연결은 각각 그 두 배로 제한합니다. 코어의 일반 명령 큐는 1,024개이며, 퇴장 처리를 놓치지 않도록 정원의 두 배까지 Leave 명령을 추가로 허용합니다. 각 소켓의 송신 큐는 32개 프레임으로 제한합니다. 자세한 메시지 형식과 시간 제한은 [PROTOCOL.md](../PROTOCOL.md)를 참고하세요.
+기본 8개 방 × 3명 = 24명이며 최대 방 수를 1–256으로 설정할 수 있습니다. 전체 정원은 `Capacity()`로 표시하며 요청 추적과 TCP 연결은 각각 그 두 배로 제한합니다. 코어의 입장·퇴장 명령 큐는 1,024개이며, 퇴장 처리를 놓치지 않도록 정원의 두 배까지 Leave 명령을 추가로 허용합니다. 최신 입력은 입장한 유저당 하나씩 별도로 유지합니다. 따라서 대기 중 자료의 상한은 1,024 + 정원 × 3개이며 Tick이 인수한 한 배치도 동일하게 제한됩니다. 각 소켓의 송신 큐는 32개 프레임으로 제한합니다. 자세한 메시지 형식과 시간 제한은 [PROTOCOL.md](../PROTOCOL.md)를 참고하세요.
 
-`ServerApplicationTests`는 실제 연결 후 종료, 중복 종료·실행, 실행 시간 만료, 이미 사용 중인 포트와 사전 취소를 검증합니다. `MultiRoomTests`는 Local/TCP 7명의 3/3/1 배정, 방별 상태·입력 격리, 빈자리 우선 배정과 정원 초과 응답을 검증합니다. `NetworkTests`는 비정상 프레임·부분 수신·활성 연결 종료를, `IntegrationTests`는 Local/TCP 물리 동작을 확인합니다. `ProcessSmoke`는 별도 프로세스 접속과 시간 제한 종료를 검사하고 POSIX 환경에서는 SIGTERM 정상 종료도 확인합니다. Windows의 외부 SIGTERM 전달은 같은 방식으로 검증하지 않습니다.
+`ServerApplicationTests`는 실제 연결 후 종료, 중복 종료·실행, 실행 시간 만료, 이미 사용 중인 포트와 사전 취소를 검증합니다. `MultiRoomTests`는 Local/TCP 7명의 3/3/1 배정, 방별 상태·입력 격리, 빈자리 우선 배정과 정원 초과 응답을 검증합니다. `NetworkTests`는 비정상 프레임·부분 수신·활성 연결 종료를, `IntegrationTests`는 Local/TCP 물리 동작을 확인합니다. `RoomConcurrencyTests`는 동시 요청 40건, 취소·재시작, 입력 폭주 중 다른 방의 진행, 256개 방/768명 설정 한도를 검증합니다. 이는 성능이나 운영 수용량 보장은 아닙니다. `ProcessSmoke`는 별도 서버에 9명이 접속해 3개 방으로 나뉘는지, 10번째 거절·빈자리 재사용·시간 제한 종료를 검사하고 POSIX 환경에서는 SIGTERM 정상 종료도 확인합니다. Windows의 외부 SIGTERM 전달은 같은 방식으로 검증하지 않습니다.
 
 공끼리의 충돌, UDP, 예측·롤백, 사용자 인증·암호화는 구현 범위에 포함되지 않습니다. 운영용 공개 서버가 아닌 데모이며, 기본 루프백 또는 신뢰하는 테스트 네트워크에서 사용합니다.
