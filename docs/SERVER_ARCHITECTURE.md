@@ -9,8 +9,7 @@
 프로토콜 v4는 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
 성공한 Hello의 방 ID와 다른 Snapshot은 클라이언트가 거부합니다. `IClientTransport::RoomId()`는
 입장한 방을 제공하며 연결 종료 시 0입니다. 렌더링은 기존 `WorldSnapshot`을 사용하고,
-방이 바뀌면 보간 상태를 비웁니다. 이 단계의 기존 단일 월드는 방 1로 노출되며 실제 여러 방
-배정과 비동기 입장 확정은 #37에서 활성화합니다.
+방이 바뀌면 보간 상태를 비웁니다. #37부터 실제 여러 방 배정과 비동기 입장 확정을 사용합니다.
 
 <details><summary>Network/Protocol/Codec.h · Codec.cpp — 방 통신</summary>
 
@@ -34,6 +33,7 @@
 | `main` | 명령행 해석, 도움말, `ServerApplication::Run()` 호출, 예외와 종료 코드 보고 | 서버 루프와 물리 처리 |
 | `ServerApplication` | 독립 서버 시작, 종료 요청·시그널·시간 제한, 실행 중 자원 소유 | 개별 플레이어 물리 변경 |
 | `ServerHost` | Tick 스레드, 연결 등록, 제한된 명령 큐, 최신 Snapshot의 안전한 공유 | 소켓·화면 처리 |
+| `GameRoomManager` / `GameRoom` | 생성 순서에 따른 3인 방 배정·퇴장·빈 방 정리, 방별 월드 소유 | 소켓과 다른 스레드의 직접 접근 |
 | `GameWorld` | 플레이어와 입력 상태, 입력 만료, 물리 단계 호출 | 스레드 생성·소켓 접근 |
 | `PhysicsWorld` | 중력, 평면 접촉, 마찰, 구름 저항과 자세 갱신 | 입력 수신·렌더링 |
 | `AsioServer` | 네트워크 실행 객체 소유, 시작·종료와 포트 조회의 공개 진입점 | 개별 세션 처리 |
@@ -53,7 +53,9 @@ flowchart TD
     Facade --> Network[ServerNetworkRuntime: 네트워크 스레드]
     Network --> Channel[TcpChannel: 연결별 소켓과 큐]
     Network -->|명령 큐에 등록| Host
-    Host --> World[GameWorld]
+    Host --> Rooms[GameRoomManager]
+    Rooms --> Room[GameRoom: 최대 3명]
+    Room --> World[방별 GameWorld]
     World --> Physics[PhysicsWorld]
     Host -->|잠금 아래 최신 Snapshot 복사| Network
 ```
@@ -62,7 +64,7 @@ flowchart TD
 
 `Run()`의 지역 자원은 애플리케이션의 실행 수명을 따릅니다. `ServerHost`를 시작한 뒤 `AsioServer`를 생성합니다. `AsioServer::m_networkRuntime`이 `ServerNetworkRuntime`을 단독 소유하고, runtime의 `m_serverHost`가 코어의 공유 소유권을 유지합니다. 생성의 역순으로 파괴되어 네트워크 작업을 종료한 뒤 마지막 코어 소유자가 해제됩니다. 바인딩 실패나 출력·이벤트 루프 예외도 같은 RAII 정리 경로를 거칩니다.
 
-`ServerHost::Run()` 내부의 `GameWorld`는 Tick 스레드만 접근합니다. `m_dataMutex`는 `m_pendingCommands`·`m_lastInputSequences`·`m_latestSnapshot`·`m_nextPlayerId`를 보호하고, `m_lifecycleMutex`는 코어의 시작과 종료를 직렬화합니다. `WorldCommand`는 `WorldCommandType::JOIN/INPUT/LEAVE`와 플레이어·입력을 묶는 값 타입입니다. 네트워크 콜백은 `Connect`, `Submit`, `Disconnect`를 호출할 뿐 월드를 직접 변경하지 않습니다.
+`ServerHost::Run()` 내부의 `GameRoomManager`와 모든 `GameWorld`는 Tick 스레드만 접근합니다. `m_dataMutex`는 `m_pendingCommands`·`m_clients`·`m_latestSnapshots`·`m_nextPlayerId`를 보호하고, `m_lifecycleMutex`는 코어의 시작과 종료를 직렬화합니다. `WorldCommand`는 `WorldCommandType::JOIN/INPUT/LEAVE`와 플레이어·입력을 묶는 값 타입입니다. 네트워크 콜백은 `Connect`, `Submit`, `Disconnect`를 호출할 뿐 월드를 직접 변경하지 않습니다.
 
 ## 입력에서 화면까지
 
@@ -73,20 +75,22 @@ sequenceDiagram
     participant Queue as ServerHost 명령 큐
     participant World as Tick / GameWorld
     Client->>Net: Hello
-    Net->>Queue: Join 등록, 서버가 ID 할당
-    Net-->>Client: ServerHello(ID)
+    Net->>Queue: Join 요청 ID 발급
+    Queue->>World: Tick에서 방 배정 확정
+    World-->>Net: AdmissionResult
+    Net-->>Client: ServerHello(입장 결과, ID, 방 ID)
     Client->>Net: 입력(sequence, x, z)
     Net->>Queue: 세션 ID를 부여하고 입력 등록
     Queue->>World: Tick 경계에서 명령 소비
     World->>World: 힘·마찰·회전 계산 (60Hz)
     World-->>Net: 최신 Snapshot 복사 (기본 20Hz)
-    Net-->>Client: WorldSnapshot
+    Net-->>Client: 해당 방의 RoomSnapshot
     Client->>Client: 위치·회전 보간 후 렌더링
 ```
 
-입력에는 임의의 플레이어 ID를 실어 보낼 수 없습니다. 네트워크 세션의 ID를 서버가 부여하며, 유한한 입력값·범위·증가하는 시퀀스를 검증합니다. 입력이 120 Tick 동안 갱신되지 않으면 조작력을 해제하고 관성 운동은 계속 계산합니다.
+입력에는 임의의 플레이어 ID나 방 ID를 실어 보낼 수 없습니다. 네트워크 세션의 ID를 서버가 부여하며, 유한한 입력값·범위·증가하는 시퀀스를 검증합니다. 입력이 120 Tick 동안 갱신되지 않으면 조작력을 해제하고 관성 운동은 계속 계산합니다.
 
-물리는 고정 `dt=1/60`을 사용합니다. 기본 Snapshot 게시 간격은 3 Tick입니다. TCP 서버는 약 50ms마다 아직 보내지 않은 최신 상태를 전송하므로 실제 도착 간격은 스케줄링과 네트워크에 영향을 받습니다. 클라이언트의 보간은 표시용이며 서버 상태를 변경하지 않습니다.
+물리는 고정 `dt=1/60`을 사용합니다. 기본 Snapshot 게시 간격은 서버의 3 Tick입니다. 방별 Tick은 독립적이며 빈 방은 물리 계산을 건너뜁니다. TCP 서버는 약 50ms마다 아직 보내지 않은 최신 상태를 전송하므로 실제 도착 간격은 스케줄링과 네트워크에 영향을 받습니다. 클라이언트의 보간은 표시용이며 서버 상태를 변경하지 않습니다.
 
 ## 싱글플레이와 독립 서버
 
@@ -104,7 +108,7 @@ sequenceDiagram
 
 | CMake 라이브러리 | 구현 파일 | 직접 연결하는 대상 |
 | --- | --- | --- |
-| `ServerCore` | `ServerHost.cpp`, `TickScheduler.cpp` | Common, Threads |
+| `ServerCore` | `ServerHost.cpp`, `TickScheduler.cpp`, `GameRoom.cpp`, `GameRoomManager.cpp`, `GameRoomOptions.cpp` | Common, Threads |
 | `ServerOptions` | `ServerOptions.cpp` | Common |
 | `TcpTransport` | `AsioServer.cpp`, `ServerNetworkRuntime.cpp`, `TcpChannel.cpp`, `TcpClientTransport.cpp` | ServerCore, AsioStandalone, NetworkProtocol |
 | `ServerRuntime` | `ServerApplication.cpp` | TcpTransport, ServerOptions |
@@ -114,7 +118,7 @@ sequenceDiagram
 
 ### 3인 방 모델 추가 — Issue #35
 
-`GameRoomManager`는 생성 순서대로 빈자리가 있는 방을 채우고, 후보가 없을 때만 최대 방 수 안에서 새 방을 생성합니다. 방 정원은 3명이며 기본 최대 방 수는 8개, 빈 방 보관 시간은 30초입니다. 이 단계에서는 모델과 테스트를 추가하며 `ServerHost`의 실제 여러 방 실행 연결은 후속 작업에서 적용합니다. `Common/Protocol/RoomSnapshot.h`는 방 ID와 기존 월드 Snapshot을 묶는 의존성 없는 값 타입입니다.
+`GameRoomManager`는 생성 순서대로 빈자리가 있는 방을 채우고, 후보가 없을 때만 최대 방 수 안에서 새 방을 생성합니다. 방 정원은 3명이며 기본 최대 방 수는 8개, 빈 방 보관 시간은 30초입니다. `ServerHost`가 이 관리자를 Tick 스레드에 생성합니다. 방을 미리 만들지 않으며 기존 참가자를 다른 방으로 옮기지 않습니다. `Common/Protocol/RoomSnapshot.h`는 방 ID와 기존 월드 Snapshot을 묶는 의존성 없는 값 타입입니다.
 
 `GameWorld`는 플레이어 ID와 생성 자리를 분리합니다. 가장 작은 빈 자리로 생성하고 퇴장 시 반환하므로 큰 ID도 새 월드의 첫 자리에서 시작합니다. 물리 계산은 동일합니다. 클라이언트 smoke와 RemoteProbe는 최초 관측 위치를 기준으로 이동을 검증합니다.
 
@@ -175,11 +179,11 @@ sequenceDiagram
 
 [선언](../Server/ServerOptions.h) · [구현](../Server/ServerOptions.cpp)
 
-`ServerOptions`는 포트(기본 27015), 실행 시간(기본 0), 외부 바인딩·도움말 여부를 저장하는 값 타입입니다.
+`ServerOptions`는 포트(기본 27015), 실행 시간(기본 0), 방 옵션 `m_rooms`, 외부 바인딩·도움말 여부를 저장하는 값 타입입니다.
 
 | 함수 | 설명 |
 | --- | --- |
-| `parse_server_options(arguments)` | `--port`, `--public`, `--run-for`, `--help`를 해석합니다. 포트 0은 자동 할당이며 잘못된 옵션·범위를 거부합니다. |
+| `parse_server_options(arguments)` | `--port`, `--public`, `--run-for`, `--max-rooms`(1–256), `--empty-room-seconds`(0–86400), `--help`를 해석합니다. 포트 0은 자동 할당이며 잘못된 옵션·범위를 거부합니다. |
 
 </details>
 
@@ -190,11 +194,11 @@ sequenceDiagram
 
 | 함수 | 설명 |
 | --- | --- |
-| `ServerApplication(options)` | 옵션을 저장하고 음수 실행 시간을 거부합니다. 아직 서버를 시작하지 않습니다. |
+| `ServerApplication(options)` | 옵션을 저장하고 음수 실행 시간과 잘못된 방 한도를 거부합니다. 아직 서버를 시작하지 않습니다. |
 | `Run()` | 한 번만 실행할 수 있습니다. 코어·네트워크를 시작하고 제어용 Asio 이벤트 루프에서 종료 요청을 기다립니다. 지역 객체의 역순 소멸로 자원을 정리합니다. |
 | `RequestStop()` | `m_stopRequested`를 원자적으로 설정합니다. 다른 스레드에서도 호출할 수 있으며 정리 완료를 기다리지는 않습니다. |
 | `Port()` | 원자적으로 게시한 실제 포트를 조회합니다. 시작 전에는 0, 종료 후에는 마지막 포트입니다. |
-| `start_server_core()` (cpp 내부) | ServerHost를 공유 소유 객체로 만들고 Tick 스레드를 시작합니다. |
+| `start_server_core(options)` (cpp 내부) | 방 설정을 받은 ServerHost를 공유 소유 객체로 만들고 Tick 스레드를 시작합니다. |
 
 `m_hasRun`은 실행 시도 여부이며 현재 가동 여부가 아닙니다. 호출자는 `Run()` 반환 후 애플리케이션을 파괴해야 합니다. `STOP_POLL_INTERVAL`은 종료 플래그 재확인 간격 50ms이며 물리 Tick 간격과 다릅니다.
 
@@ -210,15 +214,18 @@ sequenceDiagram
 | `Start()` | 가동 상태를 설정하고 Tick 스레드를 시작합니다. 이미 실행 중이면 반환합니다. |
 | `Stop()` / `~ServerHost()` | Tick 중단을 요청하고 join한 뒤 명령·연결·Snapshot 상태를 정리합니다. 소멸자도 Stop을 호출합니다. |
 | `Running()` | 원자적 가동 상태를 조회합니다. |
-| `Connect()` | 플레이어 ID를 할당하고 JOIN 명령을 큐에 넣습니다. 정지·인원/큐 한도·ID 고갈이면 0입니다. |
+| `ServerHost(options)` | 방 설정을 검증합니다. 시작 시 월드는 아직 없습니다. |
+| `Connect()` | 요청 ID를 발급하고 JOIN을 등록합니다. 정지·요청/큐 한도·ID 고갈이면 0입니다. 아직 입장 성공을 뜻하지 않습니다. |
+| `Admission(playerId)` | PENDING, ACCEPTED(플레이어·방 ID), FULL 또는 UNAVAILABLE을 조회합니다. 입장 취소는 즉시 UNAVAILABLE입니다. |
 | `Disconnect(playerId)` | 등록된 연결을 제거하고 LEAVE 명령을 보장하여 큐에 넣습니다. |
 | `Submit(input)` | 값·연결·증가하는 시퀀스·큐 크기를 검증하고 INPUT 명령을 넣습니다. 수락 여부를 반환합니다. |
-| `Snapshot()` | 잠금 아래 최신 공개 Snapshot을 복사합니다. |
+| `SnapshotFor(playerId)` / `Snapshots()` | 참가자의 방 또는 모든 방의 최신 공개 Snapshot 복사본을 반환합니다. 방별 목록을 전역 월드로 합치지 않습니다. |
+| `Capacity()` | 설정된 최대 방 수 × 3을 반환합니다. |
 | `Pending()` | 잠금 아래 대기 명령 수를 조회합니다. |
-| `HasClient(playerId)` | 실행 중이고 해당 연결이 등록되어 있는지 확인합니다. |
-| `Run(stopToken)` (비공개) | 명령 큐를 꺼내 JOIN/INPUT/LEAVE를 적용하고 GameWorld를 고정 시간으로 진행합니다. 3 Tick마다 Snapshot을 게시합니다. |
+| `HasClient(playerId)` | 실행 중이고 해당 연결의 입장이 확정됐는지 확인합니다. |
+| `Run(stopToken)` (비공개) | 명령 큐를 꺼내 JOIN/INPUT/LEAVE를 적용하고 각 방을 고정 시간으로 진행합니다. 3 서버 Tick마다 방별 Snapshot을 게시합니다. 취소된 JOIN은 무시합니다. |
 
-일반 명령 한도는 `MAX_PENDING_COMMANDS = 1024`입니다. 퇴장 명령은 최대 `MAX_PLAYERS`개까지 추가되어 정리가 누락되지 않습니다.
+일반 명령 한도는 `MAX_PENDING_COMMANDS = 1024`입니다. 퇴장 명령은 최대 `Capacity() × 2`개까지 추가되어 정리가 누락되지 않습니다.
 
 </details>
 
@@ -267,11 +274,12 @@ sequenceDiagram
 | `AcceptNextConnection()` | 다음 연결을 비동기로 수락합니다. 연결 한도 이내면 세션을 만들고 수락을 다시 등록합니다. |
 | `AddSession(socket)` | TcpChannel과 Hello 이전 세션을 만들고 수신/종료 콜백을 설치합니다. weak_ptr로 소유권 순환을 피합니다. |
 | `RemoveSession(channel)` | 코어에 퇴장을 요청하고 세션을 제거합니다. |
-| `HandleMessage(channel, data)` | 첫 Hello를 검증하고 ID를 할당합니다. 이후 입력은 코어 큐에 전달하며 Disconnect·잘못된 메시지는 연결을 종료합니다. |
-| `BroadcastLatestSnapshot()` | 아직 보내지 않은 최신 Snapshot을 Hello가 완료된 세션에 전송합니다. |
+| `HandleMessage(channel, data)` | 첫 Hello를 검증하고 입장 요청을 등록합니다. 입장 성공 후 입력은 코어 큐에 전달하며 Disconnect·잘못된 메시지는 연결을 종료합니다. |
+| `CompleteAdmission(channel)` | Tick에서 확정한 결과를 보냅니다. 실패 응답은 송신 후 연결을 닫고, 대기 중에는 성공 응답을 보내지 않습니다. |
+| `BroadcastLatestSnapshot()` | 입장 결과를 확인하고 방마다 한 번 직렬화한 최신 상태를 해당 방의 세션에만 전송합니다. 세션별 마지막 Tick으로 중복 전송을 막습니다. |
 | `ScheduleSnapshotBroadcast()` | `SNAPSHOT_INTERVAL`마다 전송 콜백을 실행하고 다음 타이머를 등록합니다. |
 
-`MAX_CONNECTIONS`는 Hello 대기를 포함한 64개입니다. `m_sessions`와 전송 상태는 네트워크 스레드가 관리하며 GameWorld는 직접 변경하지 않습니다.
+TCP 연결 한도는 Hello 대기를 포함해 `Capacity() × 2`개(기본 48개)입니다. `m_sessions`와 전송 상태는 네트워크 스레드가 관리하며 GameWorld는 직접 변경하지 않습니다.
 
 </details>
 
@@ -285,6 +293,7 @@ sequenceDiagram
 | `TcpChannel(socket)` | 소켓 소유권을 받고 같은 실행 환경의 읽기 제한 타이머를 만듭니다. |
 | `Start(onMessage, onClose)` | 콜백·공유 소유권·단일 시작 조건을 검증하고 TCP_NODELAY 설정 후 수신을 시작합니다. |
 | `Send(payload)` | 길이 헤더를 붙여 송신 큐에 넣습니다. 큐가 비어 있었다면 쓰기를 시작하며 한도를 넘으면 연결을 닫습니다. |
+| `SendAndClose(payload, reason)` | 마지막 응답의 송신 완료 후 닫습니다. 추가 수신 처리를 멈추며 기존 10초 읽기 기한이 정리 상한을 유지합니다. |
 | `Close(reason)` | 중복 호출을 무시하고 타이머·소켓·송신 큐를 정리한 뒤 종료 콜백을 호출합니다. |
 | `ReadFrameHeader()` | 읽기 제한 시간을 설정하고 4바이트 길이를 읽어 본문 크기를 검증합니다. |
 | `ReadFrameBody()` | 지정 길이만큼 읽은 뒤 메시지 콜백을 호출하고 다음 프레임 헤더 수신을 시작합니다. |
@@ -302,16 +311,16 @@ sequenceDiagram
 | 함수 | 설명 |
 | --- | --- |
 | `require(condition)` / `type(data)` | 유효성 위반을 예외로 알리고 첫 바이트에서 MessageType을 검사·추출합니다. |
-| `client_hello()` / `server_hello(playerId)` | 프로토콜 버전과 서버 할당 ID가 담긴 Hello를 인코딩합니다. |
-| `read_client_hello(data)` / `read_server_hello(data)` | Hello 버전과 ID를 검증합니다. 서버 Hello 해석은 ID를 반환합니다. |
+| `client_hello()` / `server_hello(admission)` | 프로토콜 버전·입장 결과·서버 할당 ID·방 ID가 담긴 Hello를 인코딩합니다. |
+| `read_client_hello(data)` / `read_server_hello(data)` | Hello 버전과 입장 결과·ID 조합을 검증합니다. 서버 Hello 해석은 AdmissionResult를 반환합니다. |
 | `input(command)` / `read_input(data, sessionId)` | 입력을 인코딩하거나 세션 ID를 결합하여 검증된 InputCommand로 해석합니다. |
-| `snapshot(state)` / `read_snapshot(data)` | Tick과 플레이어 상태를 변환하고 인원·ID·필드·수치·회전 유효성을 검사합니다. |
+| `snapshot(room)` / `read_snapshot(data)` | Tick과 플레이어 상태를 변환하고 인원·ID·필드·수치·회전 유효성을 검사합니다. |
 | `disconnect()` / `is_disconnect(data)` | Disconnect를 만들거나 종류와 Protobuf 본문을 검증합니다. |
 | `frame(payload)` / `frame_size(header)` | 4바이트 big-endian 길이를 붙이거나 읽고 프레임 한도를 검사합니다. |
 | `encode<Message>()` / `decode<Message>()` (cpp 내부) | 메시지 종류와 Protobuf 직렬화/역직렬화, 크기·파서 한도를 공통 처리합니다. |
 | `write_vector()` / `read_vector()` / `write_quaternion()` / `read_quaternion()` (cpp 내부) | 벡터·회전을 Protobuf 필드와 게임 값 타입 사이에서 검증하며 변환합니다. |
 
-`PROTOCOL_VERSION = 3`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. MessageType의 대문자 이름 변경은 wire 바이트 값을 바꾸지 않습니다. `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
+`PROTOCOL_VERSION = 4`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. MessageType의 대문자 이름 변경은 wire 바이트 값을 바꾸지 않습니다. `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
 
 </details>
 
@@ -325,7 +334,7 @@ sequenceDiagram
 | 함수 | 설명 |
 | --- | --- |
 | `TcpClientTransport(host, port)` / `ClientNetworkRuntime(host, port)` | runtime을 생성하고 비동기 연결과 네트워크 스레드를 시작합니다. |
-| `Connected()` / `PlayerId()` / `Error()` | 잠금 아래 연결 상태·할당 ID·첫 오류를 조회합니다. |
+| `Connected()` / `PlayerId()` / `RoomId()` / `Error()` | 잠금 아래 연결 상태·할당 ID·첫 오류를 조회합니다. |
 | `Send(input)` | 입력·연결·대기 큐 한도를 검사하고 네트워크 스레드에 전송을 게시합니다. |
 | `Receive()` | 잠금 아래 최신 Snapshot을 꺼냅니다. |
 | `Close()` / `Stop()` | 종료 상태를 설정하고 네트워크 정리와 스레드 join을 수행합니다. |
@@ -355,7 +364,7 @@ flowchart LR
 
 TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + Protobuf 본문**입니다. 종류별 필수 값, 입력 범위, ID, 중복 플레이어, quaternion 정규화와 유한한 실수를 변환 시 검증합니다. 플레이어 ID는 클라이언트 입력 메시지에 없으며 접속 세션의 ID를 서버에서 주입합니다.
 
-최대 메시지는 8KiB이며, 최대 길이 ID·Tick과 32명 전체 상태를 넣은 Snapshot은 종류 바이트를 포함해 4,300바이트입니다. 이를 수용하기 위해 이전 4KiB 한도를 올렸습니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는 16으로 제한합니다. 프로토콜 버전은 3이며 이전 v1/v2 Hello는 거부합니다. 알 수 없는 Protobuf 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
+최대 메시지는 8KiB이며, 코덱의 방어적 상한은 32명이며 최대 길이 플레이어·방 ID·Tick을 넣은 Snapshot은 종류 바이트를 포함해 4,311바이트입니다. 실제 게임방은 최대 3명만 허용합니다. 이를 수용하기 위해 이전 4KiB 한도를 올렸습니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는 16으로 제한합니다. 프로토콜 버전은 4이며 이전 v1/v2/v3 Hello는 거부합니다. 알 수 없는 Protobuf 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
 
 ## 시작과 종료
 
@@ -371,8 +380,8 @@ TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + 
 
 ## 제한과 검증
 
-최대 32명, Hello 대기 연결을 포함해 최대 64개 TCP 연결을 허용합니다. 코어의 일반 명령 큐는 1,024개이며, 퇴장 처리를 놓치지 않도록 최대 32개의 Leave 명령을 추가로 허용합니다. 각 소켓의 송신 큐는 32개 프레임으로 제한합니다. 자세한 메시지 형식과 시간 제한은 [PROTOCOL.md](../PROTOCOL.md)를 참고하세요.
+기본 8개 방 × 3명 = 24명이며 최대 방 수를 1–256으로 설정할 수 있습니다. 전체 정원은 `Capacity()`로 표시하며 요청 추적과 TCP 연결은 각각 그 두 배로 제한합니다. 코어의 일반 명령 큐는 1,024개이며, 퇴장 처리를 놓치지 않도록 정원의 두 배까지 Leave 명령을 추가로 허용합니다. 각 소켓의 송신 큐는 32개 프레임으로 제한합니다. 자세한 메시지 형식과 시간 제한은 [PROTOCOL.md](../PROTOCOL.md)를 참고하세요.
 
-`ServerApplicationTests`는 실제 연결 후 종료, 중복 종료·실행, 실행 시간 만료, 이미 사용 중인 포트와 사전 취소를 검증합니다. `NetworkTests`는 비정상 프레임·부분 수신·활성 연결 종료를, `IntegrationTests`는 Local/TCP 물리 동작을 확인합니다. `ProcessSmoke`는 별도 프로세스 접속과 시간 제한 종료를 검사하고 POSIX 환경에서는 SIGTERM 정상 종료도 확인합니다. Windows의 외부 SIGTERM 전달은 같은 방식으로 검증하지 않습니다.
+`ServerApplicationTests`는 실제 연결 후 종료, 중복 종료·실행, 실행 시간 만료, 이미 사용 중인 포트와 사전 취소를 검증합니다. `MultiRoomTests`는 Local/TCP 7명의 3/3/1 배정, 방별 상태·입력 격리, 빈자리 우선 배정과 정원 초과 응답을 검증합니다. `NetworkTests`는 비정상 프레임·부분 수신·활성 연결 종료를, `IntegrationTests`는 Local/TCP 물리 동작을 확인합니다. `ProcessSmoke`는 별도 프로세스 접속과 시간 제한 종료를 검사하고 POSIX 환경에서는 SIGTERM 정상 종료도 확인합니다. Windows의 외부 SIGTERM 전달은 같은 방식으로 검증하지 않습니다.
 
 공끼리의 충돌, UDP, 예측·롤백, 사용자 인증·암호화는 구현 범위에 포함되지 않습니다. 운영용 공개 서버가 아닌 데모이며, 기본 루프백 또는 신뢰하는 테스트 네트워크에서 사용합니다.

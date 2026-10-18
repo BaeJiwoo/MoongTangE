@@ -28,7 +28,7 @@ void TcpChannel::Start(MessageHandler onMessage, CloseHandler onClose)
 
 void TcpChannel::Send(const wire::Bytes& payload)
 {
-    if (m_closed) {
+    if (m_closed || m_draining) {
         return;
     }
     if (m_outboundFrames.size() >= MAX_QUEUED_FRAMES) {
@@ -42,6 +42,16 @@ void TcpChannel::Send(const wire::Bytes& payload)
     if (idle) {
         WriteNextFrame();
     }
+}
+
+void TcpChannel::SendAndClose(const wire::Bytes& payload, std::string reason)
+{
+    if (m_closed || m_draining) {
+        return;
+    }
+    Send(payload);
+    m_draining = true;
+    m_closeReason = std::move(reason);
 }
 
 void TcpChannel::Close(std::string reason)
@@ -65,7 +75,7 @@ void TcpChannel::Close(std::string reason)
 
 void TcpChannel::ReadFrameHeader()
 {
-    if (m_closed) {
+    if (m_closed || m_draining) {
         return;
     }
     auto self = shared_from_this();
@@ -103,7 +113,7 @@ void TcpChannel::ReadFrameBody()
                          }
 
                          try {
-                             if (!self->m_closed) {
+                             if (!self->m_closed && !self->m_draining) {
                                  self->m_onMessage(self->m_frameBody);
                              }
                          } catch (const std::exception& failure) {
@@ -132,6 +142,8 @@ void TcpChannel::WriteNextFrame()
                           self->m_outboundFrames.pop_front();
                           if (!self->m_outboundFrames.empty()) {
                               self->WriteNextFrame();
+                          } else if (self->m_draining) {
+                              self->Close(self->m_closeReason);
                           }
                       });
 }

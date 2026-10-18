@@ -26,6 +26,7 @@ class TcpChannel : public std::enable_shared_from_this<TcpChannel>
 
     void Start(MessageHandler onMessage, CloseHandler onClose);
     void Send(const wire::Bytes& payload);
+    void SendAndClose(const wire::Bytes& payload, std::string reason);
     void Close(std::string reason = "Connection closed");
 
   private:
@@ -50,6 +51,8 @@ class TcpChannel : public std::enable_shared_from_this<TcpChannel>
 
     bool m_started{};
     bool m_closed{};
+    bool m_draining{};
+    std::string m_closeReason;
 };
 
 } // namespace MoongTangE

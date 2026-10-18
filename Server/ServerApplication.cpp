@@ -15,9 +15,9 @@
 namespace MoongTangE {
 namespace {
 
-std::shared_ptr<ServerHost> start_server_core()
+std::shared_ptr<ServerHost> start_server_core(GameRoomOptions options)
 {
-    auto serverCore = std::make_shared<ServerHost>();
+    auto serverCore = std::make_shared<ServerHost>(options);
     serverCore->Start();
     return serverCore;
 }
@@ -26,6 +26,7 @@ std::shared_ptr<ServerHost> start_server_core()
 
 ServerApplication::ServerApplication(ServerOptions options) : m_options(std::move(options))
 {
+    m_options.m_rooms.Validate();
     if (m_options.m_runDuration < std::chrono::seconds::zero()) {
         throw std::invalid_argument("Server duration cannot be negative");
     }
@@ -41,7 +42,7 @@ void ServerApplication::Run()
     }
 
     // Declaration order closes networking before releasing the final server core owner.
-    const auto serverCore = start_server_core();
+    const auto serverCore = start_server_core(m_options.m_rooms);
     const std::string bindAddress = m_options.m_publicBind ? "0.0.0.0" : "127.0.0.1";
     AsioServer networkServer(serverCore, bindAddress, m_options.m_port);
 

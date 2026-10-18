@@ -17,7 +17,10 @@ int main()
         auto server = std::make_shared<MoongTangE::ServerHost>();
         server->Start();
         MoongTangE::LocalTransport a(server), b(server);
-        MOONGTANGE_CHECK(a.Connected() && b.Connected() && a.PlayerId() != b.PlayerId());
+        MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
+            return a.Connected() && b.Connected();
+        }));
+        MOONGTANGE_CHECK(a.PlayerId() != b.PlayerId() && a.RoomId() == b.RoomId());
 
         MOONGTANGE_CHECK(!a.Send({b.PlayerId(), 1, 1, 0}));
         MOONGTANGE_CHECK(a.Send({a.PlayerId(), 1, 1, 0}));
@@ -35,7 +38,8 @@ int main()
         a.Close();
         MOONGTANGE_CHECK(!a.Connected());
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
-            return server->Snapshot().players.size() == 1;
+            const auto room = server->SnapshotFor(b.PlayerId());
+            return room && room->world.players.size() == 1;
         }));
 
         server->Stop();

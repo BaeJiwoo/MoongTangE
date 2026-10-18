@@ -25,7 +25,7 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 | 언어 | C++20 |
 | 빌드 | CMake |
 | 네트워크 | Standalone Asio 1.38.2, TCP |
-| 직렬화 | Protobuf 36.2 (C++ 런타임 7.36.2), 프로토콜 v3 |
+| 직렬화 | Protobuf 36.2 (C++ 런타임 7.36.2), 프로토콜 v4 |
 | 렌더링 | raylib 6.0 |
 | 테스트 | CTest |
 | CI | GitHub Actions |
@@ -99,6 +99,14 @@ W/A/S/D를 누르면 바닥의 공에 힘이 가해져 서서히 가속합니다
 
 `DedicatedServer --run-for 5`는 5초 후 정상 종료합니다. 포트 0은 운영체제가 사용 가능한 테스트 포트를 선택하며 실제 주소가 출력됩니다. `Client --single --smoke` 또는 `Client --connect host:port --smoke`는 숨겨진 그래픽 창에서 서버 이동을 확인한 뒤 자동 종료합니다. `--smoke`도 OpenGL 환경이 필요합니다. 환경변수 `MOONGTANGE_SMOKE_CAPTURE`를 지정하면 종료 직전 화면을 해당 PNG 경로에 저장합니다.
 
+## 3인 게임방 배정
+
+한 서버 안에 독립된 게임월드가 여러 개 실행됩니다. 접속자는 생성 순서가 빠른 방의 빈자리부터 들어가며, 모두 찼을 때 다음 방을 만듭니다. 7명이 차례대로 접속하면 3명 / 3명 / 1명으로 배정됩니다. 앞선 방에 빈자리가 생기면 다음 접속자가 그 자리를 채웁니다. 기존 참가자를 이동시키지는 않습니다.
+
+방은 미리 만들지 않습니다. 기본 최대 8개 방이며 `--max-rooms 2`는 최대 6명으로 제한합니다. 모든 방이 차면 입장을 거절합니다. 빈 방은 기본 30초 후 정리하며 `--empty-room-seconds 0`은 즉시 정리합니다. 각 방은 자기 참가자의 입력과 상태만 처리합니다. 화면 상단에 배정된 방 번호가 표시됩니다.
+
+별도 HTTP 매칭 API, 인증·입장 예약, 서버 간 매칭은 후속 범위입니다. 현재 접속 서버의 Tick이 입장을 확정합니다.
+
 ## 구조와 동작
 
 서버 구성 요소, 스레드와 소유권, 입력 처리 및 종료 순서는 [서버 구조 문서](docs/SERVER_ARCHITECTURE.md)에 설명되어 있습니다. 같은 문서의 [파일별 함수 안내](docs/SERVER_ARCHITECTURE.md#파일별-함수-안내)는 파일 이름을 눌러 펼칠 수 있습니다.
@@ -108,7 +116,7 @@ W/A/S/D를 누르면 바닥의 공에 힘이 가해져 서서히 가속합니다
 ```text
 Common/       수학, 자체 물리, GameWorld, 입력·Snapshot 자료형, 전송 인터페이스
 Server/       실행 진입점, ServerOptions.h/.cpp, ServerApplication.h/.cpp
-Server/Core/  ServerHost.h/.cpp, TickScheduler.h/.cpp (60Hz Tick과 명령 큐)
+Server/Core/  ServerHost, GameRoomManager, GameRoom, GameRoomOptions, TickScheduler
 Server/Network/ AsioServer.h/.cpp, ServerNetworkRuntime.h/.cpp
 Client/       raylib 화면과 키보드, LocalTransport/TcpClientTransport
 Network/      TcpChannel.h/.cpp, Protobuf 스키마와 Codec.h/.cpp
@@ -116,15 +124,15 @@ Tests/        단위 테스트, 루프백, 프로세스 통합 테스트
 cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 ```
 
-싱글플레이는 같은 프로세스의 ServerCore에 메시지를 전달합니다. 멀티플레이는 Protobuf로 해석한 TCP 입력을 같은 ServerCore의 큐로 전달합니다. 이동과 회전 물리는 Tick 스레드에서만 변경됩니다. 클라이언트는 약 20Hz로 받은 Snapshot의 위치와 자세를 화면에서 보간합니다. 약 50ms의 표시 지연이 추가되며 클라이언트 예측은 하지 않습니다. Protobuf 기반 프로토콜 v3는 기존 수동 직렬화 v1/v2와 호환되지 않으므로 클라이언트와 서버를 함께 업데이트해야 합니다. 자세한 메시지 규격과 제한은 [PROTOCOL.md](PROTOCOL.md)를 참고하세요.
+싱글플레이는 같은 프로세스의 ServerCore에 메시지를 전달합니다. 멀티플레이는 Protobuf로 해석한 TCP 입력을 같은 ServerCore의 큐로 전달합니다. 이동과 회전 물리는 Tick 스레드에서만 변경됩니다. 클라이언트는 약 20Hz로 받은 Snapshot의 위치와 자세를 화면에서 보간합니다. 약 50ms의 표시 지연이 추가되며 클라이언트 예측은 하지 않습니다. Protobuf 기반 프로토콜 v4는 기존 v1/v2/v3와 호환되지 않으므로 클라이언트와 서버를 함께 업데이트해야 합니다. 자세한 메시지 규격과 제한은 [PROTOCOL.md](PROTOCOL.md)를 참고하세요.
 
 ## 테스트와 제한
 
-- CTest: 벡터/quaternion, 낙하/충돌/구름/관성, 게임 월드, 서버 수명/큐, ServerApplication 실행·종료, 로컬 전송, Protobuf 프로토콜, 화면 보간, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속. 전체 12개, 외부 의존성 없는 구성 7개입니다. Protobuf 프로토콜 테스트는 네트워크 구성에 포함됩니다.
+- CTest: 벡터/quaternion, 낙하/충돌/구름/관성, 게임 월드, 서버 수명/큐, ServerApplication 실행·종료, 로컬 전송, Protobuf 프로토콜, 화면 보간, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속. 전체 14개, 외부 의존성 없는 구성 8개입니다. Protobuf 프로토콜 테스트는 네트워크 구성에 포함됩니다.
 - 동일 Tick 입력 일정의 로컬 계산과 직렬화 경로는 매 Tick 비교합니다. 실제 비동기 전송은 입력 도착 시점이 다르므로 이동 속도·방향·바닥 정지 등 물리 조건을 비교합니다.
 - CI: Windows/MSVC, Linux/GCC, macOS/Clang에서 전체 빌드와 테스트, 외부 의존성 없는 코어 구성을 검증합니다. GUI 실행은 CI 필수 항목이 아니며 실제 결과는 [Actions](https://github.com/BaeJiwoo/MoongTangE/actions)에서 확인하세요.
 - 공과 평면의 충돌만 구현합니다. 공끼리의 충돌, 경사면, 클라이언트 예측, UDP, 물리 롤백 및 사용자 인증은 후속 범위입니다.
-- 최대 32명, 입력 만료 120 Tick, 고정 dt=1/60이며 플랫폼 간 비트 단위의 결정성을 보장하지 않습니다.
+- 방마다 최대 3명, 기본 최대 8개 방(24명), 입력 만료 120 Tick, 고정 dt=1/60이며 플랫폼 간 비트 단위의 결정성을 보장하지 않습니다.
 - 비공개 저장소 브랜치 보호 설정은 현재 계정 요금제에서 HTTP 403으로 거부됐습니다. 저장소 공개 범위는 변경하지 않았습니다.
 
 ## 리뷰와 병합

@@ -11,7 +11,9 @@ int main(int argc, char** argv)
         const auto arguments = MoongTangE::command_line_arguments(argc, argv);
         const auto options = MoongTangE::parse_server_options(arguments);
         if (options.m_showHelp) {
-            std::cout << "DedicatedServer [--port 27015] [--public] [--run-for seconds]\n";
+            std::cout << "DedicatedServer [--port 27015] [--public] [--run-for seconds]\n"
+                         "  [--max-rooms 8] [--empty-room-seconds 30]\n"
+                         "  3 players per room; rooms are created on demand.\n";
             return 0;
         }
         MoongTangE::ServerApplication application(options);

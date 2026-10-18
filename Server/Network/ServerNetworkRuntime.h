@@ -33,7 +33,6 @@ class ServerNetworkRuntime
     std::uint16_t Port() const;
 
   private:
-    static constexpr std::size_t MAX_CONNECTIONS = simulation::MAX_PLAYERS * 2;
     static constexpr auto SNAPSHOT_INTERVAL = std::chrono::milliseconds(
         1000 * simulation::SNAPSHOT_INTERVAL_TICKS / simulation::TICKS_PER_SECOND);
 
@@ -44,6 +43,7 @@ class ServerNetworkRuntime
     void RemoveSession(const std::shared_ptr<TcpChannel>& channel);
 
     void HandleMessage(const std::shared_ptr<TcpChannel>& channel, const wire::Bytes& data);
+    void CompleteAdmission(const std::shared_ptr<TcpChannel>& channel);
 
     void BroadcastLatestSnapshot();
     void ScheduleSnapshotBroadcast();
@@ -55,8 +55,16 @@ class ServerNetworkRuntime
     asio::steady_timer m_snapshotTimer;
 
     // Session state belongs to the network thread; the bound port is immutable after startup.
-    std::map<std::shared_ptr<TcpChannel>, std::uint32_t> m_sessions;
-    std::uint64_t m_lastPublishedTick{};
+    struct NetworkSession
+    {
+        std::uint32_t m_playerId{};
+        std::uint64_t m_roomId{};
+        std::uint64_t m_lastPublishedTick{};
+        bool m_helloReceived{};
+        bool m_rejected{};
+    };
+
+    std::map<std::shared_ptr<TcpChannel>, NetworkSession> m_sessions;
 
     std::uint16_t m_boundPort{};
     bool m_stopping{};

@@ -54,8 +54,8 @@ void ServerNetworkRuntime::CloseAllSessions()
 
     // Closing invokes removal callbacks; iterate a snapshot, not the modified map.
     const auto sessions = m_sessions;
-    for (const auto& [channel, playerId] : sessions) {
-        (void)playerId;
+    for (const auto& [channel, session] : sessions) {
+        (void)session;
         channel->Close("Server stopping");
     }
 }
@@ -66,7 +66,7 @@ void ServerNetworkRuntime::AcceptNextConnection()
         if (m_stopping) {
             return;
         }
-        if (!error && m_sessions.size() < MAX_CONNECTIONS) {
+        if (!error && m_sessions.size() < m_serverHost->Capacity() * 2) {
             AddSession(std::move(socket));
         }
 
@@ -79,7 +79,7 @@ void ServerNetworkRuntime::AcceptNextConnection()
 void ServerNetworkRuntime::AddSession(asio::ip::tcp::socket socket)
 {
     auto channel = std::make_shared<TcpChannel>(std::move(socket));
-    m_sessions.emplace(channel, 0);
+    m_sessions.emplace(channel, NetworkSession{});
 
     // Weak callbacks avoid a channel -> callback -> channel ownership cycle.
     const std::weak_ptr<TcpChannel> weakChannel = channel;
@@ -100,7 +100,7 @@ void ServerNetworkRuntime::RemoveSession(const std::shared_ptr<TcpChannel>& chan
 {
     const auto session = m_sessions.find(channel);
     if (session != m_sessions.end()) {
-        m_serverHost->Disconnect(session->second);
+        m_serverHost->Disconnect(session->second.m_playerId);
         m_sessions.erase(session);
     }
 }
@@ -108,36 +108,71 @@ void ServerNetworkRuntime::RemoveSession(const std::shared_ptr<TcpChannel>& chan
 void ServerNetworkRuntime::HandleMessage(const std::shared_ptr<TcpChannel>& channel,
                                          const wire::Bytes& data)
 {
-    auto& playerId = m_sessions.at(channel);
-    if (playerId == 0) {
+    auto& session = m_sessions.at(channel);
+    if (!session.m_helloReceived) {
         wire::read_client_hello(data);
-        playerId = m_serverHost->Connect();
-        wire::require(playerId != 0);
-        channel->Send(wire::server_hello({AdmissionStatus::ACCEPTED, playerId, 1}));
-    } else if (wire::type(data) == wire::MessageType::INPUT) {
-        wire::require(m_serverHost->Submit(wire::read_input(data, playerId)));
+        session.m_helloReceived = true;
+        session.m_playerId = m_serverHost->Connect();
+        CompleteAdmission(channel);
     } else if (wire::is_disconnect(data)) {
         channel->Close("Client disconnected");
+    } else if (wire::type(data) == wire::MessageType::INPUT) {
+        wire::require(session.m_roomId != 0 &&
+                      m_serverHost->Submit(wire::read_input(data, session.m_playerId)));
     } else {
         channel->Close("Unexpected message");
     }
 }
 
-void ServerNetworkRuntime::BroadcastLatestSnapshot()
+void ServerNetworkRuntime::CompleteAdmission(const std::shared_ptr<TcpChannel>& channel)
 {
-    const auto state = m_serverHost->Snapshot();
-    if (state.tick == 0 || state.tick == m_lastPublishedTick) {
+    auto& session = m_sessions.at(channel);
+    if (!session.m_helloReceived || session.m_rejected || session.m_roomId != 0) {
         return;
     }
+    const auto admission = m_serverHost->Admission(session.m_playerId);
+    if (admission.status == AdmissionStatus::PENDING) {
+        return;
+    }
+    if (admission.status == AdmissionStatus::ACCEPTED) {
+        session.m_roomId = admission.roomId;
+        channel->Send(wire::server_hello(admission));
+    } else {
+        session.m_rejected = true;
+        channel->SendAndClose(wire::server_hello(admission), "Admission rejected");
+    }
+}
 
-    m_lastPublishedTick = state.tick;
-    const auto bytes = wire::snapshot({1, state});
+void ServerNetworkRuntime::BroadcastLatestSnapshot()
+{
+    std::map<std::uint64_t, std::pair<std::uint64_t, wire::Bytes>> snapshots;
+    for (const auto& room : m_serverHost->Snapshots()) {
+        if (!room.world.players.empty()) {
+            snapshots.emplace(room.roomId, std::make_pair(room.world.tick, wire::snapshot(room)));
+        }
+    }
 
     // Send() can disconnect a slow peer and remove it from m_sessions.
     const auto sessions = m_sessions;
-    for (const auto& [channel, playerId] : sessions) {
-        if (playerId != 0) {
-            channel->Send(bytes);
+    for (const auto& [channel, previous] : sessions) {
+        (void)previous;
+        CompleteAdmission(channel);
+        const auto found = m_sessions.find(channel);
+        if (found == m_sessions.end()) {
+            continue;
+        }
+        auto& session = found->second;
+        if (session.m_roomId == 0) {
+            continue;
+        }
+        if (!m_serverHost->HasClient(session.m_playerId)) {
+            channel->Close("Server stopped");
+            continue;
+        }
+        const auto snapshot = snapshots.find(session.m_roomId);
+        if (snapshot != snapshots.end() && snapshot->second.first > session.m_lastPublishedTick) {
+            session.m_lastPublishedTick = snapshot->second.first;
+            channel->Send(snapshot->second.second);
         }
     }
 }

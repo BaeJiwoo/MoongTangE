@@ -44,12 +44,12 @@ class LocalTransport final : public IClientTransport
 
     std::uint32_t PlayerId() const override
     {
-        return m_playerId;
+        return Connected() ? m_playerId : 0;
     }
 
     std::uint64_t RoomId() const override
     {
-        return Connected() ? 1 : 0;
+        return m_serverHost->Admission(m_playerId).roomId;
     }
 
     bool Send(InputCommand input) override
@@ -63,18 +63,27 @@ class LocalTransport final : public IClientTransport
             return {};
         }
 
-        auto state = m_serverHost->Snapshot();
-        if (!state.tick || state.tick == m_lastReceivedTick) {
+        auto state = m_serverHost->SnapshotFor(m_playerId);
+        if (!state || !state->world.tick || state->world.tick <= m_lastReceivedTick) {
             return {};
         }
 
-        m_lastReceivedTick = state.tick;
-        return state;
+        m_lastReceivedTick = state->world.tick;
+        return std::move(state->world);
     }
 
     std::string Error() const override
     {
-        return Connected() ? "" : "Local server disconnected";
+        switch (m_serverHost->Admission(m_playerId).status) {
+        case AdmissionStatus::PENDING:
+        case AdmissionStatus::ACCEPTED:
+            return "";
+        case AdmissionStatus::FULL:
+            return "All game rooms are full";
+        case AdmissionStatus::UNAVAILABLE:
+            return "Local server disconnected";
+        }
+        return "Local server disconnected";
     }
 
     void Close() override
