@@ -5,6 +5,7 @@
 #include <google/protobuf/io/coded_stream.h>
 #include <set>
 #include <stdexcept>
+#include <utility>
 
 namespace MoongTangE::wire {
 namespace {
@@ -90,12 +91,18 @@ Bytes client_hello()
     return encode(MessageType::CLIENT_HELLO, message);
 }
 
-Bytes server_hello(std::uint32_t playerId)
+Bytes server_hello(AdmissionResult admission)
 {
-    require(playerId != 0);
+    require((admission.status == AdmissionStatus::ACCEPTED && admission.playerId != 0 &&
+             admission.roomId != 0) ||
+            ((admission.status == AdmissionStatus::FULL ||
+              admission.status == AdmissionStatus::UNAVAILABLE) &&
+             admission.playerId == 0 && admission.roomId == 0));
     proto::ServerHello message;
     message.set_protocol_version(PROTOCOL_VERSION);
-    message.set_player_id(playerId);
+    message.set_player_id(admission.playerId);
+    message.set_room_id(admission.roomId);
+    message.set_status(static_cast<proto::ServerHello::AdmissionStatus>(admission.status));
     return encode(MessageType::SERVER_HELLO, message);
 }
 
@@ -105,11 +112,18 @@ void read_client_hello(std::span<const std::uint8_t> data)
     require(message.protocol_version() == PROTOCOL_VERSION);
 }
 
-std::uint32_t read_server_hello(std::span<const std::uint8_t> data)
+AdmissionResult read_server_hello(std::span<const std::uint8_t> data)
 {
     const auto message = decode<proto::ServerHello>(data, MessageType::SERVER_HELLO);
-    require(message.protocol_version() == PROTOCOL_VERSION && message.player_id() != 0);
-    return message.player_id();
+    require(message.protocol_version() == PROTOCOL_VERSION);
+    require(message.status() >= proto::ServerHello::ACCEPTED &&
+            message.status() <= proto::ServerHello::UNAVAILABLE);
+    const AdmissionResult admission{static_cast<AdmissionStatus>(message.status()),
+                                    message.player_id(), message.room_id()};
+    require(admission.status == AdmissionStatus::ACCEPTED
+                ? admission.playerId != 0 && admission.roomId != 0
+                : admission.playerId == 0 && admission.roomId == 0);
+    return admission;
 }
 
 Bytes input(InputCommand command)
@@ -132,12 +146,14 @@ InputCommand read_input(std::span<const std::uint8_t> data, std::uint32_t sessio
     return command;
 }
 
-Bytes snapshot(const WorldSnapshot& state)
+Bytes snapshot(const RoomSnapshot& room)
 {
-    require(state.players.size() <= MAX_PLAYERS);
+    const auto& state = room.world;
+    require(room.roomId != 0 && state.players.size() <= MAX_PLAYERS);
 
     proto::WorldSnapshot message;
     message.set_server_tick(state.tick);
+    message.set_room_id(room.roomId);
 
     std::set<std::uint32_t> ids;
     for (const auto& player : state.players) {
@@ -153,10 +169,11 @@ Bytes snapshot(const WorldSnapshot& state)
     return encode(MessageType::SNAPSHOT, message);
 }
 
-WorldSnapshot read_snapshot(std::span<const std::uint8_t> data)
+RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
 {
     const auto message = decode<proto::WorldSnapshot>(data, MessageType::SNAPSHOT);
-    require(message.has_server_tick() && message.players_size() <= static_cast<int>(MAX_PLAYERS));
+    require(message.room_id() != 0 && message.has_server_tick() &&
+            message.players_size() <= static_cast<int>(MAX_PLAYERS));
 
     WorldSnapshot state{message.server_tick(), {}};
     state.players.reserve(static_cast<std::size_t>(message.players_size()));
@@ -171,7 +188,7 @@ WorldSnapshot read_snapshot(std::span<const std::uint8_t> data)
             {record.id(), read_vector(record.position()), read_vector(record.velocity()),
              read_quaternion(record.orientation()), read_vector(record.angular_velocity())});
     }
-    return state;
+    return {message.room_id(), std::move(state)};
 }
 
 Bytes disconnect()

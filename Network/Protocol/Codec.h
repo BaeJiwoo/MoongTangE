@@ -1,7 +1,8 @@
 #pragma once
 
+#include "Common/Protocol/AdmissionResult.h"
 #include "Common/Protocol/InputCommand.h"
-#include "Common/Protocol/WorldSnapshot.h"
+#include "Common/Protocol/RoomSnapshot.h"
 
 #include <cstdint>
 #include <span>
@@ -11,7 +12,7 @@ namespace MoongTangE::wire {
 
 using Bytes = std::vector<std::uint8_t>;
 
-inline constexpr std::uint32_t PROTOCOL_VERSION = 3;
+inline constexpr std::uint32_t PROTOCOL_VERSION = 4;
 inline constexpr std::uint32_t MAX_FRAME_BYTES = 8192;
 inline constexpr unsigned FRAME_HEADER_BYTES = 4;
 
@@ -28,15 +29,15 @@ void require(bool condition);
 MessageType type(std::span<const std::uint8_t> data);
 
 Bytes client_hello();
-Bytes server_hello(std::uint32_t playerId);
+Bytes server_hello(AdmissionResult admission);
 void read_client_hello(std::span<const std::uint8_t> data);
-std::uint32_t read_server_hello(std::span<const std::uint8_t> data);
+AdmissionResult read_server_hello(std::span<const std::uint8_t> data);
 
 Bytes input(InputCommand command);
 InputCommand read_input(std::span<const std::uint8_t> data, std::uint32_t sessionId);
 
-Bytes snapshot(const WorldSnapshot& state);
-WorldSnapshot read_snapshot(std::span<const std::uint8_t> data);
+Bytes snapshot(const RoomSnapshot& room);
+RoomSnapshot read_snapshot(std::span<const std::uint8_t> data);
 
 Bytes disconnect();
 bool is_disconnect(std::span<const std::uint8_t> data);

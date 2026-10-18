@@ -113,7 +113,7 @@ void ServerNetworkRuntime::HandleMessage(const std::shared_ptr<TcpChannel>& chan
         wire::read_client_hello(data);
         playerId = m_serverHost->Connect();
         wire::require(playerId != 0);
-        channel->Send(wire::server_hello(playerId));
+        channel->Send(wire::server_hello({AdmissionStatus::ACCEPTED, playerId, 1}));
     } else if (wire::type(data) == wire::MessageType::INPUT) {
         wire::require(m_serverHost->Submit(wire::read_input(data, playerId)));
     } else if (wire::is_disconnect(data)) {
@@ -131,7 +131,7 @@ void ServerNetworkRuntime::BroadcastLatestSnapshot()
     }
 
     m_lastPublishedTick = state.tick;
-    const auto bytes = wire::snapshot(state);
+    const auto bytes = wire::snapshot({1, state});
 
     // Send() can disconnect a slow peer and remove it from m_sessions.
     const auto sessions = m_sessions;

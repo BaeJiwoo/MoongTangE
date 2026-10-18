@@ -71,18 +71,18 @@ void consumed_snapshots_cannot_rewind()
         asio::write(peer, asio::buffer(bytes));
     };
 
-    send(wire::server_hello(1));
+    send(wire::server_hello({AdmissionStatus::ACCEPTED, 1, 7}));
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         return client.Connected();
     }));
 
-    send(wire::snapshot({42, {{1, {}, {}}}}));
+    send(wire::snapshot({7, {42, {{1, {}, {}}}}}));
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         const auto state = client.Receive();
         return state && state->tick == 42;
     }));
 
-    send(wire::snapshot({41, {{1, {}, {}}}}));
+    send(wire::snapshot({7, {41, {{1, {}, {}}}}}));
     // TCP ordering makes this terminal message a barrier after the stale snapshot.
     send(wire::Bytes{255});
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
@@ -126,6 +126,35 @@ void clients_receive_authoritative_rolling(const AsioServer& server, ServerHost&
     }));
 }
 
+void clients_reject_foreign_rooms_and_report_full()
+{
+    for (const bool full : {false, true}) {
+        asio::io_context io;
+        asio::ip::tcp::acceptor listener(io, {asio::ip::make_address("127.0.0.1"), 0});
+        TcpClientTransport client("127.0.0.1", listener.local_endpoint().port());
+        auto peer = listener.accept();
+        wire::read_client_hello(read_frame(peer));
+        const auto greeting = wire::frame(
+            wire::server_hello(full ? AdmissionResult{AdmissionStatus::FULL, 0, 0}
+                                    : AdmissionResult{AdmissionStatus::ACCEPTED, 1, 7}));
+        asio::write(peer, asio::buffer(greeting));
+        if (!full) {
+            MOONGTANGE_CHECK(test::wait_for([&] {
+                return client.RoomId() == 7;
+            }));
+            const auto foreign = wire::frame(wire::snapshot({8, {42, {{1, {}, {}}}}}));
+            asio::write(peer, asio::buffer(foreign));
+        }
+        MOONGTANGE_CHECK(test::wait_for([&] {
+            return !client.Error().empty();
+        }));
+        MOONGTANGE_CHECK(!client.Connected() && client.RoomId() == 0 && !client.Receive());
+        if (full) {
+            MOONGTANGE_CHECK(client.Error() == "All game rooms are full");
+        }
+    }
+}
+
 void fragmented_frames_and_disconnect(const AsioServer& server)
 {
     asio::io_context io;
@@ -138,7 +167,7 @@ void fragmented_frames_and_disconnect(const AsioServer& server)
         for (const auto byte : greeting) {
             asio::write(raw, asio::buffer(&byte, 1));
         }
-        const auto id = wire::read_server_hello(read_frame(raw));
+        const auto id = wire::read_server_hello(read_frame(raw)).playerId;
         MOONGTANGE_CHECK(id);
 
         const auto command = wire::frame(wire::input({id, 1, 1, 0}));
@@ -148,7 +177,7 @@ void fragmented_frames_and_disconnect(const AsioServer& server)
 
         bool moved = false;
         for (int i = 0; i < 40 && !moved; ++i) {
-            const auto state = wire::read_snapshot(read_frame(raw));
+            const auto state = wire::read_snapshot(read_frame(raw)).world;
             for (const auto& p : state.players) {
                 if (p.id == id && p.velocity.x > 0.5 && p.angularVelocity.z < 0) {
                     moved = true;
@@ -221,6 +250,7 @@ int main()
     return MoongTangE::test::run([] {
         channel_starts_once_and_closes_once();
         consumed_snapshots_cannot_rewind();
+        clients_reject_foreign_rooms_and_report_full();
 
         auto core = std::make_shared<MoongTangE::ServerHost>();
         core->Start();

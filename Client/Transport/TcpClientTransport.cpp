@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -53,6 +54,12 @@ class TcpClientTransport::ClientNetworkRuntime
     {
         std::lock_guard lock(m_stateMutex);
         return m_errorMessage;
+    }
+
+    std::uint64_t RoomId() const
+    {
+        std::lock_guard lock(m_stateMutex);
+        return m_roomId;
     }
 
     std::optional<WorldSnapshot> Receive()
@@ -105,6 +112,8 @@ class TcpClientTransport::ClientNetworkRuntime
 
             m_stopped = true;
             m_playerId = 0;
+            m_roomId = 0;
+            m_latestSnapshot.reset();
         }
 
         asio::post(m_ioContext, [this] {
@@ -178,13 +187,27 @@ class TcpClientTransport::ClientNetworkRuntime
     void ReceiveMessage(const wire::Bytes& data)
     {
         std::lock_guard lock(m_stateMutex);
+        if (m_stopped) {
+            return;
+        }
         if (m_playerId == 0) {
-            m_playerId = wire::read_server_hello(data);
+            const auto admission = wire::read_server_hello(data);
+            if (admission.status != AdmissionStatus::ACCEPTED) {
+                throw std::runtime_error(admission.status == AdmissionStatus::FULL
+                                             ? "All game rooms are full"
+                                             : "Game server unavailable");
+            }
+            m_playerId = admission.playerId;
+            m_roomId = admission.roomId;
+            m_lastReceivedTick = 0;
+            m_latestSnapshot.reset();
             m_handshakeTimer.cancel();
             return;
         }
 
-        auto state = wire::read_snapshot(data);
+        auto room = wire::read_snapshot(data);
+        wire::require(room.roomId == m_roomId);
+        auto& state = room.world;
         if (state.tick > m_lastReceivedTick) {
             m_lastReceivedTick = state.tick;
             m_latestSnapshot = std::move(state);
@@ -198,6 +221,8 @@ class TcpClientTransport::ClientNetworkRuntime
             m_errorMessage = std::move(reason);
         }
         m_playerId = 0;
+        m_roomId = 0;
+        m_latestSnapshot.reset();
     }
 
     void Fail(std::string reason)
@@ -228,6 +253,7 @@ class TcpClientTransport::ClientNetworkRuntime
     // The consumer and io thread share only these fields, always under m_stateMutex.
     mutable std::mutex m_stateMutex;
     std::uint32_t m_playerId{};
+    std::uint64_t m_roomId{};
     std::size_t m_queuedInputs{};
     std::optional<WorldSnapshot> m_latestSnapshot;
     std::string m_errorMessage;
@@ -259,6 +285,11 @@ std::uint32_t TcpClientTransport::PlayerId() const
 bool TcpClientTransport::Send(InputCommand input)
 {
     return m_networkRuntime->Send(input);
+}
+
+std::uint64_t TcpClientTransport::RoomId() const
+{
+    return m_networkRuntime->RoomId();
 }
 
 std::optional<WorldSnapshot> TcpClientTransport::Receive()

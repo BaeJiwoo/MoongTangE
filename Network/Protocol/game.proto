@@ -22,6 +22,15 @@ message ClientHello {
 message ServerHello {
   uint32 protocol_version = 1;
   uint32 player_id = 2;
+  uint64 room_id = 3;
+  // 0 is unspecified/pending and is never a terminal wire response.
+  enum AdmissionStatus {
+    UNSPECIFIED = 0;
+    ACCEPTED = 1;
+    FULL = 2;
+    UNAVAILABLE = 3;
+  }
+  AdmissionStatus status = 4;
 }
 
 message InputCommand {
@@ -42,6 +51,7 @@ message PlayerState {
 message WorldSnapshot {
   optional uint64 server_tick = 1;
   repeated PlayerState players = 2;
+  uint64 room_id = 3;
 }
 
 message Disconnect {}

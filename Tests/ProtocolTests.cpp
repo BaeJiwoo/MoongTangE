@@ -22,7 +22,7 @@ template <class Message> wire::Bytes packet(wire::MessageType kind, const Messag
 
 proto::WorldSnapshot protobuf_snapshot(const WorldSnapshot& state)
 {
-    const auto bytes = wire::snapshot(state);
+    const auto bytes = wire::snapshot({1, state});
     proto::WorldSnapshot message;
     MOONGTANGE_CHECK(message.ParseFromArray(bytes.data() + 1, static_cast<int>(bytes.size() - 1)));
     return message;
@@ -30,11 +30,13 @@ proto::WorldSnapshot protobuf_snapshot(const WorldSnapshot& state)
 
 void framing_and_version_negotiation()
 {
-    // Known Protobuf bytes: field 1, varint wire type, protocol version 3.
-    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 3});
-    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 3});
-    wire::read_client_hello(wire::Bytes{1, 8, 3});
-    MOONGTANGE_CHECK(wire::read_server_hello(wire::server_hello(42)) == 42);
+    // Known Protobuf bytes: field 1, varint wire type, protocol version 4.
+    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 4});
+    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 4});
+    wire::read_client_hello(wire::Bytes{1, 8, 4});
+    MOONGTANGE_CHECK(
+        wire::read_server_hello(wire::server_hello({AdmissionStatus::ACCEPTED, 42, 7})).roomId ==
+        7);
 
     for (const auto& bad : {wire::Bytes{}, wire::Bytes{1}, wire::Bytes{1, 8}, wire::Bytes{1, 0, 2},
                             wire::Bytes{1, 8, 2}, wire::Bytes{1, 8, 99}, wire::Bytes{2, 8, 3},
@@ -44,7 +46,7 @@ void framing_and_version_negotiation()
         }));
     }
     MOONGTANGE_CHECK(MoongTangE::test::throws([] {
-        wire::server_hello(0);
+        wire::server_hello({AdmissionStatus::ACCEPTED, 0, 7});
     }));
     MOONGTANGE_CHECK(MoongTangE::test::throws([] {
         wire::read_server_hello(wire::Bytes{2, 8, 3});
@@ -143,18 +145,51 @@ void inputs_use_session_identity_and_validate_presence()
     }));
 }
 
+void admission_results_validate_identity_and_status()
+{
+    for (const auto status : {AdmissionStatus::FULL, AdmissionStatus::UNAVAILABLE}) {
+        const auto result = wire::read_server_hello(wire::server_hello({status, 0, 0}));
+        MOONGTANGE_CHECK(result.status == status && result.playerId == 0 && result.roomId == 0);
+    }
+    for (const auto admission :
+         {AdmissionResult{}, AdmissionResult{AdmissionStatus::ACCEPTED, 1, 0},
+          AdmissionResult{AdmissionStatus::FULL, 1, 1}}) {
+        MOONGTANGE_CHECK(test::throws([&] {
+            wire::server_hello(admission);
+        }));
+    }
+    proto::ServerHello message;
+    message.set_protocol_version(wire::PROTOCOL_VERSION);
+    message.set_player_id(1);
+    message.set_room_id(7);
+    for (const int status : {0, 2, 3, 4, 257}) {
+        message.set_status(static_cast<proto::ServerHello::AdmissionStatus>(status));
+        MOONGTANGE_CHECK(test::throws([&] {
+            wire::read_server_hello(packet(wire::MessageType::SERVER_HELLO, message));
+        }));
+    }
+    MOONGTANGE_CHECK(test::throws([] {
+        wire::snapshot({0, {}});
+    }));
+    auto missingRoom = protobuf_snapshot({});
+    missingRoom.clear_room_id();
+    MOONGTANGE_CHECK(test::throws([&] {
+        wire::read_snapshot(packet(wire::MessageType::SNAPSHOT, missingRoom));
+    }));
+}
+
 void snapshots_validate_all_game_invariants()
 {
     const WorldSnapshot state{
         42, {{7, {1, 0.5, -3}, {2, 0, 1}, Quaternion::FromRotation({0.1, 0, 0.2}), {2, 3, -4}}}};
     const auto original = protobuf_snapshot(state);
-    const auto restored = wire::read_snapshot(wire::snapshot(state));
+    const auto restored = wire::read_snapshot(wire::snapshot({1, state})).world;
     MOONGTANGE_CHECK(restored.tick == state.tick && restored.players.size() == 1);
     MOONGTANGE_CHECK(restored.players[0].position == state.players[0].position);
     MOONGTANGE_CHECK(restored.players[0].velocity == state.players[0].velocity);
     MOONGTANGE_CHECK(restored.players[0].orientation == state.players[0].orientation);
     MOONGTANGE_CHECK(restored.players[0].angularVelocity == state.players[0].angularVelocity);
-    MOONGTANGE_CHECK(wire::read_snapshot(wire::snapshot({0, {}})).tick == 0);
+    MOONGTANGE_CHECK(wire::read_snapshot(wire::snapshot({1, {0, {}}})).world.tick == 0);
 
     auto reject = [](const proto::WorldSnapshot& message) {
         MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
@@ -203,13 +238,13 @@ void snapshots_validate_all_game_invariants()
     auto invalidState = state;
     invalidState.players.push_back(state.players[0]);
     MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
-        wire::snapshot(invalidState);
+        wire::snapshot({1, invalidState});
     }));
 
     invalidState = state;
     invalidState.players[0].orientation = {0, 0, 0, 0};
     MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
-        wire::snapshot(invalidState);
+        wire::snapshot({1, invalidState});
     }));
 }
 
@@ -225,16 +260,16 @@ void maximum_snapshot_fits_bounded_frame()
                                  {7, 8, 9}});
     }
 
-    const auto bytes = wire::snapshot(state);
-    MOONGTANGE_CHECK(bytes.size() == 4300 && bytes.size() <= wire::MAX_FRAME_BYTES);
-    MOONGTANGE_CHECK(wire::read_snapshot(bytes).players.size() == MAX_PLAYERS);
+    const auto bytes = wire::snapshot({1, state});
+    MOONGTANGE_CHECK(bytes.size() == 4302 && bytes.size() <= wire::MAX_FRAME_BYTES);
+    MOONGTANGE_CHECK(wire::read_snapshot(bytes).world.players.size() == MAX_PLAYERS);
     const auto framed = wire::frame(bytes);
     MOONGTANGE_CHECK(wire::frame_size(std::span(framed).first(wire::FRAME_HEADER_BYTES)) ==
                      bytes.size());
 
     state.players.push_back({1, {}, {}});
     MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
-        wire::snapshot(state);
+        wire::snapshot({1, state});
     }));
 }
 
@@ -244,6 +279,7 @@ int main()
 {
     return MoongTangE::test::run([] {
         framing_and_version_negotiation();
+        admission_results_validate_identity_and_status();
         inputs_use_session_identity_and_validate_presence();
         snapshots_validate_all_game_invariants();
         maximum_snapshot_fits_bounded_frame();
