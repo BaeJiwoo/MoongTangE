@@ -85,7 +85,7 @@ MatchmakingApi::MatchmakingApi(std::shared_ptr<ServerHost> host, const std::stri
         Status(request, response);
     });
     m_httpServer->Get("/v1/reservations", [this](const auto& request, auto& response) {
-        Reservation(request, response, ReservationOperation::QUERY);
+        Reservation(request, response, ReservationOperation::LOOKUP);
     });
     m_httpServer->Put("/v1/reservations", [this](const auto& request, auto& response) {
         Reservation(request, response, ReservationOperation::RESERVE);

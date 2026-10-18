@@ -35,7 +35,7 @@ class MatchmakingApi
   private:
     enum class ReservationOperation
     {
-        QUERY,
+        LOOKUP,
         RESERVE,
         CANCEL
     };
