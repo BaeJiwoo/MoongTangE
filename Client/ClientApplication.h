@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 namespace MoongTangE {
 
@@ -33,6 +34,7 @@ class ClientApplication
     SnapshotInterpolator m_presentation;
 
     WorldSnapshot m_authoritativeState;
+    std::optional<double> m_initialX;
     std::uint64_t m_sequence{};
 
     bool m_moved{};
