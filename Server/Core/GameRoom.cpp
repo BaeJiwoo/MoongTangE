@@ -6,20 +6,40 @@ namespace MoongTangE {
 
 bool GameRoom::Join(std::uint32_t playerId)
 {
-    if (PlayerCount() >= GameRoomOptions::PLAYERS_PER_ROOM || !m_world.AddPlayer(playerId)) {
+    if (PlayerCount() + ReservedCount() >= GameRoomOptions::PLAYERS_PER_ROOM ||
+        m_reserved.contains(playerId) || !m_world.AddPlayer(playerId)) {
         return false;
     }
     m_emptySince.reset();
     return true;
 }
 
+bool GameRoom::Reserve(std::uint32_t playerId)
+{
+    if (playerId == 0 || PlayerCount() + ReservedCount() >= GameRoomOptions::PLAYERS_PER_ROOM ||
+        m_world.HasPlayer(playerId) || !m_reserved.insert(playerId).second) {
+        return false;
+    }
+    m_emptySince.reset();
+    return true;
+}
+
+bool GameRoom::Claim(std::uint32_t playerId)
+{
+    if (!m_reserved.contains(playerId) || !m_world.AddPlayer(playerId)) {
+        return false;
+    }
+    m_reserved.erase(playerId);
+    return true;
+}
+
 void GameRoom::Leave(std::uint32_t playerId, Clock::time_point now)
 {
-    if (!m_world.HasPlayer(playerId)) {
+    if (m_reserved.erase(playerId) == 0 && !m_world.HasPlayer(playerId)) {
         return;
     }
     m_world.RemovePlayer(playerId);
-    if (PlayerCount() == 0) {
+    if (PlayerCount() + ReservedCount() == 0) {
         m_emptySince = now;
     }
 }
@@ -44,6 +64,11 @@ std::size_t GameRoom::PlayerCount() const
 bool GameRoom::Expired(Clock::time_point now, std::chrono::seconds lifetime) const
 {
     return m_emptySince && now - *m_emptySince >= lifetime;
+}
+
+std::size_t GameRoom::ReservedCount() const
+{
+    return m_reserved.size();
 }
 
 WorldSnapshot GameRoom::Snapshot() const

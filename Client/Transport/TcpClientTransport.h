@@ -12,7 +12,7 @@ namespace MoongTangE {
 class TcpClientTransport final : public IClientTransport
 {
   public:
-    TcpClientTransport(const std::string& host, std::uint16_t port);
+    TcpClientTransport(const std::string& host, std::uint16_t port, std::string ticket = {});
     ~TcpClientTransport() override;
 
     TcpClientTransport(const TcpClientTransport&) = delete;

@@ -17,6 +17,7 @@ message Quaternion {
 
 message ClientHello {
   uint32 protocol_version = 1;
+  string admission_ticket = 2;
 }
 
 message ServerHello {

@@ -34,7 +34,8 @@ std::unique_ptr<IClientTransport> make_transport(const ClientOptions& options)
     }
 
 #ifdef MOONGTANGE_HAS_NETWORK
-    return std::make_unique<TcpClientTransport>(options.remote->host, options.remote->port);
+    return std::make_unique<TcpClientTransport>(options.remote->host, options.remote->port,
+                                                options.ticket);
 #else
     throw std::runtime_error("This build has TCP networking disabled");
 #endif

@@ -1,5 +1,6 @@
 #include "Client/Transport/TcpClientTransport.h"
 
+#include "Common/Protocol/AdmissionTicket.h"
 #include "Network/Protocol/Codec.h"
 #include "Network/TcpChannel.h"
 
@@ -19,8 +20,12 @@ namespace MoongTangE {
 class TcpClientTransport::ClientNetworkRuntime
 {
   public:
-    ClientNetworkRuntime(const std::string& host, std::uint16_t port)
+    ClientNetworkRuntime(const std::string& host, std::uint16_t port, std::string ticket)
+        : m_ticket(std::move(ticket))
     {
+        if (!m_ticket.empty() && !valid_admission_ticket(m_ticket)) {
+            throw std::invalid_argument("Invalid admission ticket");
+        }
         BeginConnection(host, port);
 
         m_networkThread = std::thread([this] {
@@ -181,7 +186,8 @@ class TcpClientTransport::ClientNetworkRuntime
                 RecordFailure(std::move(reason));
             });
 
-        m_channel->Send(wire::client_hello());
+        m_channel->Send(wire::client_hello(m_ticket));
+        m_ticket.clear();
     }
 
     void ReceiveMessage(const wire::Bytes& data)
@@ -262,11 +268,13 @@ class TcpClientTransport::ClientNetworkRuntime
     // The io thread alone owns the connection lifecycle and snapshot ordering.
     std::uint64_t m_lastReceivedTick{};
     bool m_terminal{};
+    std::string m_ticket;
     std::thread m_networkThread;
 };
 
-TcpClientTransport::TcpClientTransport(const std::string& host, std::uint16_t port)
-    : m_networkRuntime(std::make_unique<ClientNetworkRuntime>(host, port))
+TcpClientTransport::TcpClientTransport(const std::string& host, std::uint16_t port,
+                                       std::string ticket)
+    : m_networkRuntime(std::make_unique<ClientNetworkRuntime>(host, port, std::move(ticket)))
 {
 }
 

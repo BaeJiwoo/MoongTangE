@@ -110,9 +110,9 @@ void ServerNetworkRuntime::HandleMessage(const std::shared_ptr<TcpChannel>& chan
 {
     auto& session = m_sessions.at(channel);
     if (!session.m_helloReceived) {
-        wire::read_client_hello(data);
+        const auto ticket = wire::read_client_hello(data);
         session.m_helloReceived = true;
-        session.m_playerId = m_serverHost->Connect();
+        session.m_playerId = m_serverHost->Connect(ticket);
         CompleteAdmission(channel);
     } else if (wire::is_disconnect(data)) {
         channel->Close("Client disconnected");

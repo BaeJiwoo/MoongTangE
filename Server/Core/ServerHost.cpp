@@ -1,16 +1,25 @@
 #include "Server/Core/ServerHost.h"
 
+#include "Common/Protocol/AdmissionTicket.h"
 #include "Common/SimulationConfig.h"
 #include "Server/Core/GameRoomManager.h"
 #include "Server/Core/TickScheduler.h"
 
+#include <algorithm>
+#include <stdexcept>
 #include <utility>
 
 namespace MoongTangE {
 
-ServerHost::ServerHost(GameRoomOptions options) : m_options(options)
+ServerHost::ServerHost(GameRoomOptions options, bool requireTicket,
+                       std::chrono::seconds reservationLifetime)
+    : m_options(options), m_requireTicket(requireTicket), m_reservationLifetime(reservationLifetime)
 {
     m_options.Validate();
+    if (reservationLifetime < std::chrono::seconds(1) ||
+        reservationLifetime > std::chrono::seconds(300)) {
+        throw std::invalid_argument("Reservation lifetime must be 1..300 seconds");
+    }
 }
 
 ServerHost::~ServerHost()
@@ -54,9 +63,11 @@ void ServerHost::Stop()
     m_pendingInputs.clear();
     m_clients.clear();
     m_latestSnapshots.clear();
+    m_reservations.clear();
+    m_matchmakingState = {};
 }
 
-std::uint32_t ServerHost::Connect()
+std::uint32_t ServerHost::Connect(const std::string& ticket)
 {
     std::lock_guard lock(m_dataMutex);
     if (!m_running || m_clients.size() >= Capacity() * 2 ||
@@ -64,9 +75,27 @@ std::uint32_t ServerHost::Connect()
         return 0;
     }
 
+    if (!ticket.empty()) {
+        const auto found = m_reservations.find(ticket);
+        if (found == m_reservations.end() ||
+            found->second.m_result.status != ReservationStatus::RESERVED ||
+            found->second.m_claimQueued || found->second.m_cancelQueued ||
+            std::chrono::steady_clock::now() >= found->second.m_expiresAt) {
+            return 0;
+        }
+        auto& reservation = found->second;
+        reservation.m_claimQueued = true;
+        m_clients.emplace(reservation.m_playerId, ClientState{});
+        m_pendingCommands.push_back({WorldCommandType::CLAIM, reservation.m_playerId, ticket});
+        return reservation.m_playerId;
+    }
+    if (m_requireTicket) {
+        return 0;
+    }
+
     const auto playerId = m_nextPlayerId++;
     m_clients.emplace(playerId, ClientState{});
-    m_pendingCommands.push_back({WorldCommandType::JOIN, playerId});
+    m_pendingCommands.push_back({WorldCommandType::JOIN, playerId, {}});
     return playerId;
 }
 
@@ -75,9 +104,80 @@ void ServerHost::Disconnect(std::uint32_t playerId)
     std::lock_guard lock(m_dataMutex);
     if (m_clients.erase(playerId)) {
         m_pendingInputs.erase(playerId);
-        m_pendingCommands.push_back({WorldCommandType::LEAVE, playerId});
+        m_pendingCommands.push_back({WorldCommandType::LEAVE, playerId, {}});
     }
     // Cleanup has a reserved allowance of at most twice Capacity() beyond the regular limit.
+}
+
+ReservationResult ServerHost::Reserve(const std::string& ticket)
+{
+    std::lock_guard lock(m_dataMutex);
+    if (!m_running || !valid_admission_ticket(ticket)) {
+        return {ReservationStatus::UNAVAILABLE, 0};
+    }
+    if (const auto found = m_reservations.find(ticket); found != m_reservations.end()) {
+        return ReservationView(found->second);
+    }
+    if (m_reservations.size() >= MAX_RESERVATION_RECORDS ||
+        m_pendingCommands.size() >= MAX_PENDING_COMMANDS || m_nextPlayerId == 0) {
+        return {ReservationStatus::UNAVAILABLE, 0};
+    }
+
+    const auto playerId = m_nextPlayerId++;
+    ReservationRecord record;
+    record.m_playerId = playerId;
+    record.m_expiresAt = std::chrono::steady_clock::now() + m_reservationLifetime;
+    m_reservations.emplace(ticket, record);
+    m_pendingCommands.push_back({WorldCommandType::RESERVE, playerId, ticket});
+    return ReservationView(record);
+}
+
+ReservationResult ServerHost::Reservation(const std::string& ticket) const
+{
+    std::lock_guard lock(m_dataMutex);
+    const auto found = m_reservations.find(ticket);
+    return found == m_reservations.end() ? ReservationResult{} : ReservationView(found->second);
+}
+
+ReservationResult ServerHost::ReservationView(const ReservationRecord& record)
+{
+    auto result = record.m_result;
+    if (result.status == ReservationStatus::PENDING ||
+        result.status == ReservationStatus::RESERVED) {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                   record.m_expiresAt - std::chrono::steady_clock::now())
+                                   .count();
+        result.expiresInMs = std::max<std::int64_t>(0, remaining);
+    }
+    return result;
+}
+
+bool ServerHost::CancelReservation(const std::string& ticket)
+{
+    std::lock_guard lock(m_dataMutex);
+    const auto found = m_reservations.find(ticket);
+    if (!m_running || found == m_reservations.end()) {
+        return false;
+    }
+    auto& record = found->second;
+    if (record.m_cancelQueued || (record.m_result.status != ReservationStatus::RESERVED &&
+                                  record.m_result.status != ReservationStatus::PENDING)) {
+        return true;
+    }
+    if (m_pendingCommands.size() >= MAX_PENDING_COMMANDS) {
+        return false;
+    }
+    record.m_cancelQueued = true;
+    m_pendingCommands.push_back({WorldCommandType::CANCEL, record.m_playerId, ticket});
+    return true;
+}
+
+MatchmakingState ServerHost::Matchmaking() const
+{
+    std::lock_guard lock(m_dataMutex);
+    auto state = m_matchmakingState;
+    state.running = m_running;
+    return state;
 }
 
 AdmissionResult ServerHost::Admission(std::uint32_t playerId) const
@@ -167,23 +267,11 @@ void ServerHost::Run(std::stop_token stopToken)
         }
 
         const auto now = GameRoomManager::Clock::now();
-        for (const auto& command : commands) {
-            switch (command.m_type) {
-            case WorldCommandType::JOIN: {
-                std::lock_guard lock(m_dataMutex);
-                const auto client = m_clients.find(command.m_playerId);
-                if (client != m_clients.end()) {
-                    const auto roomId = rooms.Join(command.m_playerId, now);
-                    client->second.m_admission =
-                        roomId
-                            ? AdmissionResult{AdmissionStatus::ACCEPTED, command.m_playerId, roomId}
-                            : AdmissionResult{AdmissionStatus::FULL, 0, 0};
-                }
-                break;
-            }
-            case WorldCommandType::LEAVE:
-                rooms.Leave(command.m_playerId, now);
-                break;
+        {
+            std::lock_guard lock(m_dataMutex);
+            ExpireReservations(rooms, now);
+            for (const auto& command : commands) {
+                ApplyCommand(command, rooms, now);
             }
         }
 
@@ -193,6 +281,10 @@ void ServerHost::Run(std::stop_token stopToken)
         }
 
         rooms.Step(now);
+        {
+            std::lock_guard lock(m_dataMutex);
+            m_matchmakingState = {true, tick + 1, now, rooms.Occupancy()};
+        }
         if (++tick % simulation::SNAPSHOT_INTERVAL_TICKS == 0) {
             auto snapshots = rooms.Snapshots();
             std::lock_guard lock(m_dataMutex);
@@ -205,6 +297,79 @@ void ServerHost::Run(std::stop_token stopToken)
 
         std::this_thread::sleep_until(scheduler.Advance());
     }
+}
+
+void ServerHost::ApplyCommand(const WorldCommand& command, GameRoomManager& rooms,
+                              std::chrono::steady_clock::time_point now)
+{
+    if (command.m_type == WorldCommandType::LEAVE) {
+        rooms.Leave(command.m_playerId, now);
+        return;
+    }
+    if (command.m_type == WorldCommandType::JOIN) {
+        const auto client = m_clients.find(command.m_playerId);
+        if (client != m_clients.end()) {
+            const auto roomId = rooms.Join(command.m_playerId, now);
+            client->second.m_admission =
+                roomId ? AdmissionResult{AdmissionStatus::ACCEPTED, command.m_playerId, roomId}
+                       : AdmissionResult{AdmissionStatus::FULL, 0, 0};
+        }
+        return;
+    }
+
+    const auto found = m_reservations.find(command.m_ticket);
+    if (found == m_reservations.end()) {
+        if (command.m_type == WorldCommandType::CLAIM) {
+            if (const auto client = m_clients.find(command.m_playerId); client != m_clients.end()) {
+                client->second.m_admission = {AdmissionStatus::UNAVAILABLE, 0, 0};
+            }
+        }
+        return;
+    }
+    auto& record = found->second;
+    auto& result = record.m_result;
+    if (command.m_type == WorldCommandType::RESERVE &&
+        result.status == ReservationStatus::PENDING) {
+        const auto roomId = rooms.Reserve(command.m_playerId, now);
+        result = {roomId ? ReservationStatus::RESERVED : ReservationStatus::FULL, roomId};
+    } else if (command.m_type == WorldCommandType::CANCEL &&
+               (result.status == ReservationStatus::PENDING ||
+                result.status == ReservationStatus::RESERVED)) {
+        rooms.Leave(command.m_playerId, now);
+        result.status = ReservationStatus::CANCELLED;
+    } else if (command.m_type == WorldCommandType::CLAIM) {
+        const auto client = m_clients.find(command.m_playerId);
+        if (client == m_clients.end()) {
+            if (result.status == ReservationStatus::RESERVED) {
+                rooms.Leave(command.m_playerId, now);
+                result.status = ReservationStatus::CANCELLED;
+            }
+        } else if (result.status == ReservationStatus::RESERVED &&
+                   rooms.Claim(command.m_playerId)) {
+            result.status = ReservationStatus::CONSUMED;
+            client->second.m_admission = {AdmissionStatus::ACCEPTED, command.m_playerId,
+                                          result.roomId};
+        } else {
+            client->second.m_admission = {AdmissionStatus::UNAVAILABLE, 0, 0};
+        }
+    }
+}
+
+void ServerHost::ExpireReservations(GameRoomManager& rooms,
+                                    std::chrono::steady_clock::time_point now)
+{
+    for (auto& [ticket, record] : m_reservations) {
+        (void)ticket;
+        if (now >= record.m_expiresAt && (record.m_result.status == ReservationStatus::RESERVED ||
+                                          record.m_result.status == ReservationStatus::PENDING)) {
+            rooms.Leave(record.m_playerId, now);
+            record.m_result.status = ReservationStatus::EXPIRED;
+        }
+    }
+    // Bounded idempotency history; callers must never recycle a ticket for a new attempt.
+    std::erase_if(m_reservations, [&](const auto& entry) {
+        return now >= entry.second.m_expiresAt + std::chrono::seconds(60);
+    });
 }
 
 } // namespace MoongTangE

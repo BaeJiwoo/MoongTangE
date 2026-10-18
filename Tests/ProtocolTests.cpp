@@ -30,17 +30,28 @@ proto::WorldSnapshot protobuf_snapshot(const WorldSnapshot& state)
 
 void framing_and_version_negotiation()
 {
-    // Known Protobuf bytes: field 1, varint wire type, protocol version 4.
-    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 4});
-    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 4});
-    wire::read_client_hello(wire::Bytes{1, 8, 4});
+    // Known Protobuf bytes: field 1, varint wire type, protocol version 5.
+    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 5});
+    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 5});
+    wire::read_client_hello(wire::Bytes{1, 8, 5});
+    const std::string ticket(64, 'a');
+    MOONGTANGE_CHECK(wire::read_client_hello(wire::client_hello(ticket)) == ticket);
+    MOONGTANGE_CHECK(MoongTangE::test::throws([] {
+        wire::client_hello("invalid");
+    }));
+    proto::ClientHello invalidTicket;
+    invalidTicket.set_protocol_version(wire::PROTOCOL_VERSION);
+    invalidTicket.set_admission_ticket(std::string(65, 'a'));
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
+        wire::read_client_hello(packet(wire::MessageType::CLIENT_HELLO, invalidTicket));
+    }));
     MOONGTANGE_CHECK(
         wire::read_server_hello(wire::server_hello({AdmissionStatus::ACCEPTED, 42, 7})).roomId ==
         7);
 
     for (const auto& bad : {wire::Bytes{}, wire::Bytes{1}, wire::Bytes{1, 8}, wire::Bytes{1, 0, 2},
-                            wire::Bytes{1, 8, 2}, wire::Bytes{1, 8, 99}, wire::Bytes{2, 8, 3},
-                            wire::Bytes{1, 8, 3, 0}, wire::Bytes{255}}) {
+                            wire::Bytes{1, 8, 2}, wire::Bytes{1, 8, 4}, wire::Bytes{1, 8, 99},
+                            wire::Bytes{2, 8, 3}, wire::Bytes{1, 8, 3, 0}, wire::Bytes{255}}) {
         MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
             wire::read_client_hello(bad);
         }));

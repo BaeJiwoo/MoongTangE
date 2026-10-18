@@ -1,8 +1,8 @@
-# TCP protocol v4 — Protobuf
+# TCP protocol v5 — Protobuf
 
 The source of truth for message fields is [game.proto](Network/Protocol/game.proto). [Codec.cpp](Network/Protocol/Codec.cpp) converts between generated messages and the plain C++ game types. Common, ServerCore and LocalTransport do not depend on Protobuf.
 
-The package is `MoongTangE.proto`, producing C++ types under `MoongTangE::proto`; handwritten codecs use `MoongTangE::wire`. Protocol v4 adds admission status and room identity while preserving existing field numbers and type discriminator bytes. This protocol sends ordinary messages directly, without Any type URLs or RPC service names.
+The package is `MoongTangE.proto`, producing C++ types under `MoongTangE::proto`; handwritten codecs use `MoongTangE::wire`. Protocol v5 adds a single-use admission ticket; v4 added admission status and room identity while preserving existing field numbers and type discriminator bytes. This protocol sends ordinary messages directly, without Any type URLs or RPC service names.
 
 The C++ codec names are `wire::MessageType`, `PROTOCOL_VERSION`, `MAX_FRAME_BYTES` and `FRAME_HEADER_BYTES`. Enum values use uppercase names such as `CLIENT_HELLO` and `SNAPSHOT`; their on-wire numbers are unchanged. [TcpChannel.h](Network/TcpChannel.h) declares framing operations and [TcpChannel.cpp](Network/TcpChannel.cpp) implements them. The server's [ServerNetworkRuntime](Server/Network/ServerNetworkRuntime.h) owns sessions and passes decoded inputs to ServerHost. See the [file/function guide](docs/SERVER_ARCHITECTURE.md#파일별-함수-안내).
 
@@ -12,15 +12,17 @@ Each TCP frame contains a **4-byte unsigned big-endian payload length**, followe
 
 | Type byte | Protobuf message | Main fields |
 | --- | --- | --- |
-| 1 | ClientHello | protocol_version (=4) |
+| 1 | ClientHello | protocol_version (=5), admission_ticket |
 | 2 | ServerHello | protocol_version, status, server-assigned player_id, room_id |
 | 3 | InputCommand | sequence, x, z |
 | 4 | WorldSnapshot | server_tick, repeated PlayerState, room_id |
 | 5 | Disconnect | empty message |
 
-The body uses Protobuf's encoding (varints, length-delimited submessages and binary64 `double` fields), not the old fixed-position big-endian field layout. Example framed ClientHello: `00 00 00 03 01 08 04`. Empty Disconnect has payload `05`. C++ object memory is never transmitted.
+The body uses Protobuf's encoding (varints, length-delimited submessages and binary64 `double` fields), not the old fixed-position big-endian field layout. Example framed ClientHello: `00 00 00 03 01 08 05`. Empty Disconnect has payload `05`. C++ object memory is never transmitted.
 
-The first client message must be ClientHello. The tick thread confirms admission before ServerHello success. No inputs are accepted before admission; snapshots contain only that room. Rejections are flushed before closing the channel, within its existing read deadline. Handshake version must equal 4. Previous v1/v2/v3 encoding is incompatible and rejected; update client and server together. Protobuf library version 36.2 is separate from application protocol version 4.
+The first client message must be ClientHello. The tick thread confirms admission before ServerHello success. No inputs are accepted before admission; snapshots contain only that room. Rejections are flushed before closing the channel, within its existing read deadline. Handshake version must equal 5. Previous v1/v2/v3/v4 encoding is incompatible and rejected; update client and server together. Protobuf library version 36.2 is separate from application protocol version 5.
+
+ClientHello field 2 is an optional 64-character lowercase hex ticket. Ticket-only mode requires an unexpired reservation on this server, consumed once on the tick thread. Empty tickets use ordinary allocation only when ticket-only mode is disabled. Invalid, unknown, expired or consumed tickets are rejected as UNAVAILABLE, never downgraded to ordinary admission. See [the matching API contract](docs/MATCHMAKING_API.md).
 
 ## Semantic validation
 
@@ -44,15 +46,15 @@ Tests compare decoded positions, velocities, orientations and ticks across direc
 
 ## Limits and shutdown
 
-- Each room holds 3 players. Default 8 rooms (24 players); --max-rooms accepts 1–256. Rooms are created on demand, fill oldest vacancies first, and expire after --empty-room-seconds (default 30, 0–86400).
+- Each room holds 3 occupied seats, counting players and reservations together. Default 8 rooms (24 players); --max-rooms accepts 1–256. Rooms are created on demand, fill oldest vacancies first, and expire after --empty-room-seconds (default 30, 0–86400).
 - Core admission records and TCP connections each allow twice the configured player capacity, including pending handshakes. Further requests return UNAVAILABLE or close at the socket cap. FULL is decided by the tick thread after allocation fails.
 - Server lifecycle queue: 1024 regular commands plus at most twice the player capacity in guaranteed leave commands. Movement inputs have a separate slot per admitted player (at most player capacity); flooding one slot cannot exhaust other slots.
 - Per connection: at most 32 outbound frames; a slower peer is disconnected.
 - Client submission queue: at most 64 inputs awaiting its network thread.
 - Client connection and handshake deadline: 5 seconds. A complete inbound frame must arrive within 10 seconds.
 - Disconnect, EOF, socket/protocol errors and timeouts close the session and enqueue player removal.
-- ServerApplication ends control processing, closes networking and drains its callbacks, then stops the physics core. See [server architecture](docs/SERVER_ARCHITECTURE.md).
+- ServerApplication ends control processing, drains the optional HTTP API, closes networking and drains its callbacks, then stops the physics core. See [server architecture](docs/SERVER_ARCHITECTURE.md).
 
-This demonstration protocol has no encryption or user authentication. Keep the default loopback binding; explicit public binding is intended only for trusted test networks.
+This demonstration protocol has no encryption or account authentication. Tickets are single-use bearer credentials; the matching service authenticates users and distributes tickets. Protect ticket-bearing game traffic using a secure tunnel or add TLS before untrusted-network deployment. Keep the default loopback binding; explicit public binding is intended only for trusted test networks.
 
 References: [Protobuf C++ tutorial](https://protobuf.dev/getting-started/cpptutorial/), [stream framing](https://protobuf.dev/programming-guides/techniques/#streaming-multiple-messages), [C++ compiler/runtime version matching](https://protobuf.dev/support/cross-version-runtime-guarantee/#cpp-and-rust-specific-guarantees).

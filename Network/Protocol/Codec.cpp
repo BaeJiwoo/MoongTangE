@@ -1,5 +1,6 @@
 #include "Network/Protocol/Codec.h"
 
+#include "Common/Protocol/AdmissionTicket.h"
 #include "game.pb.h"
 
 #include <google/protobuf/io/coded_stream.h>
@@ -84,10 +85,12 @@ MessageType type(std::span<const std::uint8_t> data)
     return static_cast<MessageType>(data.front());
 }
 
-Bytes client_hello()
+Bytes client_hello(const std::string& ticket)
 {
+    require(ticket.empty() || valid_admission_ticket(ticket));
     proto::ClientHello message;
     message.set_protocol_version(PROTOCOL_VERSION);
+    message.set_admission_ticket(ticket);
     return encode(MessageType::CLIENT_HELLO, message);
 }
 
@@ -106,10 +109,13 @@ Bytes server_hello(AdmissionResult admission)
     return encode(MessageType::SERVER_HELLO, message);
 }
 
-void read_client_hello(std::span<const std::uint8_t> data)
+std::string read_client_hello(std::span<const std::uint8_t> data)
 {
     const auto message = decode<proto::ClientHello>(data, MessageType::CLIENT_HELLO);
     require(message.protocol_version() == PROTOCOL_VERSION);
+    require(message.admission_ticket().empty() ||
+            valid_admission_ticket(message.admission_ticket()));
+    return message.admission_ticket();
 }
 
 AdmissionResult read_server_hello(std::span<const std::uint8_t> data)
