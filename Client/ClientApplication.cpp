@@ -1,12 +1,15 @@
 #include "Client/ClientApplication.h"
+
 #include "Client/Input/Keyboard.h"
 #include "Client/Rendering/GraphicsWindow.h"
 #include "Client/Transport/LocalTransport.h"
 #include "Common/SimulationConfig.h"
 #include "Server/Core/ServerHost.h"
+
 #ifdef MOONGTANGE_HAS_NETWORK
 #include "Client/Transport/TcpClientTransport.h"
 #endif
+
 #include <cstdlib>
 #include <memory>
 #include <raylib.h>
@@ -16,90 +19,114 @@
 
 namespace MoongTangE {
 namespace {
-constexpr int smokeFrames = 120;
-constexpr std::uint64_t smokePushFrames = 60;
 
-std::unique_ptr<IClientTransport> makeTransport(const ClientOptions& options) {
+constexpr int SMOKE_FRAMES = 120;
+constexpr std::uint64_t SMOKE_PUSH_FRAMES = 60;
+
+std::unique_ptr<IClientTransport> make_transport(const ClientOptions& options)
+{
     if (!options.remote) {
         auto server = std::make_shared<ServerHost>();
-        server->start();
+        server->Start();
+
         // LocalTransport retains shared ownership; releasing it stops the embedded server.
         return std::make_unique<LocalTransport>(std::move(server));
     }
+
 #ifdef MOONGTANGE_HAS_NETWORK
     return std::make_unique<TcpClientTransport>(options.remote->host, options.remote->port);
 #else
     throw std::runtime_error("This build has TCP networking disabled");
 #endif
 }
+
 } // namespace
 
 ClientApplication::ClientApplication(ClientOptions options)
-    : options_(std::move(options)), transport_(makeTransport(options_)) {}
+    : m_options(std::move(options)), m_transport(make_transport(m_options))
+{
+}
 
-void ClientApplication::run() {
-    GraphicsWindow window(options_.smoke);
-    for (int frame = 0; !WindowShouldClose() && (!options_.smoke || frame < smokeFrames); ++frame) {
-        presentation_.advance(GetFrameTime());
-        const auto failure = transport_->error();
+void ClientApplication::Run()
+{
+    GraphicsWindow window(m_options.smoke);
+
+    for (int frame = 0; !WindowShouldClose() && (!m_options.smoke || frame < SMOKE_FRAMES);
+         ++frame) {
+        m_presentation.Advance(GetFrameTime());
+
+        const auto failure = m_transport->Error();
         if (!failure.empty()) {
             throw std::runtime_error(failure);
         }
-        sendInput();
-        receiveSnapshot();
-        if (options_.smoke) {
-            observeSmokeProgress();
+
+        SendInput();
+        ReceiveSnapshot();
+
+        if (m_options.smoke) {
+            ObserveSmokeProgress();
         }
-        renderer_.draw(presentation_.sample(), transport_->playerId(),
-                       options_.remote ? "TCP dedicated server" : "Embedded server",
-                       transport_->connected() ? "Connected" : "Connecting...");
+
+        m_renderer.Draw(m_presentation.Sample(), m_transport->PlayerId(),
+                        m_options.remote ? "TCP dedicated server" : "Embedded server",
+                        m_transport->Connected() ? "Connected" : "Connecting...");
     }
 
-    if (options_.smoke) {
+    if (m_options.smoke) {
         if (const auto capture = std::getenv("MOONGTANGE_SMOKE_CAPTURE")) {
-            window.saveScreenshot(capture);
+            window.SaveScreenshot(capture);
         }
-        validateSmokeProgress();
+
+        ValidateSmokeProgress();
     }
-    transport_->close();
+
+    m_transport->Close();
 }
 
-void ClientApplication::sendInput() {
-    if (!transport_->connected()) {
+void ClientApplication::SendInput()
+{
+    if (!m_transport->Connected()) {
         return;
     }
-    auto input = keyboardInput(transport_->playerId(), ++sequence_);
-    if (options_.smoke) {
-        input.x = sequence_ < smokePushFrames ? 1 : 0;
+
+    auto input = keyboard_input(m_transport->PlayerId(), ++m_sequence);
+    if (m_options.smoke) {
+        input.x = m_sequence < SMOKE_PUSH_FRAMES ? 1 : 0;
         input.z = 0;
     }
-    if (!transport_->send(input)) {
-        throw std::runtime_error("Input rejected: " + transport_->error());
+
+    if (!m_transport->Send(input)) {
+        throw std::runtime_error("Input rejected: " + m_transport->Error());
     }
 }
 
-void ClientApplication::receiveSnapshot() {
-    if (auto snapshot = transport_->receive()) {
-        authoritativeState_ = std::move(*snapshot);
-        presentation_.push(authoritativeState_);
+void ClientApplication::ReceiveSnapshot()
+{
+    if (auto snapshot = m_transport->Receive()) {
+        m_authoritativeState = std::move(*snapshot);
+        m_presentation.Push(m_authoritativeState);
     }
 }
 
-void ClientApplication::observeSmokeProgress() {
-    for (const auto& player : authoritativeState_.players) {
-        if (player.id != transport_->playerId()) {
+void ClientApplication::ObserveSmokeProgress()
+{
+    for (const auto& player : m_authoritativeState.players) {
+        if (player.id != m_transport->PlayerId()) {
             continue;
         }
-        moved_ =
-            moved_ || player.position.x > simulation::spawnX(player.id) + simulation::PLAYER_RADIUS;
-        rolled_ = rolled_ ||
-                  (player.orientation != Quaternion{} && player.angularVelocity.length() > 0.1);
+
+        m_moved = m_moved ||
+                  player.position.x > simulation::spawn_x(player.id) + simulation::PLAYER_RADIUS;
+        m_rolled = m_rolled ||
+                   (player.orientation != Quaternion{} && player.angularVelocity.Length() > 0.1);
     }
 }
 
-void ClientApplication::validateSmokeProgress() const {
-    if (!moved_ || !rolled_) {
+void ClientApplication::ValidateSmokeProgress() const
+{
+    if (!m_moved || !m_rolled) {
         throw std::runtime_error("Smoke test did not observe server rolling");
     }
 }
+
 } // namespace MoongTangE

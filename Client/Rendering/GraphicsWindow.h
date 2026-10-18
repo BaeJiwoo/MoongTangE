@@ -1,21 +1,27 @@
 #pragma once
+
 #include <raylib.h>
 #include <stdexcept>
 
 namespace MoongTangE {
+
 // A single window owns the graphics context. Destruction closes it on every exit path.
-class GraphicsWindow {
-public:
-    explicit GraphicsWindow(bool hidden) {
+class GraphicsWindow
+{
+  public:
+    explicit GraphicsWindow(bool hidden)
+    {
         SetConfigFlags(FLAG_MSAA_4X_HINT | (hidden ? FLAG_WINDOW_HIDDEN : FLAG_WINDOW_RESIZABLE));
         InitWindow(1100, 720, "MoongTangE");
         if (!IsWindowReady()) {
             throw std::runtime_error("Graphics window initialization failed");
         }
+
         SetTargetFPS(60);
     }
 
-    ~GraphicsWindow() {
+    ~GraphicsWindow()
+    {
         CloseWindow();
     }
 
@@ -24,20 +30,23 @@ public:
     GraphicsWindow(GraphicsWindow&&) = delete;
     GraphicsWindow& operator=(GraphicsWindow&&) = delete;
 
-    void saveScreenshot(const char* path) const {
+    void SaveScreenshot(const char* path) const
+    {
         ScreenImage screenshot;
-        if (!ExportImage(screenshot.get(), path)) {
+        if (!ExportImage(screenshot.Get(), path)) {
             throw std::runtime_error("Could not save smoke screenshot");
         }
     }
 
-private:
-    class ScreenImage {
-    public:
-        ScreenImage() : image_(LoadImageFromScreen()) {}
+  private:
+    class ScreenImage
+    {
+      public:
+        ScreenImage() : m_image(LoadImageFromScreen()) {}
 
-        ~ScreenImage() {
-            UnloadImage(image_);
+        ~ScreenImage()
+        {
+            UnloadImage(m_image);
         }
 
         ScreenImage(const ScreenImage&) = delete;
@@ -45,12 +54,14 @@ private:
         ScreenImage(ScreenImage&&) = delete;
         ScreenImage& operator=(ScreenImage&&) = delete;
 
-        Image get() const {
-            return image_;
+        Image Get() const
+        {
+            return m_image;
         }
 
-    private:
-        Image image_;
+      private:
+        Image m_image;
     };
 };
+
 } // namespace MoongTangE

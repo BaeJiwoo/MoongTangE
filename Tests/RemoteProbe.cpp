@@ -3,20 +3,22 @@
 #include "Common/Utility/CommandLine.h"
 #include "TestSupport.h"
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
     return MoongTangE::test::run([&] {
         MOONGTANGE_CHECK(argc == 2);
-        const auto [host, port] = MoongTangE::endpointOption(argv[1]);
+        const auto [host, port] = MoongTangE::endpoint_option(argv[1]);
         MoongTangE::TcpClientTransport client(host, port);
-        MOONGTANGE_CHECK(MoongTangE::test::waitFor([&] {
-            return client.connected();
+        MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
+            return client.Connected();
         }));
-        const auto id = client.playerId();
-        MOONGTANGE_CHECK(client.send({id, 1, 1, 0}));
-        MOONGTANGE_CHECK(MoongTangE::test::waitFor([&] {
-            if (auto state = client.receive()) {
+
+        const auto id = client.PlayerId();
+        MOONGTANGE_CHECK(client.Send({id, 1, 1, 0}));
+        MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
+            if (auto state = client.Receive()) {
                 for (const auto& p : state->players) {
-                    if (p.id == id && p.position.x > MoongTangE::simulation::spawnX(id) +
+                    if (p.id == id && p.position.x > MoongTangE::simulation::spawn_x(id) +
                                                          MoongTangE::simulation::PLAYER_RADIUS) {
                         return true;
                     }
@@ -24,6 +26,7 @@ int main(int argc, char** argv) {
             }
             return false;
         }));
-        client.close();
+
+        client.Close();
     });
 }

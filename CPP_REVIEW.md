@@ -2,7 +2,35 @@
 
 이 문서의 본문은 #23 당시의 리뷰 기록입니다. 서버 실행 클래스와 Protobuf 전환 이후의 구조는 [서버 구조 문서](docs/SERVER_ARCHITECTURE.md), 현재 메시지 형식은 [PROTOCOL.md](PROTOCOL.md)를 참고하세요. 당시 `Wire.h`의 수동 직렬화는 #26에서 `Network/Protocol/Codec.*`와 `.proto` 스키마로 대체합니다.
 
-## 현재 서버 명명·파일 구성 — Issue #29
+## 현재 전체 코드 스타일 — Issue #33
+
+[Islewright/Islewright의 629574d 버전](https://github.com/Islewright/Islewright/tree/629574d301d8061e3efecbb2155ee710b2002ec5)을 참고해 Client·Common·Network·Server·Tests의 이름과 서식을 통일했습니다. 참고한 부분은 [World의 메서드·멤버](https://github.com/Islewright/Islewright/blob/629574d301d8061e3efecbb2155ee710b2002ec5/common/include/islewright/common/world.hpp), [좌표 보조 함수](https://github.com/Islewright/Islewright/blob/629574d301d8061e3efecbb2155ee710b2002ec5/common/include/islewright/common/coords.hpp), [서식 설정](https://github.com/Islewright/Islewright/blob/629574d301d8061e3efecbb2155ee710b2002ec5/.clang-format)입니다. 해당 프로젝트의 게임·네트워크 구현을 가져오거나 의존성을 추가하지 않았습니다.
+
+| 구분 | 규칙 | 현재 코드 예 |
+| --- | --- | --- |
+| 클래스·타입 | PascalCase, 역할을 나타내는 이름 | `ServerNetworkRuntime`, `ClientNetworkRuntime` |
+| 멤버 함수·정적 멤버 함수 | PascalCase | `ServerApplication::Run()`, `Quaternion::FromRotation()` |
+| 일반 함수 | snake_case | `parse_server_options()`, `wire::read_input()` |
+| 비공개 데이터 멤버 | `m_` + lowerCamelCase | `m_networkThread`, `m_latestSnapshot` |
+| 고정 상수 | UPPER_SNAKE_CASE | `FIXED_DELTA`, `MAX_QUEUED_INPUTS` |
+| 열거 값 | 기존 대문자 규칙 유지 | `MessageType::CLIENT_HELLO` |
+| 매개변수·런타임 지역 변수 | lowerCamelCase | `playerId`, `bindAddress` |
+| 단순 값 타입 필드 | 기존 좌표·데이터 이름 유지 | `Vector3::x`, `InputCommand::playerId` |
+
+서버 옵션·내부 명령 값 타입의 기존 `m_` 필드는 유지합니다. 런타임에서 얻은 값은 `const`여도 지역 변수 규칙을 따릅니다. 표준 라이브러리·Asio·raylib·생성 Protobuf의 함수 이름은 해당 API 그대로 사용합니다. 클래스 멤버 `Run()`과 외부 함수 `io_context::run()`은 이 때문에 표기가 다릅니다.
+
+클라이언트에 남아 있던 `TcpClientTransport::Impl`은 `TcpClientTransport::ClientNetworkRuntime`, `impl_`은 `m_networkRuntime`으로 변경했습니다. 객체 소유권과 함수 본문 순서는 유지합니다. 서비스·루트 네임스페이스 `MoongTangE`, 기존 `.h/.cpp` 파일 이름과 라이브러리 구분도 유지합니다. 서버와 공유 TCP 채널의 비템플릿 함수 정의는 계속 `.cpp`에 둡니다.
+
+서식은 4칸 들여쓰기·100열 제한이며 클래스·구조체·열거형·함수의 여는 중괄호를 다음 줄에 둡니다. `if`·`for` 같은 제어문은 같은 줄에 둡니다. `.clang-format`은 이 배치와 include 정렬을, `.clang-tidy`는 메서드·일반 함수·비공개 멤버·상수·열거 값의 이름을 검사합니다. 변경은 이름과 서식에 한정하며 분기·연산·상수 값·프로토콜 스키마·CLI 옵션·스레드와 잠금 범위를 유지합니다.
+
+빈 줄도 의미 단위로 배치합니다. [참고 저장소의 입력 초기화](https://github.com/Islewright/Islewright/blob/629574d301d8061e3efecbb2155ee710b2002ec5/client/src/input.cpp)처럼 같은 역할의 선언·계산·상태 갱신은 붙이고, 역할이 바뀔 때 한 줄을 띄웁니다.
+
+- 헤더는 생성·소멸, 연결 관리, 송수신, 상태 조회와 관련된 선언끼리 묶습니다. 멤버도 소유 자원·공유 상태·표시 상태 등으로 구분하며 선언 순서는 유지합니다.
+- 함수는 검증·자원 준비·작업 수행·종료 처리의 경계를 구분합니다. 하나의 계산에 필요한 변수와 계산식, 같은 상태를 갱신하는 문장, 중복 호출을 확인하는 연속 테스트는 붙여 둡니다.
+- `ServerHost::Run()`은 명령 큐 인수 → 명령 적용 → 물리 진행 → Snapshot 게시 → 다음 Tick 대기 순서로 구분합니다. `ServerApplication::Run()`은 실행 전 검증 → 서버 생성 → 종료 이벤트 등록 → 상태 게시 → 제어 루프로 구분합니다.
+- `#pragma once`와 include, 네임스페이스 경계에는 빈 줄을 둡니다. 그 외 중괄호 바로 다음의 불필요한 빈 줄과 연속 빈 줄은 formatter가 정리합니다. 의미에 따른 묶음은 사람이 정하고 formatter는 그 배치를 유지합니다.
+
+## 서버 명명·파일 구성 기록 — Issue #29
 
 - 서비스 이름은 `MoongTangE`입니다. CMake 프로젝트명, 클라이언트 창·화면 제목, README와 저장소 링크를 함께 갱신했습니다.
 - Client·Common·Network·Server·Tests 전체의 최상위 네임스페이스도 `MoongTangE`입니다. Protobuf 패키지는 `MoongTangE.proto`, 빌드 옵션·컴파일 매크로·환경변수는 `MOONGTANGE_`, CMake 내부 도우미는 `moongtange_`로 통일했습니다. CI·정적 분석 명령·문서의 사용 예도 함께 변경했습니다. 생성 메시지의 정규화된 타입 이름은 바뀌지만 필드 번호와 전송 바이트는 유지합니다.
