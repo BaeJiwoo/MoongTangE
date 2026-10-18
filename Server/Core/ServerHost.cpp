@@ -51,6 +51,7 @@ void ServerHost::Stop()
 
     std::lock_guard lock(m_dataMutex);
     m_pendingCommands.clear();
+    m_pendingInputs.clear();
     m_clients.clear();
     m_latestSnapshots.clear();
 }
@@ -73,6 +74,7 @@ void ServerHost::Disconnect(std::uint32_t playerId)
 {
     std::lock_guard lock(m_dataMutex);
     if (m_clients.erase(playerId)) {
+        m_pendingInputs.erase(playerId);
         m_pendingCommands.push_back({WorldCommandType::LEAVE, playerId});
     }
     // Cleanup has a reserved allowance of at most twice Capacity() beyond the regular limit.
@@ -97,13 +99,14 @@ bool ServerHost::Submit(InputCommand input)
     const auto client = m_clients.find(input.playerId);
     if (!m_running || client == m_clients.end() ||
         client->second.m_admission.status != AdmissionStatus::ACCEPTED ||
-        input.sequence <= client->second.m_lastInputSequence ||
-        m_pendingCommands.size() >= MAX_PENDING_COMMANDS) {
+        input.sequence <= client->second.m_lastInputSequence) {
         return false;
     }
 
     client->second.m_lastInputSequence = input.sequence;
-    m_pendingCommands.push_back({WorldCommandType::INPUT, input.playerId, input});
+    // Movement is held state: only the latest input per player is needed at a tick boundary.
+    // Its separate slot cannot consume another player's slot or block lifecycle commands.
+    m_pendingInputs.insert_or_assign(input.playerId, input);
     return true;
 }
 
@@ -140,7 +143,7 @@ std::size_t ServerHost::Capacity() const
 std::size_t ServerHost::Pending() const
 {
     std::lock_guard lock(m_dataMutex);
-    return m_pendingCommands.size();
+    return m_pendingCommands.size() + m_pendingInputs.size();
 }
 
 bool ServerHost::HasClient(std::uint32_t playerId) const
@@ -156,9 +159,11 @@ void ServerHost::Run(std::stop_token stopToken)
 
     while (!stopToken.stop_requested()) {
         std::deque<WorldCommand> commands;
+        std::map<std::uint32_t, InputCommand> inputs;
         {
             std::lock_guard lock(m_dataMutex);
             commands.swap(m_pendingCommands);
+            inputs.swap(m_pendingInputs);
         }
 
         const auto now = GameRoomManager::Clock::now();
@@ -176,13 +181,15 @@ void ServerHost::Run(std::stop_token stopToken)
                 }
                 break;
             }
-            case WorldCommandType::INPUT:
-                rooms.Apply(command.m_input);
-                break;
             case WorldCommandType::LEAVE:
                 rooms.Leave(command.m_playerId, now);
                 break;
             }
+        }
+
+        for (const auto& [playerId, input] : inputs) {
+            (void)playerId;
+            rooms.Apply(input);
         }
 
         rooms.Step(now);

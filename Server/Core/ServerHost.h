@@ -50,7 +50,6 @@ class ServerHost
     enum class WorldCommandType
     {
         JOIN,
-        INPUT,
         LEAVE
     };
 
@@ -58,7 +57,6 @@ class ServerHost
     {
         WorldCommandType m_type{WorldCommandType::JOIN};
         std::uint32_t m_playerId{};
-        InputCommand m_input{};
     };
 
     void Run(std::stop_token stopToken);
@@ -77,6 +75,7 @@ class ServerHost
     std::mutex m_lifecycleMutex;
 
     std::deque<WorldCommand> m_pendingCommands;
+    std::map<std::uint32_t, InputCommand> m_pendingInputs;
     std::map<std::uint32_t, ClientState> m_clients;
     std::map<std::uint64_t, RoomSnapshot> m_latestSnapshots;
     std::uint32_t m_nextPlayerId{1};

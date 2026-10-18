@@ -24,7 +24,7 @@ The first client message must be ClientHello. The tick thread confirms admission
 
 ## Semantic validation
 
-- Input sequence must be nonzero and increase within its connection. x/z must be explicitly present, finite and in [-1,1]. Their zero values are valid. The input message has no player ID; the server supplies its session ID. Hello assigns an ID but is **not user authentication**.
+- Input sequence must be nonzero and increase within its connection. Movement represents held state: the server keeps only the newest input per admitted player until the next tick. Intermediate movement updates can be coalesced; discrete action messages would require a separate future design. x/z must be explicitly present, finite and in [-1,1]. Their zero values are valid. The input message has no player ID; the server supplies its session ID. Hello assigns an ID but is **not user authentication**.
 - ServerHello reports ACCEPTED (1), FULL (2), or UNAVAILABLE (3). Success requires nonzero player_id and room_id; rejection requires both IDs to be zero. Unspecified/pending and unknown statuses are rejected.
 - Snapshots require a nonzero room_id matching the accepted room. Inputs carry neither room nor player identity.
 - A Snapshot must explicitly include server_tick, including when the value is zero. The codec has a defensive ceiling of 32 players with unique nonzero IDs; game rooms enforce the tighter limit of 3.
@@ -46,7 +46,7 @@ Tests compare decoded positions, velocities, orientations and ticks across direc
 
 - Each room holds 3 players. Default 8 rooms (24 players); --max-rooms accepts 1–256. Rooms are created on demand, fill oldest vacancies first, and expire after --empty-room-seconds (default 30, 0–86400).
 - Core admission records and TCP connections each allow twice the configured player capacity, including pending handshakes. Further requests return UNAVAILABLE or close at the socket cap. FULL is decided by the tick thread after allocation fails.
-- Server command queue: 1024 regular commands plus at most twice the player capacity in guaranteed leave commands.
+- Server lifecycle queue: 1024 regular commands plus at most twice the player capacity in guaranteed leave commands. Movement inputs have a separate slot per admitted player (at most player capacity); flooding one slot cannot exhaust other slots.
 - Per connection: at most 32 outbound frames; a slower peer is disconnected.
 - Client submission queue: at most 64 inputs awaiting its network thread.
 - Client connection and handshake deadline: 5 seconds. A complete inbound frame must arrive within 10 seconds.

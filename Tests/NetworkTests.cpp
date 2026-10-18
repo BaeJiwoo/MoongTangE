@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -90,6 +91,31 @@ void consumed_snapshots_cannot_rewind()
         return !client.Connected();
     }));
     MOONGTANGE_CHECK(!client.Receive());
+}
+
+void slow_peer_queue_is_bounded_before_io_progress()
+{
+    asio::io_context io;
+    asio::ip::tcp::acceptor listener(io, {asio::ip::make_address("127.0.0.1"), 0});
+    asio::ip::tcp::socket peer(io);
+    peer.connect(listener.local_endpoint());
+    auto channel = std::make_shared<TcpChannel>(listener.accept());
+    unsigned closes = 0;
+    std::string reason;
+    channel->Start([](const wire::Bytes&) {},
+                   [&](std::string failure) {
+                       ++closes;
+                       reason = std::move(failure);
+                   });
+    // Hold the executor so no write completion can free a queue slot.
+    for (int index = 0; index < 32; ++index) {
+        channel->Send(wire::client_hello());
+    }
+    MOONGTANGE_CHECK(closes == 0);
+    channel->Send(wire::client_hello());
+    MOONGTANGE_CHECK(closes == 1 && reason == "Slow peer: send queue full");
+    io.run();
+    MOONGTANGE_CHECK(closes == 1);
 }
 
 void clients_receive_authoritative_rolling(const AsioServer& server, ServerHost& core)
@@ -252,6 +278,7 @@ int main()
 {
     return MoongTangE::test::run([] {
         channel_starts_once_and_closes_once();
+        slow_peer_queue_is_bounded_before_io_progress();
         consumed_snapshots_cannot_rewind();
         clients_reject_foreign_rooms_and_report_full();
 
