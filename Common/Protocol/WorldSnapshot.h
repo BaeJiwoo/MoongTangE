@@ -5,8 +5,8 @@
 #include <cstdint>
 #include <vector>
 
-namespace sandbox {
-inline constexpr std::size_t maxPlayers = simulation::maxPlayers;
+namespace MoongTangE {
+inline constexpr std::size_t MAX_PLAYERS = simulation::MAX_PLAYERS;
 
 struct PlayerState {
     std::uint32_t id{};
@@ -19,4 +19,4 @@ struct WorldSnapshot {
     std::uint64_t tick{};
     std::vector<PlayerState> players;
 };
-} // namespace sandbox
+} // namespace MoongTangE

@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <memory>
 
-namespace sandbox {
+namespace MoongTangE {
 // Composes presentation and a transport interface; no client-side physics ownership.
 class ClientApplication {
 public:
@@ -29,4 +29,4 @@ private:
     bool moved_{};
     bool rolled_{};
 };
-} // namespace sandbox
+} // namespace MoongTangE

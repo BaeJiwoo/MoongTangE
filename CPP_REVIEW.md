@@ -2,6 +2,18 @@
 
 이 문서의 본문은 #23 당시의 리뷰 기록입니다. 서버 실행 클래스와 Protobuf 전환 이후의 구조는 [서버 구조 문서](docs/SERVER_ARCHITECTURE.md), 현재 메시지 형식은 [PROTOCOL.md](PROTOCOL.md)를 참고하세요. 당시 `Wire.h`의 수동 직렬화는 #26에서 `Network/Protocol/Codec.*`와 `.proto` 스키마로 대체합니다.
 
+## 현재 서버 명명·파일 구성 — Issue #29
+
+- 서비스 이름은 `MoongTangE`입니다. CMake 프로젝트명, 클라이언트 창·화면 제목, README와 저장소 링크를 함께 갱신했습니다.
+- Client·Common·Network·Server·Tests 전체의 최상위 네임스페이스도 `MoongTangE`입니다. Protobuf 패키지는 `MoongTangE.proto`, 빌드 옵션·컴파일 매크로·환경변수는 `MOONGTANGE_`, CMake 내부 도우미는 `moongtange_`로 통일했습니다. CI·정적 분석 명령·문서의 사용 예도 함께 변경했습니다. 생성 메시지의 정규화된 타입 이름은 바뀌지만 필드 번호와 전송 바이트는 유지합니다.
+- `AsioServer::Impl`은 `ServerNetworkRuntime`으로 바꾸고 별도 `.h/.cpp`로 분리했습니다. `AsioServer`는 전방 선언과 `unique_ptr`로 구현을 숨기며, 네트워크 스레드·세션·Snapshot 타이머는 runtime이 소유합니다.
+- 서버 및 공유 `TcpChannel`의 데이터 멤버는 `m_`를 사용합니다. `ServerOptions`와 내부 `WorldCommand`도 값 타입을 유지하면서 멤버 접두사를 적용했습니다. 고정 상수·열거 값은 대문자이며, 런타임의 `const` 지역 변수는 lowerCamelCase입니다.
+- `WorldCommandType`과 `wire::MessageType`은 종류가 무엇인지 이름으로 드러냅니다. 공유 시뮬레이션·프로토콜 상수 이름은 모든 클라이언트·테스트 호출부까지 갱신하며 값과 wire 형식은 유지합니다.
+- `ServerOptions`, `TickScheduler`, `ServerHost`, `TcpChannel`의 비템플릿 함수 본문은 `.cpp`에 둡니다. 기본값·상수·default/delete 선언은 헤더에 유지합니다. `ServerOptions`는 Common만 사용하는 독립 CMake 라이브러리이며 CLI 테스트는 네트워크를 끈 구성에서도 이를 연결합니다.
+- 서버 Tick의 단독 월드 변경, bounded queue, 콜백의 공유 소유권, 네트워크 종료 후 코어 종료 순서를 유지합니다. 검증 결과는 #29의 PR에 기록합니다. 아래의 과거 `Impl`·파일 개수는 당시 리뷰 기록입니다.
+
+명명과 함수 위치는 [서버 아키텍처의 파일별 토글](docs/SERVER_ARCHITECTURE.md#파일별-함수-안내)에서 확인할 수 있습니다.
+
 ## 범위와 기준
 
 `Client`, `Common`, `Network`, `Server`, `Tests`의 프로젝트 소유 C++ 전체를 검토했습니다. 정리 후 범위는 `.cpp` 18개와 `.h` 27개입니다. CMake, CI, 테스트 실행 도구도 함께 점검했습니다. 다운로드한 raylib/Asio 소스와 빌드 산출물은 수정 대상에서 제외했습니다.

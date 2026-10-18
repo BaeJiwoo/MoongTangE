@@ -35,7 +35,7 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
       - name: Configure without graphics and networking dependencies
-        run: cmake -S . -B build-core -DCMAKE_BUILD_TYPE=Release -DSANDBOX_BUILD_CLIENT=OFF -DSANDBOX_BUILD_NETWORK=OFF
+        run: cmake -S . -B build-core -DCMAKE_BUILD_TYPE=Release -DMOONGTANGE_BUILD_CLIENT=OFF -DMOONGTANGE_BUILD_NETWORK=OFF
       - name: Build core
         run: cmake --build build-core --config Release --parallel 2
       - name: Test core

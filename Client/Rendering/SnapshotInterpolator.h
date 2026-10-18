@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace sandbox {
+namespace MoongTangE {
 // Presentation-only, approximately one snapshot interval behind; never predicts physics.
 class SnapshotInterpolator {
 public:
@@ -21,8 +21,8 @@ public:
         from_ = initialized_ ? sample() : next;
         if (initialized_) {
             const double tickInterval =
-                static_cast<double>(next.tick - target_.tick) * simulation::fixedDelta;
-            duration_ = std::clamp(tickInterval, simulation::fixedDelta, maximumInterval);
+                static_cast<double>(next.tick - target_.tick) * simulation::FIXED_DELTA;
+            duration_ = std::clamp(tickInterval, simulation::FIXED_DELTA, maximumInterval);
         } else {
             duration_ = defaultInterval;
         }
@@ -48,7 +48,7 @@ public:
 
 private:
     static constexpr double defaultInterval =
-        simulation::snapshotIntervalTicks * simulation::fixedDelta;
+        simulation::SNAPSHOT_INTERVAL_TICKS * simulation::FIXED_DELTA;
     static constexpr double maximumInterval = 0.1;
 
     static void interpolatePlayer(const PlayerState& from, PlayerState& to, double fraction) {
@@ -64,4 +64,4 @@ private:
     double duration_{defaultInterval};
     bool initialized_{};
 };
-} // namespace sandbox
+} // namespace MoongTangE

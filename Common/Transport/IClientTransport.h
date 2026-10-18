@@ -5,7 +5,7 @@
 #include <optional>
 #include <string>
 
-namespace sandbox {
+namespace MoongTangE {
 // Call from one consumer thread. Implementations own their background synchronization.
 class IClientTransport {
 public:
@@ -22,4 +22,4 @@ public:
     virtual std::string error() const = 0;
     virtual void close() = 0;
 };
-} // namespace sandbox
+} // namespace MoongTangE

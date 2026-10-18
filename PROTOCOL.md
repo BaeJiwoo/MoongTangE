@@ -2,6 +2,10 @@
 
 The source of truth for message fields is [game.proto](Network/Protocol/game.proto). [Codec.cpp](Network/Protocol/Codec.cpp) converts between generated messages and the plain C++ game types. Common, ServerCore and LocalTransport do not depend on Protobuf.
 
+The package is `MoongTangE.proto`, producing C++ types under `MoongTangE::proto`; handwritten codecs use `MoongTangE::wire`. CMake regenerates the C++ sources after the package rename. Descriptor/type names change, while message field numbers, type discriminator bytes and protocol version 3 remain unchanged. This protocol sends ordinary messages directly, without Any type URLs or RPC service names.
+
+The C++ codec names are `wire::MessageType`, `PROTOCOL_VERSION`, `MAX_FRAME_BYTES` and `FRAME_HEADER_BYTES`. Enum values use uppercase names such as `CLIENT_HELLO` and `SNAPSHOT`; their on-wire numbers are unchanged. [TcpChannel.h](Network/TcpChannel.h) declares framing operations and [TcpChannel.cpp](Network/TcpChannel.cpp) implements them. The server's [ServerNetworkRuntime](Server/Network/ServerNetworkRuntime.h) owns sessions and passes decoded inputs to ServerHost. See the [file/function guide](docs/SERVER_ARCHITECTURE.md#파일별-함수-안내).
+
 ## Frame and message encoding
 
 Each TCP frame contains a **4-byte unsigned big-endian payload length**, followed by a **1-byte message type** and a **Protobuf body**. Valid payload lengths are 1–8192 bytes, including the type byte. Asio composed reads/writes handle partial transfers. The length prefix is transport framing; Protobuf does not delimit multiple messages in a stream by itself.

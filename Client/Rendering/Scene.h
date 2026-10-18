@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace sandbox {
+namespace MoongTangE {
 class SceneRenderer {
 public:
     SceneRenderer();
@@ -23,4 +23,4 @@ private:
 
     std::vector<BallTriangle> ballGeometry_;
 };
-} // namespace sandbox
+} // namespace MoongTangE

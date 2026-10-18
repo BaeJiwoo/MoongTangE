@@ -7,12 +7,12 @@
 #include <cstdint>
 #include <map>
 
-namespace sandbox {
+namespace MoongTangE {
 // Only the server tick thread owns and mutates a GameWorld.
 class GameWorld {
 public:
     bool addPlayer(std::uint32_t id) {
-        if (id == 0 || players_.size() >= maxPlayers || players_.contains(id)) {
+        if (id == 0 || players_.size() >= MAX_PLAYERS || players_.contains(id)) {
             return false;
         }
         Player player;
@@ -39,7 +39,7 @@ public:
     void step() {
         for (auto& [id, player] : players_) {
             (void)id;
-            const bool inputFresh = tick_ - player.inputTick < simulation::inputTimeoutTicks;
+            const bool inputFresh = tick_ - player.inputTick < simulation::INPUT_TIMEOUT_TICKS;
             const auto force =
                 inputFresh ? movementForce(player.input.x, player.input.z) : Vector3{};
             physics_.step(player.body, PhysicsWorld::fixedDelta, force);
@@ -69,4 +69,4 @@ private:
     PhysicsWorld physics_;
     std::uint64_t tick_{};
 };
-} // namespace sandbox
+} // namespace MoongTangE

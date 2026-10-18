@@ -15,7 +15,7 @@ CMake verifies the downloaded source archive against its SHA-256. raylib's sourc
 
 `cmake/Protobuf.cmake` builds protoc and the runtime from exactly the same pinned source. Abseil uses the version selected by that Protobuf release. System Protobuf/Abseil installations are not substituted. Protobuf's bundled upb and utf8_range sources need no separate download. Preserve `protobuf/LICENSE`, `protobuf/third_party/utf8_range/LICENSE`, and `absl/LICENSE` with redistribution. zlib, conformance tests and dependency examples are disabled. Generated game messages stay in the build directory and are regenerated from the repository's `.proto` schema.
 
-Protobuf, Abseil, utf8_range and upb are downloaded only when `SANDBOX_BUILD_NETWORK=ON`. Neither Common nor ServerCore links them; a core-only configuration downloads no external source. A clean full build takes longer because it also compiles protoc and its runtime dependencies.
+Protobuf, Abseil, utf8_range and upb are downloaded only when `MOONGTANGE_BUILD_NETWORK=ON`. Neither Common nor ServerCore links them; a core-only configuration downloads no external source. A clean full build takes longer because it also compiles protoc and its runtime dependencies.
 
 Build tools: CMake >=3.25 and a C++20 compiler; Python 3 is required for network process tests when BUILD_TESTING is enabled. The client needs desktop OpenGL and platform windowing development libraries. On Debian/Ubuntu install `libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev`.
 

@@ -4,22 +4,22 @@
 #include <set>
 #include <stdexcept>
 
-namespace sandbox::wire {
+namespace MoongTangE::wire {
 namespace {
-template <class Message> Bytes encode(Type kind, const Message& message) {
+template <class Message> Bytes encode(MessageType kind, const Message& message) {
     const auto size = message.ByteSizeLong();
-    require(size < maxFrame);
+    require(size < MAX_FRAME_BYTES);
     Bytes data(size + 1);
     data.front() = static_cast<std::uint8_t>(kind);
     require(message.SerializeToArray(data.data() + 1, static_cast<int>(size)));
     return data;
 }
 
-template <class Message> Message decode(std::span<const std::uint8_t> data, Type expected) {
-    require(data.size() <= maxFrame && type(data) == expected);
+template <class Message> Message decode(std::span<const std::uint8_t> data, MessageType expected) {
+    require(data.size() <= MAX_FRAME_BYTES && type(data) == expected);
     const auto payload = data.subspan(1);
     google::protobuf::io::CodedInputStream stream(payload.data(), static_cast<int>(payload.size()));
-    stream.SetTotalBytesLimit(static_cast<int>(maxFrame));
+    stream.SetTotalBytesLimit(static_cast<int>(MAX_FRAME_BYTES));
     stream.SetRecursionLimit(16);
     Message message;
     require(message.ParseFromCodedStream(&stream) && stream.ConsumedEntireMessage());
@@ -62,34 +62,34 @@ void require(bool condition) {
     }
 }
 
-Type type(std::span<const std::uint8_t> data) {
-    require(!data.empty() && data.front() >= static_cast<unsigned>(Type::ClientHello) &&
-            data.front() <= static_cast<unsigned>(Type::Disconnect));
-    return static_cast<Type>(data.front());
+MessageType type(std::span<const std::uint8_t> data) {
+    require(!data.empty() && data.front() >= static_cast<unsigned>(MessageType::CLIENT_HELLO) &&
+            data.front() <= static_cast<unsigned>(MessageType::DISCONNECT));
+    return static_cast<MessageType>(data.front());
 }
 
 Bytes clientHello() {
     proto::ClientHello message;
-    message.set_protocol_version(version);
-    return encode(Type::ClientHello, message);
+    message.set_protocol_version(PROTOCOL_VERSION);
+    return encode(MessageType::CLIENT_HELLO, message);
 }
 
 Bytes serverHello(std::uint32_t playerId) {
     require(playerId != 0);
     proto::ServerHello message;
-    message.set_protocol_version(version);
+    message.set_protocol_version(PROTOCOL_VERSION);
     message.set_player_id(playerId);
-    return encode(Type::ServerHello, message);
+    return encode(MessageType::SERVER_HELLO, message);
 }
 
 void readClientHello(std::span<const std::uint8_t> data) {
-    const auto message = decode<proto::ClientHello>(data, Type::ClientHello);
-    require(message.protocol_version() == version);
+    const auto message = decode<proto::ClientHello>(data, MessageType::CLIENT_HELLO);
+    require(message.protocol_version() == PROTOCOL_VERSION);
 }
 
 std::uint32_t readServerHello(std::span<const std::uint8_t> data) {
-    const auto message = decode<proto::ServerHello>(data, Type::ServerHello);
-    require(message.protocol_version() == version && message.player_id() != 0);
+    const auto message = decode<proto::ServerHello>(data, MessageType::SERVER_HELLO);
+    require(message.protocol_version() == PROTOCOL_VERSION && message.player_id() != 0);
     return message.player_id();
 }
 
@@ -99,11 +99,11 @@ Bytes input(InputCommand command) {
     message.set_sequence(command.sequence);
     message.set_x(command.x);
     message.set_z(command.z);
-    return encode(Type::Input, message);
+    return encode(MessageType::INPUT, message);
 }
 
 InputCommand readInput(std::span<const std::uint8_t> data, std::uint32_t sessionId) {
-    const auto message = decode<proto::InputCommand>(data, Type::Input);
+    const auto message = decode<proto::InputCommand>(data, MessageType::INPUT);
     require(message.has_x() && message.has_z());
     const InputCommand command{sessionId, message.sequence(), message.x(), message.z()};
     require(command.valid());
@@ -111,7 +111,7 @@ InputCommand readInput(std::span<const std::uint8_t> data, std::uint32_t session
 }
 
 Bytes snapshot(const WorldSnapshot& state) {
-    require(state.players.size() <= maxPlayers);
+    require(state.players.size() <= MAX_PLAYERS);
     proto::WorldSnapshot message;
     message.set_server_tick(state.tick);
     std::set<std::uint32_t> ids;
@@ -124,12 +124,12 @@ Bytes snapshot(const WorldSnapshot& state) {
         writeQuaternion(*record.mutable_orientation(), player.orientation);
         writeVector(*record.mutable_angular_velocity(), player.angularVelocity);
     }
-    return encode(Type::Snapshot, message);
+    return encode(MessageType::SNAPSHOT, message);
 }
 
 WorldSnapshot readSnapshot(std::span<const std::uint8_t> data) {
-    const auto message = decode<proto::WorldSnapshot>(data, Type::Snapshot);
-    require(message.has_server_tick() && message.players_size() <= static_cast<int>(maxPlayers));
+    const auto message = decode<proto::WorldSnapshot>(data, MessageType::SNAPSHOT);
+    require(message.has_server_tick() && message.players_size() <= static_cast<int>(MAX_PLAYERS));
     WorldSnapshot state{message.server_tick(), {}};
     state.players.reserve(static_cast<std::size_t>(message.players_size()));
     std::set<std::uint32_t> ids;
@@ -145,23 +145,23 @@ WorldSnapshot readSnapshot(std::span<const std::uint8_t> data) {
 }
 
 Bytes disconnect() {
-    return encode(Type::Disconnect, proto::Disconnect{});
+    return encode(MessageType::DISCONNECT, proto::Disconnect{});
 }
 
 bool isDisconnect(std::span<const std::uint8_t> data) {
-    if (type(data) != Type::Disconnect) {
+    if (type(data) != MessageType::DISCONNECT) {
         return false;
     }
-    (void)decode<proto::Disconnect>(data, Type::Disconnect);
+    (void)decode<proto::Disconnect>(data, MessageType::DISCONNECT);
     return true;
 }
 
 Bytes frame(std::span<const std::uint8_t> payload) {
-    require(!payload.empty() && payload.size() <= maxFrame);
+    require(!payload.empty() && payload.size() <= MAX_FRAME_BYTES);
     const auto size = static_cast<std::uint32_t>(payload.size());
     Bytes data;
-    data.reserve(frameHeaderBytes + size);
-    for (unsigned remaining = frameHeaderBytes; remaining > 0; --remaining) {
+    data.reserve(FRAME_HEADER_BYTES + size);
+    for (unsigned remaining = FRAME_HEADER_BYTES; remaining > 0; --remaining) {
         data.push_back(static_cast<std::uint8_t>(size >> ((remaining - 1) * 8)));
     }
     data.insert(data.end(), payload.begin(), payload.end());
@@ -169,12 +169,12 @@ Bytes frame(std::span<const std::uint8_t> payload) {
 }
 
 std::uint32_t frameSize(std::span<const std::uint8_t> header) {
-    require(header.size() == frameHeaderBytes);
+    require(header.size() == FRAME_HEADER_BYTES);
     std::uint32_t size = 0;
     for (const auto byte : header) {
         size = (size << 8) | byte;
     }
-    require(size > 0 && size <= maxFrame);
+    require(size > 0 && size <= MAX_FRAME_BYTES);
     return size;
 }
-} // namespace sandbox::wire
+} // namespace MoongTangE::wire

@@ -8,7 +8,7 @@
 #include <string>
 #include <utility>
 
-namespace sandbox {
+namespace MoongTangE {
 class LocalTransport final : public IClientTransport {
 public:
     explicit LocalTransport(std::shared_ptr<ServerHost> host) : host_(std::move(host)) {
@@ -70,4 +70,4 @@ private:
     std::uint32_t id_{};
     std::uint64_t lastTick_{};
 };
-} // namespace sandbox
+} // namespace MoongTangE

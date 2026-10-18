@@ -2,12 +2,12 @@
 #include "Common/Math/Quaternion.h"
 #include "Common/SimulationConfig.h"
 
-namespace sandbox {
+namespace MoongTangE {
 struct RigidBody {
-    Vector3 position{0, simulation::spawnHeight, 0};
+    Vector3 position{0, simulation::SPAWN_HEIGHT, 0};
     Vector3 velocity{};
-    double radius{simulation::playerRadius};
-    double mass{simulation::playerMass};
+    double radius{simulation::PLAYER_RADIUS};
+    double mass{simulation::PLAYER_MASS};
     Vector3 angularVelocity{};
     Quaternion orientation{};
 
@@ -15,4 +15,4 @@ struct RigidBody {
         return 0.4 * mass * radius * radius;
     }
 };
-} // namespace sandbox
+} // namespace MoongTangE

@@ -1,4 +1,8 @@
-# Codex 작업 지시서: Cross-Platform 3D Physics Game
+# MoongTangE 작업 지시서: Cross-Platform 3D Physics Game
+
+> 서비스 이름 갱신 (2026-10-17): 서비스·CMake 프로젝트·게임 창·화면 제목과 모든 C++ 코드의 최상위 네임스페이스는 `MoongTangE`로 통일합니다. Protobuf 패키지는 `MoongTangE.proto`, 빌드 옵션·매크로·환경변수는 `MOONGTANGE_`, CMake 내부 도우미는 `moongtange_`를 사용합니다. Client·Common·Network·Server·Tests와 CI·검사 도구·문서에 모두 적용합니다. GitHub 저장소는 `BaeJiwoo/MoongTangE`입니다.
+
+> 서버 코드 정리 규칙 (2026-10-17, Issue #29): 서버와 공유 TCP 채널의 모호한 구현체 이름은 역할을 나타내는 이름으로 바꿉니다. 멤버 변수는 `m_`, 고정 상수·열거 값은 `UPPER_SNAKE_CASE`를 사용합니다. 런타임 지역 변수·매개변수는 의미 있는 lowerCamelCase를 사용합니다. `.h`에는 선언을, 대응하는 `.cpp`에는 비템플릿 함수 구현을 둡니다. 상수 정의·멤버 기본값·default/delete 선언은 헤더에 유지합니다. 공유 시뮬레이션·프로토콜 상수 변경은 모든 호출부에 반영합니다. 서버 아키텍처에는 파일별 함수 설명을 `<details><summary>` 토글로 제공합니다.
 
 > 운영 지시 갱신 (2026-10-17): 사용자가 후속 요청으로 코드 리뷰와 PR 병합을 명시적으로 지시했습니다. 이번 기존 PR 병합 작업에는 이 최신 요청을 적용합니다. 아래 최초 지시서의 병합 금지 문구는 원문 기록으로 보존합니다. 향후 병합도 명시적인 사용자 승인이 필요하며, 자동 병합·main 직접 개발 Push·강제 Push·이슈 삭제는 허용하지 않습니다.
 
@@ -39,10 +43,10 @@
 
 신규 저장소 기본값:
 
-- Repository: `portable-physics-sandbox`
+- Repository: `MoongTangE`
 - Visibility: Private
 - Default Branch: `main`
-- Description: `Cross-platform C++ 3D physics sandbox with embedded and dedicated server support`
+- Description: `Cross-platform C++ 3D physics game with embedded and dedicated server support`
 
 GitHub 저장소 생성에는 `gh repo create`를 사용하세요.
 
@@ -96,7 +100,7 @@ GitHub 저장소 생성에는 `gh repo create`를 사용하세요.
 다음 구조를 기본으로 사용하세요.
 
 ```text
-portable-physics-sandbox/
+MoongTangE/
 ├── CMakeLists.txt
 ├── README.md
 ├── AGENTS.md

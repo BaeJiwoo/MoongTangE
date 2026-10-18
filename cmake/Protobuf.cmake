@@ -25,19 +25,19 @@ FetchContent_Declare(protobuf
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 FetchContent_MakeAvailable(protobuf)
 
-set(sandbox_proto_dir "${PROJECT_BINARY_DIR}/generated")
-file(MAKE_DIRECTORY "${sandbox_proto_dir}")
-set(sandbox_schema "${PROJECT_SOURCE_DIR}/Network/Protocol/game.proto")
+set(moongtange_proto_dir "${PROJECT_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${moongtange_proto_dir}")
+set(moongtange_schema "${PROJECT_SOURCE_DIR}/Network/Protocol/game.proto")
 add_custom_command(
-  OUTPUT "${sandbox_proto_dir}/game.pb.cc" "${sandbox_proto_dir}/game.pb.h"
+  OUTPUT "${moongtange_proto_dir}/game.pb.cc" "${moongtange_proto_dir}/game.pb.h"
   COMMAND protobuf::protoc
-    "--cpp_out=${sandbox_proto_dir}"
+    "--cpp_out=${moongtange_proto_dir}"
     "--proto_path=${PROJECT_SOURCE_DIR}/Network/Protocol"
-    "${sandbox_schema}"
-  DEPENDS protobuf::protoc "${sandbox_schema}"
+    "${moongtange_schema}"
+  DEPENDS protobuf::protoc "${moongtange_schema}"
   VERBATIM)
-add_library(ProtocolMessages "${sandbox_proto_dir}/game.pb.cc")
-target_include_directories(ProtocolMessages SYSTEM PUBLIC "${sandbox_proto_dir}")
+add_library(ProtocolMessages "${moongtange_proto_dir}/game.pb.cc")
+target_include_directories(ProtocolMessages SYSTEM PUBLIC "${moongtange_proto_dir}")
 target_link_libraries(ProtocolMessages PUBLIC protobuf::libprotobuf)
 
 # Generated Protobuf types are private to the codec. Game state remains plain C++.

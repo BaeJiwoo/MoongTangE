@@ -8,7 +8,7 @@
 #include <system_error>
 #include <vector>
 
-namespace sandbox {
+namespace MoongTangE {
 inline unsigned unsignedOption(std::string_view text, unsigned maximum, bool allowZero = false) {
     if (text.empty()) {
         throw std::invalid_argument("Empty numeric option");
@@ -86,4 +86,4 @@ private:
     std::span<const std::string_view> arguments_;
     std::size_t position_{};
 };
-} // namespace sandbox
+} // namespace MoongTangE

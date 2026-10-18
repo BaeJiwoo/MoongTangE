@@ -4,20 +4,20 @@
 #include "TestSupport.h"
 
 int main(int argc, char** argv) {
-    return test::run([&] {
-        CHECK(argc == 2);
-        const auto [host, port] = sandbox::endpointOption(argv[1]);
-        sandbox::TcpClientTransport client(host, port);
-        CHECK(test::waitFor([&] {
+    return MoongTangE::test::run([&] {
+        MOONGTANGE_CHECK(argc == 2);
+        const auto [host, port] = MoongTangE::endpointOption(argv[1]);
+        MoongTangE::TcpClientTransport client(host, port);
+        MOONGTANGE_CHECK(MoongTangE::test::waitFor([&] {
             return client.connected();
         }));
         const auto id = client.playerId();
-        CHECK(client.send({id, 1, 1, 0}));
-        CHECK(test::waitFor([&] {
+        MOONGTANGE_CHECK(client.send({id, 1, 1, 0}));
+        MOONGTANGE_CHECK(MoongTangE::test::waitFor([&] {
             if (auto state = client.receive()) {
                 for (const auto& p : state->players) {
-                    if (p.id == id && p.position.x > sandbox::simulation::spawnX(id) +
-                                                         sandbox::simulation::playerRadius) {
+                    if (p.id == id && p.position.x > MoongTangE::simulation::spawnX(id) +
+                                                         MoongTangE::simulation::PLAYER_RADIUS) {
                         return true;
                     }
                 }
