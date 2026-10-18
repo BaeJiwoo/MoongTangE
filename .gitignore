@@ -3,6 +3,7 @@
 /out/
 /.vs/
 /.idea/
+/CMakeUserPresets.json
 *.user
 *.log
 .DS_Store

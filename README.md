@@ -62,6 +62,12 @@ cmake --build build-core --config Release
 ctest --test-dir build-core -C Release --output-on-failure
 ```
 
+## VS Code에서 정의로 이동
+
+저장소 폴더를 열면 CMake Tools가 C/C++ 확장에 프로젝트와 외부 라이브러리의 헤더 경로를 전달합니다. 첫 프리셋 선택이 나오면 **MoongTangE**를 선택하세요. 함수·클래스 이름을 **우클릭 → 정의로 이동(Go to Definition)** 하면 해당 코드 파일이 열립니다. 단축키는 `F12`이며, 사용처는 `Shift+F12`, 헤더/구현 전환은 `Alt+O`입니다.
+
+`C/C++`, `CMake Tools`를 추천 확장으로 등록했습니다. 새로 받은 저장소에서는 기존 빌드 절차를 한 번 실행해야 생성 헤더 `game.pb.h`까지 탐색할 수 있습니다.
+
 ## 실행
 
 Windows / Visual Studio 빌드:
