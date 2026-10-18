@@ -1,7 +1,9 @@
 #pragma once
 
+#include "Common/Protocol/AdmissionResult.h"
 #include "Common/Protocol/InputCommand.h"
-#include "Common/Protocol/WorldSnapshot.h"
+#include "Common/Protocol/RoomSnapshot.h"
+#include "Server/Core/GameRoomOptions.h"
 
 #include <atomic>
 #include <cstddef>
@@ -9,7 +11,9 @@
 #include <deque>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <thread>
+#include <vector>
 
 namespace MoongTangE {
 
@@ -18,7 +22,7 @@ class ServerHost
   public:
     static constexpr std::size_t MAX_PENDING_COMMANDS = 1024;
 
-    ServerHost() = default;
+    explicit ServerHost(GameRoomOptions options = {});
     ServerHost(const ServerHost&) = delete;
     ServerHost& operator=(const ServerHost&) = delete;
     ServerHost(ServerHost&&) = delete;
@@ -29,12 +33,16 @@ class ServerHost
     void Stop();
     bool Running() const;
 
+    // Returns a request ID; only the tick thread confirms admission.
     std::uint32_t Connect();
+    AdmissionResult Admission(std::uint32_t playerId) const;
     void Disconnect(std::uint32_t playerId);
 
     bool Submit(InputCommand input);
 
-    WorldSnapshot Snapshot() const;
+    std::optional<RoomSnapshot> SnapshotFor(std::uint32_t playerId) const;
+    std::vector<RoomSnapshot> Snapshots() const;
+    std::size_t Capacity() const;
     std::size_t Pending() const;
     bool HasClient(std::uint32_t playerId) const;
 
@@ -55,14 +63,22 @@ class ServerHost
 
     void Run(std::stop_token stopToken);
 
-    // m_dataMutex protects the command queue, sequence map, snapshot and ID; m_lifecycleMutex
-    // serializes start/stop. The tick thread alone owns the GameWorld inside Run().
+    struct ClientState
+    {
+        AdmissionResult m_admission;
+        std::uint64_t m_lastInputSequence{};
+    };
+
+    GameRoomOptions m_options;
+
+    // Data lock protects requests, admission, sequence state, snapshots and IDs.
+    // Lifecycle lock serializes Start/Stop; only Run owns and changes the rooms.
     mutable std::mutex m_dataMutex;
     std::mutex m_lifecycleMutex;
 
     std::deque<WorldCommand> m_pendingCommands;
-    std::map<std::uint32_t, std::uint64_t> m_lastInputSequences;
-    WorldSnapshot m_latestSnapshot;
+    std::map<std::uint32_t, ClientState> m_clients;
+    std::map<std::uint64_t, RoomSnapshot> m_latestSnapshots;
     std::uint32_t m_nextPlayerId{1};
 
     std::atomic<bool> m_running{false};

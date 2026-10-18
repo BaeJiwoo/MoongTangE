@@ -20,14 +20,14 @@ Each TCP frame contains a **4-byte unsigned big-endian payload length**, followe
 
 The body uses Protobuf's encoding (varints, length-delimited submessages and binary64 `double` fields), not the old fixed-position big-endian field layout. Example framed ClientHello: `00 00 00 03 01 08 04`. Empty Disconnect has payload `05`. C++ object memory is never transmitted.
 
-The first client message must be ClientHello. The server replies with ServerHello before sending snapshots. Handshake version must equal 4. Previous v1/v2/v3 encoding is incompatible and rejected; update client and server together. Protobuf library version 36.2 is separate from application protocol version 4.
+The first client message must be ClientHello. The tick thread confirms admission before ServerHello success. No inputs are accepted before admission; snapshots contain only that room. Rejections are flushed before closing the channel, within its existing read deadline. Handshake version must equal 4. Previous v1/v2/v3 encoding is incompatible and rejected; update client and server together. Protobuf library version 36.2 is separate from application protocol version 4.
 
 ## Semantic validation
 
 - Input sequence must be nonzero and increase within its connection. x/z must be explicitly present, finite and in [-1,1]. Their zero values are valid. The input message has no player ID; the server supplies its session ID. Hello assigns an ID but is **not user authentication**.
 - ServerHello reports ACCEPTED (1), FULL (2), or UNAVAILABLE (3). Success requires nonzero player_id and room_id; rejection requires both IDs to be zero. Unspecified/pending and unknown statuses are rejected.
 - Snapshots require a nonzero room_id matching the accepted room. Inputs carry neither room nor player identity.
-- A Snapshot must explicitly include server_tick, including when the value is zero. At most 32 players are allowed, with unique nonzero IDs.
+- A Snapshot must explicitly include server_tick, including when the value is zero. The codec has a defensive ceiling of 32 players with unique nonzero IDs; game rooms enforce the tighter limit of 3.
 - Every player must include position, velocity, orientation and angular_velocity. All scalar components must be explicitly present and finite. Orientation is a unit quaternion mapping local geometry to world space, with norm within 1e-6 of 1. Zero or non-unit quaternions are rejected.
 - Unknown message type bytes, missing required semantic fields, invalid Protobuf data, oversized frames and unsupported versions close the connection.
 - Unknown Protobuf fields are accepted within size/depth limits to allow additive schema changes. Duplicate singular fields follow Protobuf's last-value/merge semantics; the resulting message still passes all game validation. Valid unknown fields are not treated as forbidden trailing bytes. Removed field numbers must be reserved in future schemas and never reused.
@@ -44,8 +44,9 @@ Tests compare decoded positions, velocities, orientations and ticks across direc
 
 ## Limits and shutdown
 
-- Maximum 32 players and 64 TCP connections including pending handshakes.
-- Server command queue: 1024 regular commands plus at most 32 guaranteed leave commands.
+- Each room holds 3 players. Default 8 rooms (24 players); --max-rooms accepts 1–256. Rooms are created on demand, fill oldest vacancies first, and expire after --empty-room-seconds (default 30, 0–86400).
+- Core admission records and TCP connections each allow twice the configured player capacity, including pending handshakes. Further requests return UNAVAILABLE or close at the socket cap. FULL is decided by the tick thread after allocation fails.
+- Server command queue: 1024 regular commands plus at most twice the player capacity in guaranteed leave commands.
 - Per connection: at most 32 outbound frames; a slower peer is disconnected.
 - Client submission queue: at most 64 inputs awaiting its network thread.
 - Client connection and handshake deadline: 5 seconds. A complete inbound frame must arrive within 10 seconds.

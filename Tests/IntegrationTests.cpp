@@ -5,6 +5,7 @@
 #include "Server/Network/AsioServer.h"
 #include "TestSupport.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 
@@ -115,7 +116,13 @@ void asynchronous_transport_invariants()
     local.Close();
     tcp.Close();
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
-        return localCore->Snapshot().players.empty() && tcpCore->Snapshot().players.empty();
+        return std::ranges::all_of(localCore->Snapshots(),
+                                   [](const auto& room) {
+                                       return room.world.players.empty();
+                                   }) &&
+               std::ranges::all_of(tcpCore->Snapshots(), [](const auto& room) {
+                   return room.world.players.empty();
+               });
     }));
 }
 

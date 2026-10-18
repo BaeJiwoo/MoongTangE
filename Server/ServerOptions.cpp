@@ -29,6 +29,12 @@ ServerOptions parse_server_options(std::span<const std::string_view> arguments)
             constexpr unsigned MAX_RUN_SECONDS = 24 * 60 * 60;
             options.m_runDuration =
                 std::chrono::seconds(unsigned_option(reader.ValueFor(argument), MAX_RUN_SECONDS));
+        } else if (argument == "--max-rooms") {
+            options.m_rooms.m_maxRooms = unsigned_option(
+                reader.ValueFor(argument), static_cast<unsigned>(GameRoomOptions::MAX_ROOM_LIMIT));
+        } else if (argument == "--empty-room-seconds") {
+            options.m_rooms.m_emptyRoomLifetime = std::chrono::seconds(unsigned_option(
+                reader.ValueFor(argument), GameRoomOptions::MAX_EMPTY_ROOM_SECONDS, true));
         } else {
             throw std::invalid_argument("Unknown option: " + std::string(argument));
         }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Server/Core/GameRoomOptions.h"
+
 #include <chrono>
 #include <cstdint>
 #include <span>
@@ -11,6 +13,7 @@ struct ServerOptions
 {
     std::uint16_t m_port{27015};
     std::chrono::seconds m_runDuration{};
+    GameRoomOptions m_rooms;
     bool m_publicBind{};
     bool m_showHelp{};
 };

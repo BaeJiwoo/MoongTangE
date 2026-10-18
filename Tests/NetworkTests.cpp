@@ -3,6 +3,7 @@
 #include "Server/Network/AsioServer.h"
 #include "TestSupport.h"
 
+#include <algorithm>
 #include <array>
 #include <asio.hpp>
 #include <cstdint>
@@ -122,7 +123,9 @@ void clients_receive_authoritative_rolling(const AsioServer& server, ServerHost&
     first.Close();
     second.Close();
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
-        return core.Snapshot().players.empty();
+        return std::ranges::all_of(core.Snapshots(), [](const auto& room) {
+            return room.world.players.empty();
+        });
     }));
 }
 

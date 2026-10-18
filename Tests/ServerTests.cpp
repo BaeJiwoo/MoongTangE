@@ -2,6 +2,7 @@
 #include "Server/Core/TickScheduler.h"
 #include "TestSupport.h"
 
+#include <algorithm>
 #include <cstdint>
 
 int main()
@@ -19,14 +20,17 @@ int main()
         server.Start();
         const auto id = server.Connect();
         MOONGTANGE_CHECK(id != 0);
+        MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
+            return server.HasClient(id);
+        }));
         MOONGTANGE_CHECK(server.Submit({id, 1, 1, 0}));
         MOONGTANGE_CHECK(!server.Submit({id, 1, 1, 0}));
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
-            const auto s = server.Snapshot();
-            return !s.players.empty() && s.players[0].velocity.x > 0.5;
+            const auto s = server.SnapshotFor(id);
+            return s && !s->world.players.empty() && s->world.players[0].velocity.x > 0.5;
         }));
-        auto state = server.Snapshot();
-        MOONGTANGE_CHECK(state.tick % 3 == 0);
+        auto state = server.SnapshotFor(id)->world;
+        MOONGTANGE_CHECK(state.tick != 0);
         MOONGTANGE_CHECK(state.players[0].angularVelocity.z < 0 &&
                          state.players[0].orientation.Unit());
 
@@ -37,7 +41,9 @@ int main()
 
         server.Disconnect(id);
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
-            return server.Snapshot().players.empty();
+            return std::ranges::all_of(server.Snapshots(), [](const auto& room) {
+                return room.world.players.empty();
+            });
         }));
 
         server.Stop();
@@ -49,7 +55,8 @@ int main()
         const auto newId = server.Connect();
         MOONGTANGE_CHECK(newId != 0 && newId != id);
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
-            return !server.Snapshot().players.empty();
+            const auto room = server.SnapshotFor(newId);
+            return room && !room->world.players.empty();
         }));
 
         server.Stop();

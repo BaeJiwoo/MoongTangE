@@ -49,11 +49,23 @@ int main()
             MoongTangE::parse_server_options(std::array{"--port"sv, "0"sv, "--run-for"sv, "2"sv});
         MOONGTANGE_CHECK(server.m_port == 0 && server.m_runDuration.count() == 2 &&
                          !server.m_publicBind);
+        MOONGTANGE_CHECK(server.m_rooms.m_maxRooms == 8 &&
+                         server.m_rooms.m_emptyRoomLifetime.count() == 30);
+        const auto rooms = MoongTangE::parse_server_options(
+            std::array{"--max-rooms"sv, "2"sv, "--empty-room-seconds"sv, "0"sv});
+        MOONGTANGE_CHECK(rooms.m_rooms.m_maxRooms == 2 &&
+                         rooms.m_rooms.m_emptyRoomLifetime.count() == 0);
         MOONGTANGE_CHECK(MoongTangE::parse_server_options(std::array{"--public"sv}).m_publicBind);
         MOONGTANGE_CHECK(MoongTangE::parse_client_options(std::array{"--help"sv}).showHelp);
         MOONGTANGE_CHECK(MoongTangE::parse_server_options(std::array{"--help"sv}).m_showHelp);
         for (const auto& arguments :
              std::vector<std::vector<std::string_view>>{{"--port"},
+                                                        {"--max-rooms"},
+                                                        {"--max-rooms", "0"},
+                                                        {"--max-rooms", "257"},
+                                                        {"--empty-room-seconds"},
+                                                        {"--empty-room-seconds", "-1"},
+                                                        {"--empty-room-seconds", "86401"},
                                                         {"--run-for"},
                                                         {"--run-for", "0"},
                                                         {"--run-for", "86401"},

@@ -1,12 +1,17 @@
 #include "Server/Core/ServerHost.h"
 
-#include "Common/Game/GameWorld.h"
 #include "Common/SimulationConfig.h"
+#include "Server/Core/GameRoomManager.h"
 #include "Server/Core/TickScheduler.h"
 
 #include <utility>
 
 namespace MoongTangE {
+
+ServerHost::ServerHost(GameRoomOptions options) : m_options(options)
+{
+    m_options.Validate();
+}
 
 ServerHost::~ServerHost()
 {
@@ -46,20 +51,20 @@ void ServerHost::Stop()
 
     std::lock_guard lock(m_dataMutex);
     m_pendingCommands.clear();
-    m_lastInputSequences.clear();
-    m_latestSnapshot = {};
+    m_clients.clear();
+    m_latestSnapshots.clear();
 }
 
 std::uint32_t ServerHost::Connect()
 {
     std::lock_guard lock(m_dataMutex);
-    if (!m_running || m_lastInputSequences.size() >= MAX_PLAYERS ||
+    if (!m_running || m_clients.size() >= Capacity() * 2 ||
         m_pendingCommands.size() >= MAX_PENDING_COMMANDS || m_nextPlayerId == 0) {
         return 0;
     }
 
     const auto playerId = m_nextPlayerId++;
-    m_lastInputSequences.emplace(playerId, 0);
+    m_clients.emplace(playerId, ClientState{});
     m_pendingCommands.push_back({WorldCommandType::JOIN, playerId});
     return playerId;
 }
@@ -67,10 +72,19 @@ std::uint32_t ServerHost::Connect()
 void ServerHost::Disconnect(std::uint32_t playerId)
 {
     std::lock_guard lock(m_dataMutex);
-    if (m_lastInputSequences.erase(playerId)) {
+    if (m_clients.erase(playerId)) {
         m_pendingCommands.push_back({WorldCommandType::LEAVE, playerId});
     }
-    // Leaves may exceed MAX_PENDING_COMMANDS by at most MAX_PLAYERS, so cleanup is never dropped.
+    // Cleanup has a reserved allowance of at most twice Capacity() beyond the regular limit.
+}
+
+AdmissionResult ServerHost::Admission(std::uint32_t playerId) const
+{
+    std::lock_guard lock(m_dataMutex);
+    const auto client = m_clients.find(playerId);
+    return m_running && client != m_clients.end()
+               ? client->second.m_admission
+               : AdmissionResult{AdmissionStatus::UNAVAILABLE, 0, 0};
 }
 
 bool ServerHost::Submit(InputCommand input)
@@ -80,21 +94,47 @@ bool ServerHost::Submit(InputCommand input)
     }
 
     std::lock_guard lock(m_dataMutex);
-    const auto connection = m_lastInputSequences.find(input.playerId);
-    if (!m_running || connection == m_lastInputSequences.end() ||
-        input.sequence <= connection->second || m_pendingCommands.size() >= MAX_PENDING_COMMANDS) {
+    const auto client = m_clients.find(input.playerId);
+    if (!m_running || client == m_clients.end() ||
+        client->second.m_admission.status != AdmissionStatus::ACCEPTED ||
+        input.sequence <= client->second.m_lastInputSequence ||
+        m_pendingCommands.size() >= MAX_PENDING_COMMANDS) {
         return false;
     }
 
-    connection->second = input.sequence;
+    client->second.m_lastInputSequence = input.sequence;
     m_pendingCommands.push_back({WorldCommandType::INPUT, input.playerId, input});
     return true;
 }
 
-WorldSnapshot ServerHost::Snapshot() const
+std::optional<RoomSnapshot> ServerHost::SnapshotFor(std::uint32_t playerId) const
 {
     std::lock_guard lock(m_dataMutex);
-    return m_latestSnapshot;
+    const auto client = m_clients.find(playerId);
+    if (!m_running || client == m_clients.end() ||
+        client->second.m_admission.status != AdmissionStatus::ACCEPTED) {
+        return {};
+    }
+
+    const auto room = m_latestSnapshots.find(client->second.m_admission.roomId);
+    return room == m_latestSnapshots.end() ? std::nullopt : std::optional(room->second);
+}
+
+std::vector<RoomSnapshot> ServerHost::Snapshots() const
+{
+    std::lock_guard lock(m_dataMutex);
+    std::vector<RoomSnapshot> snapshots;
+    snapshots.reserve(m_latestSnapshots.size());
+    for (const auto& [roomId, snapshot] : m_latestSnapshots) {
+        (void)roomId;
+        snapshots.push_back(snapshot);
+    }
+    return snapshots;
+}
+
+std::size_t ServerHost::Capacity() const
+{
+    return m_options.m_maxRooms * GameRoomOptions::PLAYERS_PER_ROOM;
 }
 
 std::size_t ServerHost::Pending() const
@@ -105,14 +145,14 @@ std::size_t ServerHost::Pending() const
 
 bool ServerHost::HasClient(std::uint32_t playerId) const
 {
-    std::lock_guard lock(m_dataMutex);
-    return m_running && m_lastInputSequences.contains(playerId);
+    return Admission(playerId).status == AdmissionStatus::ACCEPTED;
 }
 
 void ServerHost::Run(std::stop_token stopToken)
 {
-    GameWorld world;
+    GameRoomManager rooms(m_options);
     TickScheduler scheduler;
+    std::uint64_t tick = 0;
 
     while (!stopToken.stop_requested()) {
         std::deque<WorldCommand> commands;
@@ -121,26 +161,39 @@ void ServerHost::Run(std::stop_token stopToken)
             commands.swap(m_pendingCommands);
         }
 
+        const auto now = GameRoomManager::Clock::now();
         for (const auto& command : commands) {
             switch (command.m_type) {
-            case WorldCommandType::JOIN:
-                world.AddPlayer(command.m_playerId);
+            case WorldCommandType::JOIN: {
+                std::lock_guard lock(m_dataMutex);
+                const auto client = m_clients.find(command.m_playerId);
+                if (client != m_clients.end()) {
+                    const auto roomId = rooms.Join(command.m_playerId, now);
+                    client->second.m_admission =
+                        roomId
+                            ? AdmissionResult{AdmissionStatus::ACCEPTED, command.m_playerId, roomId}
+                            : AdmissionResult{AdmissionStatus::FULL, 0, 0};
+                }
                 break;
+            }
             case WorldCommandType::INPUT:
-                world.Apply(command.m_input);
+                rooms.Apply(command.m_input);
                 break;
             case WorldCommandType::LEAVE:
-                world.RemovePlayer(command.m_playerId);
+                rooms.Leave(command.m_playerId, now);
                 break;
             }
         }
 
-        world.Step();
-
-        auto state = world.Snapshot();
-        if (state.tick % simulation::SNAPSHOT_INTERVAL_TICKS == 0) {
+        rooms.Step(now);
+        if (++tick % simulation::SNAPSHOT_INTERVAL_TICKS == 0) {
+            auto snapshots = rooms.Snapshots();
             std::lock_guard lock(m_dataMutex);
-            m_latestSnapshot = std::move(state);
+            m_latestSnapshots.clear();
+            for (auto& snapshot : snapshots) {
+                const auto roomId = snapshot.roomId;
+                m_latestSnapshots.emplace(roomId, std::move(snapshot));
+            }
         }
 
         std::this_thread::sleep_until(scheduler.Advance());
