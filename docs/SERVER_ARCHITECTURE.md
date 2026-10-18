@@ -87,6 +87,51 @@ sequenceDiagram
 
 ## 파일별 함수 안내
 
+### 3인 방 모델 추가 — Issue #35
+
+`GameRoomManager`는 생성 순서대로 빈자리가 있는 방을 채우고, 후보가 없을 때만 최대 방 수 안에서 새 방을 생성합니다. 방 정원은 3명이며 기본 최대 방 수는 8개, 빈 방 보관 시간은 30초입니다. 이 단계에서는 모델과 테스트를 추가하며 `ServerHost`의 실제 여러 방 실행 연결은 후속 작업에서 적용합니다. `Common/Protocol/RoomSnapshot.h`는 방 ID와 기존 월드 Snapshot을 묶는 의존성 없는 값 타입입니다.
+
+`GameWorld`는 플레이어 ID와 생성 자리를 분리합니다. 가장 작은 빈 자리로 생성하고 퇴장 시 반환하므로 큰 ID도 새 월드의 첫 자리에서 시작합니다. 물리 계산은 동일합니다. 클라이언트 smoke와 RemoteProbe는 최초 관측 위치를 기준으로 이동을 검증합니다.
+
+추가 구현 파일은 모두 `ServerCore`에 포함되며 헤더 독립 컴파일과 네트워크를 끈 코어 빌드에서 검사합니다.
+
+<details>
+<summary>Server/Core/GameRoomOptions.h · GameRoomOptions.cpp — 방 한도</summary>
+
+`Validate()`는 최대 방 수 1–256, 빈 방 보관 시간 0–24시간을 검증합니다. `PLAYERS_PER_ROOM`은 3입니다. 설정은 물리 시간 간격을 변경하지 않습니다.
+
+</details>
+
+<details>
+<summary>Server/Core/GameRoom.h · GameRoom.cpp — 독립 게임방</summary>
+
+| 함수 | 설명 |
+| --- | --- |
+| `Join(playerId)` | 정원 내에서 월드에 참가자를 추가하고 빈 방 타이머를 해제합니다. |
+| `Leave(playerId, now)` | 참가자를 제거하고 마지막 퇴장 시 단조 시계의 빈 방 시작 시각을 기록합니다. 중복 퇴장은 무시합니다. |
+| `Apply(input)` / `Step()` | 해당 월드의 입력·물리를 처리합니다. 빈 월드는 물리 단계를 생략합니다. |
+| `PlayerCount()` / `Snapshot()` | 해당 월드의 인원과 상태를 조회합니다. |
+| `Expired(now, lifetime)` | 빈 방 보관 기한 경과 여부를 반환합니다. |
+
+</details>
+
+<details>
+<summary>Server/Core/GameRoomManager.h · GameRoomManager.cpp — 순차 배정과 방 수명</summary>
+
+| 함수 | 설명 |
+| --- | --- |
+| `Join(playerId, now)` | 만료 방을 제거한 후 생성 순서대로 입장합니다. 기존 빈자리가 없으면 새 방을 생성하고, 전체 한도 또는 잘못된 ID는 0을 반환합니다. |
+| `Leave(playerId, now)` | 해당 참가자의 소속 방에서 퇴장시키고 소속 기록을 제거합니다. |
+| `Apply(input)` | 서버가 보유한 소속 정보로 대상 월드를 결정합니다. |
+| `Step(now)` | 빈 방을 만료시키고 각 월드를 진행합니다. |
+| `RoomFor(playerId)` / `RoomCount()` / `PlayerCount()` | 소속과 총 방·참가자 수를 조회합니다. |
+| `Snapshot(roomId)` / `Snapshots()` | 특정 방 또는 전체 방의 공개용 상태 복사본을 반환합니다. |
+| `ExpireRooms(now)` | 빈 방만 정리하며 살아 있는 방 ID를 재배정하지 않습니다. |
+
+방 ID는 관리자 수명 내에서 증가하며 재사용하지 않습니다. 외부 스레드는 이 관리자에 직접 접근하지 않아야 합니다. 테스트에서는 단조 시각을 주입해 실제 대기 없이 만료 경계를 확인합니다.
+
+</details>
+
 파일 이름을 누르면 설명을 펼칠 수 있습니다. 헤더와 구현 파일은 한 쌍으로 표시하며, 기본 생성·소멸과 복사/이동 금지 선언은 역할에 필요한 경우에만 설명합니다.
 
 <details>

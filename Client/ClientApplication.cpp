@@ -115,8 +115,10 @@ void ClientApplication::ObserveSmokeProgress()
             continue;
         }
 
-        m_moved = m_moved ||
-                  player.position.x > simulation::spawn_x(player.id) + simulation::PLAYER_RADIUS;
+        if (!m_initialX) {
+            m_initialX = player.position.x;
+        }
+        m_moved = m_moved || player.position.x > *m_initialX + simulation::PLAYER_RADIUS;
         m_rolled = m_rolled ||
                    (player.orientation != Quaternion{} && player.angularVelocity.Length() > 0.1);
     }

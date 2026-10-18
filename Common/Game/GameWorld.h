@@ -6,6 +6,9 @@
 #include "Common/Protocol/WorldSnapshot.h"
 #include "Common/SimulationConfig.h"
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 
@@ -21,15 +24,33 @@ class GameWorld
             return false;
         }
 
+        const auto freeSlot = std::find(m_spawnSlots.begin(), m_spawnSlots.end(), false);
         Player player;
-        player.body.position.x = simulation::spawn_x(id);
+        player.spawnSlot = static_cast<std::size_t>(freeSlot - m_spawnSlots.begin());
+        player.body.position.x =
+            simulation::spawn_x(static_cast<std::uint32_t>(player.spawnSlot + 1));
         m_players.emplace(id, player);
+        *freeSlot = true;
         return true;
     }
 
     void RemovePlayer(std::uint32_t id)
     {
-        m_players.erase(id);
+        const auto player = m_players.find(id);
+        if (player != m_players.end()) {
+            m_spawnSlots[player->second.spawnSlot] = false;
+            m_players.erase(player);
+        }
+    }
+
+    bool HasPlayer(std::uint32_t id) const
+    {
+        return m_players.contains(id);
+    }
+
+    std::size_t PlayerCount() const
+    {
+        return m_players.size();
     }
 
     bool Apply(InputCommand input)
@@ -75,12 +96,14 @@ class GameWorld
     struct Player
     {
         RigidBody body;
+        std::size_t spawnSlot{};
 
         InputCommand input;
         std::uint64_t inputTick{};
     };
 
     std::map<std::uint32_t, Player> m_players;
+    std::array<bool, MAX_PLAYERS> m_spawnSlots{};
     PhysicsWorld m_physics;
     std::uint64_t m_tick{};
 };
