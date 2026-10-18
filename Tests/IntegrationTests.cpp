@@ -83,7 +83,8 @@ void deterministic_transport_equivalence()
         direct.Step();
         serialized.Step();
 
-        auto a = direct.Snapshot(), b = wire::read_snapshot(wire::snapshot(serialized.Snapshot()));
+        auto a = direct.Snapshot(),
+             b = wire::read_snapshot(wire::snapshot({1, serialized.Snapshot()})).world;
         MOONGTANGE_CHECK(a.tick == b.tick);
         MOONGTANGE_CHECK(a.players[0].position == b.players[0].position);
         MOONGTANGE_CHECK(a.players[0].velocity == b.players[0].velocity);

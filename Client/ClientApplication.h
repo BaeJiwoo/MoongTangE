@@ -36,6 +36,7 @@ class ClientApplication
     WorldSnapshot m_authoritativeState;
     std::optional<double> m_initialX;
     std::uint64_t m_sequence{};
+    std::uint64_t m_roomId{};
 
     bool m_moved{};
     bool m_rolled{};

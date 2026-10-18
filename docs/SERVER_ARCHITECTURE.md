@@ -4,6 +4,31 @@
 
 ## 구성 요소
 
+### 방 입장 통신 — Issue #36
+
+프로토콜 v4는 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
+성공한 Hello의 방 ID와 다른 Snapshot은 클라이언트가 거부합니다. `IClientTransport::RoomId()`는
+입장한 방을 제공하며 연결 종료 시 0입니다. 렌더링은 기존 `WorldSnapshot`을 사용하고,
+방이 바뀌면 보간 상태를 비웁니다. 이 단계의 기존 단일 월드는 방 1로 노출되며 실제 여러 방
+배정과 비동기 입장 확정은 #37에서 활성화합니다.
+
+<details><summary>Network/Protocol/Codec.h · Codec.cpp — 방 통신</summary>
+
+- `server_hello` / `read_server_hello`: ACCEPTED는 양수 ID 두 개, FULL/UNAVAILABLE은 ID 0 두 개를 요구합니다. PENDING은 전송하지 않습니다.
+- `snapshot` / `read_snapshot`: 방 ID와 물리 Snapshot을 변환하고, 0인 방 ID와 기존 물리 값 오류를 거부합니다.
+- 입력에는 방 ID가 없으며 서버가 연결의 소속을 결정합니다. `NetworkProtocol` 빌드 대상과 Common의 의존성 분리는 유지합니다.
+
+</details>
+
+<details><summary>Client/Transport/TcpClientTransport.cpp — 입장과 수신</summary>
+
+- `ClientNetworkRuntime::RoomId`와 공개 `RoomId`: 잠금으로 보호한 현재 방 ID를 조회합니다.
+- `ReceiveMessage`: 입장 결과를 확인한 뒤 동일 방의 증가하는 Tick만 게시합니다.
+- `RecordFailure` / `Stop`: 플레이어·방 ID와 수신 버퍼를 지워 종료 뒤 오래된 화면 상태가 남지 않도록 합니다.
+- `ClientApplication::ReceiveSnapshot`와 `SnapshotInterpolator::Reset`: 새 방의 작은 Tick도 처음부터 표시합니다.
+
+</details>
+
 | 구성 요소 | 책임 | 하지 않는 일 |
 | --- | --- | --- |
 | `main` | 명령행 해석, 도움말, `ServerApplication::Run()` 호출, 예외와 종료 코드 보고 | 서버 루프와 물리 처리 |

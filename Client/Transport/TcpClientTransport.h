@@ -22,6 +22,7 @@ class TcpClientTransport final : public IClientTransport
 
     bool Connected() const override;
     std::uint32_t PlayerId() const override;
+    std::uint64_t RoomId() const override;
 
     bool Send(InputCommand input) override;
     std::optional<WorldSnapshot> Receive() override;

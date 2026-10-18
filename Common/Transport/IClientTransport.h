@@ -23,6 +23,7 @@ class IClientTransport
 
     virtual bool Connected() const = 0;
     virtual std::uint32_t PlayerId() const = 0;
+    virtual std::uint64_t RoomId() const = 0;
 
     virtual bool Send(InputCommand input) = 0;
     virtual std::optional<WorldSnapshot> Receive() = 0;

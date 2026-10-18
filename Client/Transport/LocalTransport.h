@@ -47,6 +47,11 @@ class LocalTransport final : public IClientTransport
         return m_playerId;
     }
 
+    std::uint64_t RoomId() const override
+    {
+        return Connected() ? 1 : 0;
+    }
+
     bool Send(InputCommand input) override
     {
         return Connected() && input.playerId == m_playerId && m_serverHost->Submit(input);

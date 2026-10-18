@@ -1,8 +1,8 @@
-# TCP protocol v3 — Protobuf
+# TCP protocol v4 — Protobuf
 
 The source of truth for message fields is [game.proto](Network/Protocol/game.proto). [Codec.cpp](Network/Protocol/Codec.cpp) converts between generated messages and the plain C++ game types. Common, ServerCore and LocalTransport do not depend on Protobuf.
 
-The package is `MoongTangE.proto`, producing C++ types under `MoongTangE::proto`; handwritten codecs use `MoongTangE::wire`. CMake regenerates the C++ sources after the package rename. Descriptor/type names change, while message field numbers, type discriminator bytes and protocol version 3 remain unchanged. This protocol sends ordinary messages directly, without Any type URLs or RPC service names.
+The package is `MoongTangE.proto`, producing C++ types under `MoongTangE::proto`; handwritten codecs use `MoongTangE::wire`. Protocol v4 adds admission status and room identity while preserving existing field numbers and type discriminator bytes. This protocol sends ordinary messages directly, without Any type URLs or RPC service names.
 
 The C++ codec names are `wire::MessageType`, `PROTOCOL_VERSION`, `MAX_FRAME_BYTES` and `FRAME_HEADER_BYTES`. Enum values use uppercase names such as `CLIENT_HELLO` and `SNAPSHOT`; their on-wire numbers are unchanged. [TcpChannel.h](Network/TcpChannel.h) declares framing operations and [TcpChannel.cpp](Network/TcpChannel.cpp) implements them. The server's [ServerNetworkRuntime](Server/Network/ServerNetworkRuntime.h) owns sessions and passes decoded inputs to ServerHost. See the [file/function guide](docs/SERVER_ARCHITECTURE.md#파일별-함수-안내).
 
@@ -12,25 +12,27 @@ Each TCP frame contains a **4-byte unsigned big-endian payload length**, followe
 
 | Type byte | Protobuf message | Main fields |
 | --- | --- | --- |
-| 1 | ClientHello | protocol_version (=3) |
-| 2 | ServerHello | protocol_version, server-assigned player_id |
+| 1 | ClientHello | protocol_version (=4) |
+| 2 | ServerHello | protocol_version, status, server-assigned player_id, room_id |
 | 3 | InputCommand | sequence, x, z |
-| 4 | WorldSnapshot | server_tick, repeated PlayerState |
+| 4 | WorldSnapshot | server_tick, repeated PlayerState, room_id |
 | 5 | Disconnect | empty message |
 
-The body uses Protobuf's encoding (varints, length-delimited submessages and binary64 `double` fields), not the old fixed-position big-endian field layout. Example framed ClientHello: `00 00 00 03 01 08 03`. Empty Disconnect has payload `05`. C++ object memory is never transmitted.
+The body uses Protobuf's encoding (varints, length-delimited submessages and binary64 `double` fields), not the old fixed-position big-endian field layout. Example framed ClientHello: `00 00 00 03 01 08 04`. Empty Disconnect has payload `05`. C++ object memory is never transmitted.
 
-The first client message must be ClientHello. The server replies with ServerHello before sending snapshots. Handshake version must equal 3. Previous manual v1/v2 encoding is incompatible and rejected; update client and server together. Protobuf library version 36.2 is separate from application protocol version 3.
+The first client message must be ClientHello. The server replies with ServerHello before sending snapshots. Handshake version must equal 4. Previous v1/v2/v3 encoding is incompatible and rejected; update client and server together. Protobuf library version 36.2 is separate from application protocol version 4.
 
 ## Semantic validation
 
 - Input sequence must be nonzero and increase within its connection. x/z must be explicitly present, finite and in [-1,1]. Their zero values are valid. The input message has no player ID; the server supplies its session ID. Hello assigns an ID but is **not user authentication**.
+- ServerHello reports ACCEPTED (1), FULL (2), or UNAVAILABLE (3). Success requires nonzero player_id and room_id; rejection requires both IDs to be zero. Unspecified/pending and unknown statuses are rejected.
+- Snapshots require a nonzero room_id matching the accepted room. Inputs carry neither room nor player identity.
 - A Snapshot must explicitly include server_tick, including when the value is zero. At most 32 players are allowed, with unique nonzero IDs.
 - Every player must include position, velocity, orientation and angular_velocity. All scalar components must be explicitly present and finite. Orientation is a unit quaternion mapping local geometry to world space, with norm within 1e-6 of 1. Zero or non-unit quaternions are rejected.
 - Unknown message type bytes, missing required semantic fields, invalid Protobuf data, oversized frames and unsupported versions close the connection.
 - Unknown Protobuf fields are accepted within size/depth limits to allow additive schema changes. Duplicate singular fields follow Protobuf's last-value/merge semantics; the resulting message still passes all game validation. Valid unknown fields are not treated as forbidden trailing bytes. Removed field numbers must be reserved in future schemas and never reused.
 
-With all fields present and maximum uint32 player IDs/uint64 tick, 32 players produce a 4,300-byte payload including the type byte. The 8KiB frame limit leaves bounded room for additive fields. Parsers enforce this limit before parsing and set a recursion limit of 16. Deserialization is not accepted merely because Protobuf parsing succeeds.
+With all fields present and maximum uint32 player IDs/uint64 tick and room ID, 32 players produce a 4,311-byte payload including the type byte. The 8KiB frame limit leaves bounded room for additive fields. Parsers enforce this limit before parsing and set a recursion limit of 16. Deserialization is not accepted merely because Protobuf parsing succeeds.
 
 ## Simulation and transport
 

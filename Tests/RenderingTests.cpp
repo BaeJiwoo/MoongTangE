@@ -41,5 +41,11 @@ int main()
         view.Push(c);
         MOONGTANGE_CHECK(view.Sample().players.size() == 1 && view.Sample().players[0].id == 2);
         MOONGTANGE_CHECK(view.Sample().players[0].position.x == 5);
+
+        view.Reset();
+        MOONGTANGE_CHECK(view.Sample().players.empty());
+        view.Push(a); // A newly admitted room may have a smaller tick.
+        MOONGTANGE_CHECK(view.Sample().tick == a.tick);
+        MOONGTANGE_CHECK(view.Sample().players[0].position.x == 0);
     });
 }

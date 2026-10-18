@@ -12,6 +12,15 @@ namespace MoongTangE {
 class SnapshotInterpolator
 {
   public:
+    void Reset()
+    {
+        m_from = {};
+        m_target = {};
+        m_elapsed = 0;
+        m_duration = DEFAULT_INTERVAL;
+        m_initialized = false;
+    }
+
     void Advance(double dt)
     {
         if (std::isfinite(dt) && dt > 0) {

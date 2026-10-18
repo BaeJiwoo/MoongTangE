@@ -67,9 +67,12 @@ void ClientApplication::Run()
             ObserveSmokeProgress();
         }
 
+        const auto status = m_transport->Connected()
+                                ? "Room " + std::to_string(m_transport->RoomId())
+                                : std::string("Joining...");
         m_renderer.Draw(m_presentation.Sample(), m_transport->PlayerId(),
                         m_options.remote ? "TCP dedicated server" : "Embedded server",
-                        m_transport->Connected() ? "Connected" : "Connecting...");
+                        status.c_str());
     }
 
     if (m_options.smoke) {
@@ -102,6 +105,14 @@ void ClientApplication::SendInput()
 
 void ClientApplication::ReceiveSnapshot()
 {
+    const auto roomId = m_transport->RoomId();
+    if (roomId != m_roomId) {
+        m_roomId = roomId;
+        m_authoritativeState = {};
+        m_presentation.Reset();
+        m_initialX.reset();
+    }
+
     if (auto snapshot = m_transport->Receive()) {
         m_authoritativeState = std::move(*snapshot);
         m_presentation.Push(m_authoritativeState);
