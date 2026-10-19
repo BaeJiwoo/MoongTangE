@@ -402,7 +402,7 @@ API 계약·예제 실행은 [MATCHMAKING_API.md](MATCHMAKING_API.md)에 정리�
 
 <details><summary>Server/Api/MatchmakingControlClient.h · MatchmakingControlClient.cpp — outbound 제어 연결</summary>
 
-- 별도 `jthread`가 100ms 간격으로 게임 주소·프로토콜·점유 상태를 ASP.NET API에 전송합니다.
+- 별도 `jthread`가 1초 간격으로 게임 주소·프로토콜·점유 상태를 ASP.NET API에 전송합니다. API는 마지막 heartbeat 이후 3초가 지나면 해당 서버를 배정 후보에서 제외합니다.
 - heartbeat 응답의 제한된 TSV 명령을 검증하고 `ServerHost::Reserve` 또는 `CancelReservation`으로 Tick 큐에 제출합니다.
 - Tick 소유 예약 결과와 이후 consumed/expired 상태 변화를 API에 보고합니다. 통신 오류는 게임 루프를 중단하지 않고 다음 주기에 재시도합니다.
 - cpp-httplib는 이 outbound 클라이언트의 private 구현 의존성이며 C++ 서버에 HTTP listener를 만들지 않습니다.

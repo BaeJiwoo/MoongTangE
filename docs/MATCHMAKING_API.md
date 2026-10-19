@@ -7,7 +7,7 @@
 | 매칭 API | ASP.NET Core 8 (MatchmakingApi) | HTTP | 게임 서버 목록, 공개 예약 API, 제어 명령 보관 |
 | 게임 서버 | C++ (DedicatedServer) | 게임 TCP | 60Hz Tick, 방·물리, 최종 예약 판단과 입장권 소비 |
 
-C++ 서버에는 HTTP 수신 포트가 없습니다. 주기적으로 API에 outbound HTTP heartbeat를 보내고 그 응답에서 예약·취소 명령을 가져옵니다. API가 만든 예약은 C++ Tick이 자리를 확보했다고 보고한 뒤에만 reserved가 됩니다. API 장애 중에도 이미 접속한 게임과 Tick은 계속 동작합니다.
+C++ 서버에는 HTTP 수신 포트가 없습니다. 1초마다 API에 outbound HTTP heartbeat를 보내고 그 응답에서 예약·취소 명령을 가져옵니다. API는 heartbeat가 3초 동안 끊기면 해당 서버를 배정 후보에서 제외합니다. API가 만든 예약은 C++ Tick이 자리를 확보했다고 보고한 뒤에만 reserved가 됩니다. API 장애 중에도 이미 접속한 게임과 Tick은 계속 동작합니다.
 
 ## 요청 흐름
 

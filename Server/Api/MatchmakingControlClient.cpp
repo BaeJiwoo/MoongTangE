@@ -16,7 +16,7 @@
 namespace MoongTangE {
 namespace {
 
-constexpr auto CONTROL_INTERVAL = std::chrono::milliseconds(100);
+constexpr auto CONTROL_INTERVAL = std::chrono::seconds(1);
 constexpr std::size_t MAX_CONTROL_BODY = 128 * 1024;
 
 std::string_view reservation_status(ReservationStatus status)
