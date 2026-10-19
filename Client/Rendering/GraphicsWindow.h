@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Client/Rendering/UiLayout.h"
+
 #include <raylib.h>
 #include <stdexcept>
 
@@ -12,7 +14,7 @@ class GraphicsWindow
     explicit GraphicsWindow(bool hidden)
     {
         SetConfigFlags(FLAG_MSAA_4X_HINT | (hidden ? FLAG_WINDOW_HIDDEN : FLAG_WINDOW_RESIZABLE));
-        InitWindow(1100, 720, "MoongTangE");
+        InitWindow(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, "MoongTangE");
         if (!IsWindowReady()) {
             throw std::runtime_error("Graphics window initialization failed");
         }

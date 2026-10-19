@@ -1,10 +1,16 @@
 #include "Client/Rendering/SnapshotInterpolator.h"
+#include "Client/Rendering/UiLayout.h"
 #include "TestSupport.h"
 
 int main()
 {
     return MoongTangE::test::run([] {
         using namespace MoongTangE;
+
+        MOONGTANGE_CHECK(ui_scale(1100, 720) == 1.0f);
+        MOONGTANGE_CHECK(ui_scale(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT) > 1.0f);
+        MOONGTANGE_CHECK(ui_scale(320, 200) == MINIMUM_UI_SCALE);
+        MOONGTANGE_CHECK(ui_scale(4000, 3000) == MAXIMUM_UI_SCALE);
 
         SnapshotInterpolator view;
         WorldSnapshot a{3, {{1, {0, 0.5, 0}, {}, {}, {}, "Alice"}}}, b = a;
