@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Client/ClientOptions.h"
+#include "Client/Rendering/DisplaySettings.h"
+#include "Client/Rendering/DisplaySettingsStore.h"
 #include "Client/Rendering/Scene.h"
 #include "Client/Rendering/SnapshotInterpolator.h"
 #include "Common/Protocol/WorldSnapshot.h"
@@ -13,6 +15,8 @@
 
 namespace MoongTangE {
 
+class GraphicsWindow;
+
 // Composes presentation and a transport interface; no client-side physics ownership.
 class ClientApplication
 {
@@ -24,6 +28,8 @@ class ClientApplication
   private:
     void StartGame(MainMenuAction action);
     void ReturnToMenu(std::string errorMessage);
+    void ConfirmDisplaySettings();
+    void RevertDisplaySettings(GraphicsWindow& window);
     bool SendInput();
     void ReceiveSnapshot();
 
@@ -35,14 +41,18 @@ class ClientApplication
 
     SceneRenderer m_renderer;
     SnapshotInterpolator m_presentation;
+    DisplaySettings m_displaySettings;
+    DisplaySettingsStore m_displaySettingsStore;
 
     WorldSnapshot m_authoritativeState;
     std::optional<double> m_initialX;
+    std::optional<double> m_displayConfirmationDeadline;
     std::uint64_t m_sequence{};
     std::uint64_t m_roomId{};
     std::string m_nickname;
     std::string m_errorMessage;
 
+    bool m_optionsOpen{};
     bool m_moved{};
     bool m_rolled{};
 };

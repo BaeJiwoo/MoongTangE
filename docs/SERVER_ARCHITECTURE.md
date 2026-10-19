@@ -96,7 +96,7 @@ sequenceDiagram
 
 싱글플레이의 `ClientApplication`은 메인 화면에서 닉네임을 입력하고 `SINGLE PLAYER`를 선택한 뒤 `ServerHost`를 시작하여 `LocalTransport`로 입력과 Snapshot을 교환합니다. 서버 배정 정보가 있으면 `MULTIPLAYER` 입력이 활성화되고, 선택 시 닉네임을 포함한 Hello로 `TcpClientTransport`가 접속합니다. 서버의 구조화된 입장 오류와 전송 오류는 클라이언트를 종료하지 않고 메뉴 모달에 표시합니다. 자동화용 `--smoke`만 메인 화면을 건너뛰고 실행 옵션에 맞는 전송 계층을 즉시 만듭니다. 소켓과 `ServerApplication`은 로컬 모드에 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
 
-`Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication`과 `MatchmakingApi` 구현을 제공하고, `TcpTransport`·`ServerOptions` 및 비공개 HTTP 의존성 `MatchmakingHttp`를 연결합니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며, Asio를 직접 포함하는 `ServerNetworkRuntime.h`의 독립 컴파일도 생략합니다.
+`Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication`과 outbound 전용 `MatchmakingControlClient`를 제공하고, `TcpTransport`·`ServerOptions` 및 비공개 HTTP 의존성 `MatchmakingHttp`를 연결합니다. ASP.NET `MatchmakingApi`는 CMake 대상과 주소 공간을 공유하지 않는 별도 프로젝트입니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며, Asio를 직접 포함하는 `ServerNetworkRuntime.h`의 독립 컴파일도 생략합니다.
 
 ## 명명과 헤더·구현 분리
 
@@ -111,7 +111,7 @@ sequenceDiagram
 | `ServerCore` | `ServerHost.cpp`, `TickScheduler.cpp`, `GameRoom.cpp`, `GameRoomManager.cpp`, `GameRoomOptions.cpp` | Common, Threads |
 | `ServerOptions` | `ServerOptions.cpp` | Common |
 | `TcpTransport` | `AsioServer.cpp`, `ServerNetworkRuntime.cpp`, `TcpChannel.cpp`, `TcpClientTransport.cpp` | ServerCore, AsioStandalone, NetworkProtocol |
-| `ServerRuntime` | `ServerApplication.cpp`, `MatchmakingApi.cpp` | TcpTransport, ServerOptions, 비공개 MatchmakingHttp |
+| `ServerRuntime` | `ServerApplication.cpp`, `MatchmakingControlClient.cpp` | TcpTransport, ServerOptions, 비공개 MatchmakingHttp |
 | `NetworkProtocol` | `Codec.cpp` | Common, ProtocolMessages |
 
 ## 파일별 함수 안내
@@ -371,10 +371,11 @@ TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + 
 1. 옵션을 해석하고 `ServerApplication`을 생성합니다. 생성자는 아직 스레드나 포트를 열지 않습니다.
 2. `Run()`은 중복 실행을 거부하고, 이미 종료 요청이 있으면 서버를 시작하지 않고 반환합니다.
 3. 코어를 시작하고 기본 `127.0.0.1` 주소에 TCP 서버를 바인딩합니다. `--public`으로만 외부 바인딩을 선택할 수 있습니다.
-4. 제어용 Asio 이벤트 루프에 SIGINT/SIGTERM과 선택적인 실행 시간 타이머를 등록합니다. 시그널 콜백은 제어 스레드에서 실행됩니다.
-5. 실제 포트를 출력하고 `Port()`에 게시합니다. 포트 0 옵션은 운영체제가 사용 가능한 포트를 할당하도록 합니다.
-6. 종료 요청, 시그널 또는 실행 시간 만료 시 루프를 나갑니다. 외부 종료 요청은 최대 약 50ms의 폴링 간격 이후 반영되며 OS 스케줄링 지연이 추가될 수 있습니다.
-7. 제어 이벤트 자원을 해제하고 TCP accept·timer·연결을 닫습니다. 네트워크 콜백을 정리하고 스레드를 join한 뒤 코어 Tick 스레드도 종료합니다.
+4. 매칭 URL을 설정했으면 실제 TCP 포트와 공개 주소로 outbound `MatchmakingControlClient`를 시작합니다.
+5. 제어용 Asio 이벤트 루프에 SIGINT/SIGTERM과 선택적인 실행 시간 타이머를 등록합니다. 시그널 콜백은 제어 스레드에서 실행됩니다.
+6. 실제 포트를 출력하고 `Port()`에 게시합니다. 포트 0 옵션은 운영체제가 사용 가능한 포트를 할당하도록 합니다.
+7. 종료 요청, 시그널 또는 실행 시간 만료 시 루프를 나갑니다. 외부 종료 요청은 최대 약 50ms의 폴링 간격 이후 반영되며 OS 스케줄링 지연이 추가될 수 있습니다.
+8. 제어 HTTP 스레드를 먼저 join하고 TCP accept·timer·연결을 닫습니다. 네트워크 콜백을 정리한 뒤 코어 Tick 스레드도 종료합니다.
 
 `RequestStop()`은 여러 번 호출해도 안전합니다. `Port()`는 시작 전에는 0이고, 정상 시작 뒤에는 종료 후에도 마지막 포트를 유지합니다. 재시작은 새로운 `ServerApplication` 객체로 수행합니다.
 
@@ -386,18 +387,25 @@ TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + 
 
 공끼리의 충돌, UDP, 예측·롤백, 사용자 인증·암호화는 구현 범위에 포함되지 않습니다. 운영용 공개 서버가 아닌 데모이며, 기본 루프백 또는 신뢰하는 테스트 네트워크에서 사용합니다.
 
-## 매칭 API와 예약 — Issue #43
+## 분리형 매칭 API와 예약 — Issues #43, #51
 
-API 계약·예제 실행은 [MATCHMAKING_API.md](MATCHMAKING_API.md)에 정리합니다. `ServerApplication`은 코어 → TCP → 선택적 HTTP API 순서로 생성하며 역순으로 종료합니다. HTTP 수신 스레드와 최대 4개 작업 스레드는 `MatchmakingApi`가 소유합니다. 상태를 복사하거나 제한된 코어 명령 큐를 사용할 뿐, `GameWorld`에 접근하지 않습니다. 예약 정원 판단·소비·취소·만료는 Tick에서만 실행합니다.
+API 계약·예제 실행은 [MATCHMAKING_API.md](MATCHMAKING_API.md)에 정리합니다. ASP.NET Core `MatchmakingApi`와 C++ `DedicatedServer`는 서로 독립적인 프로세스이며 다른 호스트에서 실행할 수 있습니다. C++ 프로세스는 HTTP를 수신하지 않고 별도 제어 스레드에서 API로 heartbeat를 보냅니다. 제어 스레드는 상태를 복사하거나 제한된 코어 명령 큐를 사용할 뿐 `GameWorld`에 접근하지 않습니다. 예약 정원 판단·소비·취소·만료는 Tick에서만 실행합니다.
 
-<details><summary>Server/Api/MatchmakingApi.h · MatchmakingApi.cpp — HTTP 관리 API</summary>
+<details><summary>MatchmakingApi/Program.cs · MatchmakingStore.cs — 독립 ASP.NET API</summary>
 
-- 생성자: 인증키 검증, 제한된 HTTP 스레드 풀·요청 크기·유휴 기한, 고정 경로 등록, 주소/포트 바인딩과 수신 시작.
-- `Authorize`: Bearer 헤더와 본문/쿼리 제약 검사. `Status`: 복사한 코어 상태의 Tick 나이를 확인해 준비 상태와 방별 접속·예약 수 응답.
-- `Reservation`: 인스턴스·입장권 헤더를 검사하고 생성/조회/취소를 코어에 전달. 적용 전은 202이며 확정된 자리만 reserved.
-- `Port`: 실제 바인딩 포트. 소멸자: HTTP 수신 중지 후 작업 스레드 종료까지 대기.
-- `instance_id`, `reservation_status`, `json_response`: 재시작 식별자·상태명·캐시 금지 JSON 생성. 입장권은 매칭 서비스가 암호학적 난수로 생성합니다.
-- 헤더는 httplib 타입을 전방 선언해 네트워크 없는 헤더 검사에도 HTTP 의존성이 전파되지 않습니다.
+- `Program`: 공개 키와 제어 키를 분리해 인증하고 공개 상태·예약 경로와 내부 등록·결과 경로를 구성합니다.
+- `MatchmakingStore`: 최근 heartbeat 서버를 후보로 고르고 멱등 예약과 C++로 전달할 reserve/cancel 명령을 보관합니다.
+- 공개 예약은 처음에 pending이며 C++ Tick의 결과 보고를 받은 뒤에만 reserved가 됩니다. heartbeat가 3초 이상 끊긴 서버는 후보와 상태 목록에서 제외합니다.
+- 저장소는 현재 프로세스 메모리 구현입니다. API 재시작 시 서버가 다음 heartbeat로 재등록하지만 기존 예약 기록은 복구하지 않습니다.
+
+</details>
+
+<details><summary>Server/Api/MatchmakingControlClient.h · MatchmakingControlClient.cpp — outbound 제어 연결</summary>
+
+- 별도 `jthread`가 1초 간격으로 게임 주소·프로토콜·점유 상태를 ASP.NET API에 전송합니다. API는 마지막 heartbeat 이후 3초가 지나면 해당 서버를 배정 후보에서 제외합니다.
+- heartbeat 응답의 제한된 TSV 명령을 검증하고 `ServerHost::Reserve` 또는 `CancelReservation`으로 Tick 큐에 제출합니다.
+- Tick 소유 예약 결과와 이후 consumed/expired 상태 변화를 API에 보고합니다. 통신 오류는 게임 루프를 중단하지 않고 다음 주기에 재시도합니다.
+- cpp-httplib는 이 outbound 클라이언트의 private 구현 의존성이며 C++ 서버에 HTTP listener를 만들지 않습니다.
 
 </details>
 
@@ -438,6 +446,6 @@ API 계약·예제 실행은 [MATCHMAKING_API.md](MATCHMAKING_API.md)에 정리�
 
 <details><summary>Server/ServerOptions.h · ServerOptions.cpp · ServerApplication.cpp — 실행 설정</summary>
 
-옵션 파서는 API 포트, 별도 공개 수신, 입장권 필수 모드와 예약 기한을 검증합니다. `ServerApplication::Run`은 API 활성화 시 `MOONGTANGE_API_KEY`를 읽고 TCP 실제 포트를 API에 전달합니다. HTTP 설정이 없으면 기존 실행 방식이 유지됩니다.
+옵션 파서는 `--matchmaking-url`, `--server-id`, `--advertise-host`를 함께 사용하도록 검증합니다. `--require-ticket`에는 외부 매칭 URL이 필요합니다. `ServerApplication::Run`은 TCP 실제 포트를 얻은 뒤 `MOONGTANGE_CONTROL_KEY`로 outbound 제어 연결을 시작하며, 연결 설정이 없으면 기존 직접 접속 방식이 유지됩니다.
 
 </details>

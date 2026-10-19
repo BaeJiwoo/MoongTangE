@@ -8,3 +8,7 @@
 *.log
 .DS_Store
 __pycache__/
+/MatchmakingApi/bin/
+/MatchmakingApi/obj/
+/MatchmakingApi.Tests/bin/
+/MatchmakingApi.Tests/obj/
