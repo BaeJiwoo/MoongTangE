@@ -1,7 +1,8 @@
 #pragma once
 
-#include "Client/Rendering/UiLayout.h"
+#include "Client/Rendering/DisplaySettings.h"
 
+#include <algorithm>
 #include <raylib.h>
 #include <stdexcept>
 
@@ -14,11 +15,13 @@ class GraphicsWindow
     explicit GraphicsWindow(bool hidden)
     {
         SetConfigFlags(FLAG_MSAA_4X_HINT | (hidden ? FLAG_WINDOW_HIDDEN : FLAG_WINDOW_RESIZABLE));
-        InitWindow(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, "MoongTangE");
+        const auto resolution = DisplaySettingsState{}.resolution;
+        InitWindow(resolution.width, resolution.height, "MoongTangE");
         if (!IsWindowReady()) {
             throw std::runtime_error("Graphics window initialization failed");
         }
 
+        SetExitKey(KEY_NULL);
         SetTargetFPS(60);
     }
 
@@ -31,6 +34,35 @@ class GraphicsWindow
     GraphicsWindow& operator=(const GraphicsWindow&) = delete;
     GraphicsWindow(GraphicsWindow&&) = delete;
     GraphicsWindow& operator=(GraphicsWindow&&) = delete;
+
+    void ApplyDisplaySettings(const DisplaySettingsState& settings)
+    {
+        if (m_windowMode == WindowMode::BORDERLESS) {
+            ToggleBorderlessWindowed();
+        } else if (m_windowMode == WindowMode::FULLSCREEN) {
+            ToggleFullscreen();
+        }
+
+        SetWindowSize(settings.resolution.width, settings.resolution.height);
+        const int monitorCount = GetMonitorCount();
+        if (monitorCount > 0) {
+            SetWindowMonitor(std::clamp(settings.monitor, 0, monitorCount - 1));
+        }
+
+        if (settings.windowMode == WindowMode::BORDERLESS) {
+            ToggleBorderlessWindowed();
+        } else if (settings.windowMode == WindowMode::FULLSCREEN) {
+            ToggleFullscreen();
+        }
+        m_windowMode = settings.windowMode;
+
+        if (settings.vSync) {
+            SetWindowState(FLAG_VSYNC_HINT);
+        } else {
+            ClearWindowState(FLAG_VSYNC_HINT);
+        }
+        SetTargetFPS(settings.frameRateLimit);
+    }
 
     void SaveScreenshot(const char* path) const
     {
@@ -64,6 +96,8 @@ class GraphicsWindow
       private:
         Image m_image;
     };
+
+    WindowMode m_windowMode{WindowMode::WINDOWED};
 };
 
 } // namespace MoongTangE
