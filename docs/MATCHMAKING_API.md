@@ -56,10 +56,10 @@ C++ 서버에는 HTTP 수신 포트가 없습니다. 1초마다 API에 outbound 
 Authorization: Bearer <MOONGTANGE_PUBLIC_API_KEY>가 필요하고 응답은 Cache-Control: no-store입니다.
 
 - GET /health: 프로세스 생존 확인(인증 없음).
-- GET /v1/status: 최근 3초 안에 heartbeat를 보낸 게임 서버 목록.
-- PUT /v1/reservations: 신규 예약 또는 같은 입장권의 기존 결과.
-- GET /v1/reservations: 예약 상태 조회.
-- DELETE /v1/reservations: 미소비 예약 취소.
+- GET /mm/status: 최근 3초 안에 heartbeat를 보낸 게임 서버 목록.
+- PUT /mm/reservations: 신규 예약 또는 같은 입장권의 기존 결과.
+- GET /mm/reservations: 예약 상태 조회.
+- DELETE /mm/reservations: 미소비 예약 취소.
 
 예약 요청에는 X-Admission-Ticket: <64자리 소문자 hex>를 보냅니다. 입장권은 bearer 자격 증명이자 멱등 키이므로 재사용하거나 로그에 기록하지 않습니다.
 
@@ -79,9 +79,9 @@ pending은 202, reserved·consumed는 200, full은 409, expired·cancelled는 41
 
 Authorization: Bearer <MOONGTANGE_CONTROL_KEY>가 필요합니다. C++ 전용 계약이며 일반 게임 클라이언트에 노출하지 않습니다.
 
-- PUT /internal/v1/game-servers/{serverId}: 주소·프로토콜·정원을 헤더로 등록/갱신하고 TSV 명령 목록을 받습니다.
-- PUT /internal/v1/game-servers/{serverId}/commands/{commandId}: Tick이 처리한 예약/취소 결과를 보고합니다.
-- PUT /internal/v1/game-servers/{serverId}/reservations/{ticket}: 이후 소비·만료 상태 변화를 보고합니다.
+- PUT /gsc/servers/{serverId}: 주소·프로토콜·정원을 헤더로 등록/갱신하고 TSV 명령 목록을 받습니다.
+- PUT /gsc/servers/{serverId}/commands/{commandId}: Tick이 처리한 예약/취소 결과를 보고합니다.
+- PUT /gsc/servers/{serverId}/reservations/{ticket}: 이후 소비·만료 상태 변화를 보고합니다.
 
 게임 상태 변경은 제어 HTTP 스레드가 직접 하지 않습니다. MatchmakingControlClient는 ServerHost의 제한된 명령 큐를 사용하며 실제 정원 판단·소비·취소·만료는 Tick에서 직렬 처리됩니다.
 

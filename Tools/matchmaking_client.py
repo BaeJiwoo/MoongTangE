@@ -40,7 +40,7 @@ class MatchmakingClient:
             connection.close()
 
     def reserve(self):
-        code, state = self.request("GET", "/v1/status")
+        code, state = self.request("GET", "/mm/status")
         if code != 200 or not state.get("ready"):
             raise RuntimeError("Game server is not ready")
         # 256-bit bearer credential doubles as the idempotency key. Never recycle it.
@@ -49,7 +49,7 @@ class MatchmakingClient:
         try:
             while time.monotonic() < deadline:
                 try:
-                    code, result = self.request("PUT", "/v1/reservations", ticket)
+                    code, result = self.request("PUT", "/mm/reservations", ticket)
                 except (OSError, http.client.HTTPException):
                     # A lost response may follow a successful allocation; reuse the same key.
                     time.sleep(0.05)
@@ -69,7 +69,7 @@ class MatchmakingClient:
         except Exception:
             # Cancellation itself can fail; the bounded reservation TTL is the final cleanup.
             try:
-                self.request("DELETE", "/v1/reservations", ticket)
+                self.request("DELETE", "/mm/reservations", ticket)
             except (OSError, ValueError, http.client.HTTPException):
                 pass
             raise

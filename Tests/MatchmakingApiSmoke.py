@@ -116,7 +116,7 @@ def main():
     try:
         wait_for(lambda: urllib.request.urlopen(api_url + "/health", timeout=1).status == 200)
         api = MatchmakingClient(api_url, public_key)
-        check(api.request("GET", "/v1/status")[1]["ready"] is False,
+        check(api.request("GET", "/mm/status")[1]["ready"] is False,
               "API unexpectedly has an in-process game server")
 
         game_environment = dict(os.environ, MOONGTANGE_CONTROL_KEY=control_key)
@@ -139,12 +139,12 @@ def main():
         check(game_port is not None, "C++ server did not publish its TCP port")
 
         state = wait_for(lambda: (lambda result: result if result["ready"] else None)(
-            api.request("GET", "/v1/status")[1]))
+            api.request("GET", "/mm/status")[1]))
         check(state["servers"][0]["server_id"] == "smoke-1", "Wrong registered server")
         check(state["servers"][0]["game_port"] == game_port, "Wrong advertised TCP port")
-        check(MatchmakingClient(api_url, "wrong").request("GET", "/v1/status")[0] == 401,
+        check(MatchmakingClient(api_url, "wrong").request("GET", "/mm/status")[0] == 401,
               "Public API accepted a bad key")
-        check(api.request("PUT", "/v1/reservations", "invalid")[0] == 400,
+        check(api.request("PUT", "/mm/reservations", "invalid")[0] == 400,
               "Invalid ticket accepted")
 
         peer, rejected = hello(game_port)
@@ -154,32 +154,32 @@ def main():
         ticket = secrets.token_hex(32)
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             responses = list(pool.map(
-                lambda _: api.request("PUT", "/v1/reservations", ticket), range(12)))
+                lambda _: api.request("PUT", "/mm/reservations", ticket), range(12)))
         check(all(code in (200, 202) for code, _ in responses), "Idempotent reserve failed")
         reserved = wait_for(lambda: (lambda result: result if result[0] == 200 else None)(
-            api.request("GET", "/v1/reservations", ticket)))
+            api.request("GET", "/mm/reservations", ticket)))
         check(reserved[1]["status"] == "reserved", "C++ tick did not confirm reservation")
         peer, admitted = hello(game_port, ticket)
         peers.append(peer)
         check(admitted[4] == 1 and admitted[3] == 1, "Reserved TCP admission failed")
-        wait_for(lambda: api.request("GET", "/v1/reservations", ticket)[1]["status"] == "consumed")
+        wait_for(lambda: api.request("GET", "/mm/reservations", ticket)[1]["status"] == "consumed")
         replay, rejected = hello(game_port, ticket)
         replay.close()
         check(rejected[4] == 3, "Consumed ticket replay was accepted")
 
         cancelling = secrets.token_hex(32)
-        api.request("PUT", "/v1/reservations", cancelling)
-        api.request("DELETE", "/v1/reservations", cancelling)
-        wait_for(lambda: api.request("GET", "/v1/reservations", cancelling)[1]["status"] == "cancelled")
+        api.request("PUT", "/mm/reservations", cancelling)
+        api.request("DELETE", "/mm/reservations", cancelling)
+        wait_for(lambda: api.request("GET", "/mm/reservations", cancelling)[1]["status"] == "cancelled")
 
         expiring = api.reserve()
         check(expiring["host"] == "127.0.0.1" and expiring["port"] == game_port,
               "Public API returned the wrong game endpoint")
-        wait_for(lambda: api.request("GET", "/v1/reservations", expiring["ticket"])[1]["status"] == "expired",
+        wait_for(lambda: api.request("GET", "/mm/reservations", expiring["ticket"])[1]["status"] == "expired",
                  seconds=6)
 
         terminate(game_process)
-        wait_for(lambda: api.request("GET", "/v1/status")[1]["ready"] is False, seconds=6)
+        wait_for(lambda: api.request("GET", "/mm/status")[1]["ready"] is False, seconds=6)
         print("Separate ASP.NET API registration, reservation, TCP admission, cancellation and expiry passed")
     finally:
         for peer in peers:
