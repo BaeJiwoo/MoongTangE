@@ -21,6 +21,16 @@ ServerOptions parse_server_options(std::span<const std::string_view> arguments)
 
         if (argument == "--public") {
             options.m_publicBind = true;
+        } else if (argument == "--api-public") {
+            options.m_apiPublic = true;
+        } else if (argument == "--require-ticket") {
+            options.m_requireTicket = true;
+        } else if (argument == "--api-port") {
+            options.m_apiPort =
+                static_cast<std::uint16_t>(unsigned_option(reader.ValueFor(argument), 65535, true));
+        } else if (argument == "--reservation-seconds") {
+            options.m_reservationLifetime =
+                std::chrono::seconds(unsigned_option(reader.ValueFor(argument), 300));
         } else if (argument == "--port") {
             constexpr unsigned MAX_PORT = 65535;
             options.m_port = static_cast<std::uint16_t>(
@@ -40,6 +50,9 @@ ServerOptions parse_server_options(std::span<const std::string_view> arguments)
         }
     }
 
+    if ((options.m_apiPublic || options.m_requireTicket) && !options.m_apiPort) {
+        throw std::invalid_argument("--api-public and --require-ticket require --api-port");
+    }
     return options;
 }
 

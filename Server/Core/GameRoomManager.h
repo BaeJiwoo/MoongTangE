@@ -3,6 +3,7 @@
 #include "Common/Protocol/RoomSnapshot.h"
 #include "Server/Core/GameRoom.h"
 #include "Server/Core/GameRoomOptions.h"
+#include "Server/Core/MatchmakingState.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +22,8 @@ class GameRoomManager
     explicit GameRoomManager(GameRoomOptions options = {});
 
     std::uint64_t Join(std::uint32_t playerId, Clock::time_point now);
+    std::uint64_t Reserve(std::uint32_t playerId, Clock::time_point now);
+    bool Claim(std::uint32_t playerId);
     void Leave(std::uint32_t playerId, Clock::time_point now);
     bool Apply(InputCommand input);
     void Step(Clock::time_point now);
@@ -30,9 +33,11 @@ class GameRoomManager
     std::size_t PlayerCount() const;
     std::optional<RoomSnapshot> Snapshot(std::uint64_t roomId) const;
     std::vector<RoomSnapshot> Snapshots() const;
+    std::vector<RoomOccupancy> Occupancy() const;
 
   private:
     void ExpireRooms(Clock::time_point now);
+    std::uint64_t Allocate(std::uint32_t playerId, Clock::time_point now, bool reserve);
 
     GameRoomOptions m_options;
     std::map<std::uint64_t, GameRoom> m_rooms;

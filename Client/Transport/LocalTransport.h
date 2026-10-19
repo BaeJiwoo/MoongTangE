@@ -15,13 +15,15 @@ namespace MoongTangE {
 class LocalTransport final : public IClientTransport
 {
   public:
-    explicit LocalTransport(std::shared_ptr<ServerHost> host) : m_serverHost(std::move(host))
+    explicit LocalTransport(std::shared_ptr<ServerHost> host,
+                            const std::string& nickname = "Player")
+        : m_serverHost(std::move(host))
     {
         if (!m_serverHost) {
             throw std::invalid_argument("Local transport requires a server");
         }
 
-        m_playerId = m_serverHost->Connect();
+        m_playerId = m_serverHost->Connect({}, nickname);
         if (m_playerId == 0) {
             throw std::runtime_error("Local server unavailable or full");
         }
@@ -80,6 +82,8 @@ class LocalTransport final : public IClientTransport
             return "";
         case AdmissionStatus::FULL:
             return "All game rooms are full";
+        case AdmissionStatus::INVALID_NICKNAME:
+            return "Enter a valid nickname before starting";
         case AdmissionStatus::UNAVAILABLE:
             return "Local server disconnected";
         }

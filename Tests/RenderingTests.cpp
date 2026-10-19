@@ -7,7 +7,7 @@ int main()
         using namespace MoongTangE;
 
         SnapshotInterpolator view;
-        WorldSnapshot a{3, {{1, {0, 0.5, 0}, {}}}}, b = a;
+        WorldSnapshot a{3, {{1, {0, 0.5, 0}, {}, {}, {}, "Alice"}}}, b = a;
         b.tick = 6;
         b.players[0].position.x = 1;
         b.players[0].orientation = Quaternion::FromRotation({0, 0, -2});
@@ -22,6 +22,7 @@ int main()
             (middle.players[0].orientation.Rotate({1, 0, 0}) - expected.Rotate({1, 0, 0}))
                 .Length() < 1e-9);
         MOONGTANGE_CHECK(a.players[0].position.x == 0 && b.players[0].position.x == 1);
+        MOONGTANGE_CHECK(middle.players[0].nickname == "Alice");
 
         view.Push(a); // Stale packet cannot rewind the view.
         MOONGTANGE_CHECK(view.Sample().players[0].position == middle.players[0].position);
@@ -37,7 +38,7 @@ int main()
         MOONGTANGE_CHECK(view.Sample().players[0].position.x == 2); // No extrapolation.
 
         c.tick = 12;
-        c.players = {{2, {5, 0.5, 0}, {}}};
+        c.players = {{2, {5, 0.5, 0}, {}, {}, {}, "Bob"}};
         view.Push(c);
         MOONGTANGE_CHECK(view.Sample().players.size() == 1 && view.Sample().players[0].id == 2);
         MOONGTANGE_CHECK(view.Sample().players[0].position.x == 5);

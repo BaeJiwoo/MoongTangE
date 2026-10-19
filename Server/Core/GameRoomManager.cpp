@@ -9,13 +9,29 @@ GameRoomManager::GameRoomManager(GameRoomOptions options) : m_options(options)
 
 std::uint64_t GameRoomManager::Join(std::uint32_t playerId, Clock::time_point now)
 {
+    return Allocate(playerId, now, false);
+}
+
+std::uint64_t GameRoomManager::Reserve(std::uint32_t playerId, Clock::time_point now)
+{
+    return Allocate(playerId, now, true);
+}
+
+bool GameRoomManager::Claim(std::uint32_t playerId)
+{
+    const auto roomId = RoomFor(playerId);
+    return roomId != 0 && m_rooms.at(roomId).Claim(playerId);
+}
+
+std::uint64_t GameRoomManager::Allocate(std::uint32_t playerId, Clock::time_point now, bool reserve)
+{
     if (playerId == 0 || m_memberships.contains(playerId)) {
         return 0;
     }
     ExpireRooms(now);
 
     for (auto& [roomId, room] : m_rooms) {
-        if (room.Join(playerId)) {
+        if (reserve ? room.Reserve(playerId) : room.Join(playerId)) {
             m_memberships.emplace(playerId, roomId);
             return roomId;
         }
@@ -26,7 +42,11 @@ std::uint64_t GameRoomManager::Join(std::uint32_t playerId, Clock::time_point no
     }
     const auto roomId = m_nextRoomId++;
     auto& room = m_rooms.try_emplace(roomId).first->second;
-    room.Join(playerId);
+    if (reserve) {
+        room.Reserve(playerId);
+    } else {
+        room.Join(playerId);
+    }
     m_memberships.emplace(playerId, roomId);
     return roomId;
 }
@@ -69,7 +89,21 @@ std::size_t GameRoomManager::RoomCount() const
 
 std::size_t GameRoomManager::PlayerCount() const
 {
-    return m_memberships.size();
+    std::size_t players = 0;
+    for (const auto& [roomId, room] : m_rooms) {
+        (void)roomId;
+        players += room.PlayerCount();
+    }
+    return players;
+}
+
+std::vector<RoomOccupancy> GameRoomManager::Occupancy() const
+{
+    std::vector<RoomOccupancy> occupancy;
+    for (const auto& [roomId, room] : m_rooms) {
+        occupancy.push_back({roomId, room.PlayerCount(), room.ReservedCount()});
+    }
+    return occupancy;
 }
 
 std::optional<RoomSnapshot> GameRoomManager::Snapshot(std::uint64_t roomId) const

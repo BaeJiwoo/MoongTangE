@@ -1,3 +1,4 @@
+#include "Common/Protocol/Nickname.h"
 #include "Network/Protocol/Codec.h"
 #include "TestSupport.h"
 #include "game.pb.h"
@@ -7,6 +8,7 @@
 #include <limits>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -30,17 +32,29 @@ proto::WorldSnapshot protobuf_snapshot(const WorldSnapshot& state)
 
 void framing_and_version_negotiation()
 {
-    // Known Protobuf bytes: field 1, varint wire type, protocol version 4.
-    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 4});
-    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 4});
-    wire::read_client_hello(wire::Bytes{1, 8, 4});
+    // Known Protobuf bytes: field 1, varint wire type, protocol version 6.
+    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 6});
+    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 6});
+    wire::read_client_hello(wire::Bytes{1, 8, 6});
+    const std::string ticket(64, 'a');
+    const auto hello = wire::read_client_hello(wire::client_hello(ticket, "Alice"));
+    MOONGTANGE_CHECK(hello.ticket == ticket && hello.nickname == "Alice");
+    MOONGTANGE_CHECK(MoongTangE::test::throws([] {
+        wire::client_hello("invalid");
+    }));
+    proto::ClientHello invalidTicket;
+    invalidTicket.set_protocol_version(wire::PROTOCOL_VERSION);
+    invalidTicket.set_admission_ticket(std::string(65, 'a'));
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
+        wire::read_client_hello(packet(wire::MessageType::CLIENT_HELLO, invalidTicket));
+    }));
     MOONGTANGE_CHECK(
         wire::read_server_hello(wire::server_hello({AdmissionStatus::ACCEPTED, 42, 7})).roomId ==
         7);
 
     for (const auto& bad : {wire::Bytes{}, wire::Bytes{1}, wire::Bytes{1, 8}, wire::Bytes{1, 0, 2},
-                            wire::Bytes{1, 8, 2}, wire::Bytes{1, 8, 99}, wire::Bytes{2, 8, 3},
-                            wire::Bytes{1, 8, 3, 0}, wire::Bytes{255}}) {
+                            wire::Bytes{1, 8, 2}, wire::Bytes{1, 8, 5}, wire::Bytes{1, 8, 99},
+                            wire::Bytes{2, 8, 3}, wire::Bytes{1, 8, 3, 0}, wire::Bytes{255}}) {
         MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
             wire::read_client_hello(bad);
         }));
@@ -87,6 +101,23 @@ void framing_and_version_negotiation()
     nested.insert(nested.end(), 32, 0x7c);
     MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::read_client_hello(nested);
+    }));
+}
+
+void nicknames_are_bounded_and_validated()
+{
+    MOONGTANGE_CHECK(valid_nickname("Alice") && valid_nickname("Player_01"));
+    const std::vector<std::string> invalidNicknames{
+        "", " ", " Alice", "Alice ", "bad!name", std::string(MAX_NICKNAME_LENGTH + 1, 'a')};
+    for (const auto& nickname : invalidNicknames) {
+        MOONGTANGE_CHECK(!valid_nickname(nickname));
+    }
+
+    proto::ClientHello oversized;
+    oversized.set_protocol_version(wire::PROTOCOL_VERSION);
+    oversized.set_nickname(std::string(MAX_NICKNAME_LENGTH + 1, 'a'));
+    MOONGTANGE_CHECK(test::throws([&] {
+        wire::read_client_hello(packet(wire::MessageType::CLIENT_HELLO, oversized));
     }));
 }
 
@@ -147,7 +178,8 @@ void inputs_use_session_identity_and_validate_presence()
 
 void admission_results_validate_identity_and_status()
 {
-    for (const auto status : {AdmissionStatus::FULL, AdmissionStatus::UNAVAILABLE}) {
+    for (const auto status :
+         {AdmissionStatus::FULL, AdmissionStatus::UNAVAILABLE, AdmissionStatus::INVALID_NICKNAME}) {
         const auto result = wire::read_server_hello(wire::server_hello({status, 0, 0}));
         MOONGTANGE_CHECK(result.status == status && result.playerId == 0 && result.roomId == 0);
     }
@@ -162,7 +194,7 @@ void admission_results_validate_identity_and_status()
     message.set_protocol_version(wire::PROTOCOL_VERSION);
     message.set_player_id(1);
     message.set_room_id(7);
-    for (const int status : {0, 2, 3, 4, 257}) {
+    for (const int status : {0, 2, 3, 4, 5, 257}) {
         message.set_status(static_cast<proto::ServerHello::AdmissionStatus>(status));
         MOONGTANGE_CHECK(test::throws([&] {
             wire::read_server_hello(packet(wire::MessageType::SERVER_HELLO, message));
@@ -180,8 +212,13 @@ void admission_results_validate_identity_and_status()
 
 void snapshots_validate_all_game_invariants()
 {
-    const WorldSnapshot state{
-        42, {{7, {1, 0.5, -3}, {2, 0, 1}, Quaternion::FromRotation({0.1, 0, 0.2}), {2, 3, -4}}}};
+    const WorldSnapshot state{42,
+                              {{7,
+                                {1, 0.5, -3},
+                                {2, 0, 1},
+                                Quaternion::FromRotation({0.1, 0, 0.2}),
+                                {2, 3, -4},
+                                "Alice"}}};
     const auto original = protobuf_snapshot(state);
     const auto restored = wire::read_snapshot(wire::snapshot({1, state})).world;
     MOONGTANGE_CHECK(restored.tick == state.tick && restored.players.size() == 1);
@@ -189,6 +226,7 @@ void snapshots_validate_all_game_invariants()
     MOONGTANGE_CHECK(restored.players[0].velocity == state.players[0].velocity);
     MOONGTANGE_CHECK(restored.players[0].orientation == state.players[0].orientation);
     MOONGTANGE_CHECK(restored.players[0].angularVelocity == state.players[0].angularVelocity);
+    MOONGTANGE_CHECK(restored.players[0].nickname == "Alice");
     MOONGTANGE_CHECK(wire::read_snapshot(wire::snapshot({1, {0, {}}})).world.tick == 0);
 
     auto reject = [](const proto::WorldSnapshot& message) {
@@ -257,17 +295,18 @@ void maximum_snapshot_fits_bounded_frame()
                                  {1, 2, 3},
                                  {4, 5, 6},
                                  {0.5, 0.5, 0.5, 0.5},
-                                 {7, 8, 9}});
+                                 {7, 8, 9},
+                                 std::string(MAX_NICKNAME_LENGTH, 'a')});
     }
 
     const auto bytes = wire::snapshot({1, state});
-    MOONGTANGE_CHECK(bytes.size() == 4302 && bytes.size() <= wire::MAX_FRAME_BYTES);
+    MOONGTANGE_CHECK(bytes.size() == 4878 && bytes.size() <= wire::MAX_FRAME_BYTES);
     MOONGTANGE_CHECK(wire::read_snapshot(bytes).world.players.size() == MAX_PLAYERS);
     const auto framed = wire::frame(bytes);
     MOONGTANGE_CHECK(wire::frame_size(std::span(framed).first(wire::FRAME_HEADER_BYTES)) ==
                      bytes.size());
 
-    state.players.push_back({1, {}, {}});
+    state.players.push_back({1, {}, {}, {}, {}, "Extra"});
     MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::snapshot({1, state});
     }));
@@ -279,6 +318,7 @@ int main()
 {
     return MoongTangE::test::run([] {
         framing_and_version_negotiation();
+        nicknames_are_bounded_and_validated();
         admission_results_validate_identity_and_status();
         inputs_use_session_identity_and_validate_presence();
         snapshots_validate_all_game_invariants();

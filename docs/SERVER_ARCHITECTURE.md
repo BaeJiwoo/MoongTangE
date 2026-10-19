@@ -6,15 +6,15 @@
 
 ### 방 입장 통신 — Issue #36
 
-프로토콜 v4는 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
+프로토콜 v6는 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
 성공한 Hello의 방 ID와 다른 Snapshot은 클라이언트가 거부합니다. `IClientTransport::RoomId()`는
 입장한 방을 제공하며 연결 종료 시 0입니다. 렌더링은 기존 `WorldSnapshot`을 사용하고,
 방이 바뀌면 보간 상태를 비웁니다. #37부터 실제 여러 방 배정과 비동기 입장 확정을 사용합니다.
 
 <details><summary>Network/Protocol/Codec.h · Codec.cpp — 방 통신</summary>
 
-- `server_hello` / `read_server_hello`: ACCEPTED는 양수 ID 두 개, FULL/UNAVAILABLE은 ID 0 두 개를 요구합니다. PENDING은 전송하지 않습니다.
-- `snapshot` / `read_snapshot`: 방 ID와 물리 Snapshot을 변환하고, 0인 방 ID와 기존 물리 값 오류를 거부합니다.
+- `server_hello` / `read_server_hello`: ACCEPTED는 양수 ID 두 개, FULL/UNAVAILABLE/INVALID_NICKNAME은 ID 0 두 개를 요구합니다. PENDING은 전송하지 않습니다.
+- `snapshot` / `read_snapshot`: 방 ID·닉네임·물리 Snapshot을 변환하고, 0인 방 ID와 기존 물리 값 오류를 거부합니다.
 - 입력에는 방 ID가 없으며 서버가 연결의 소속을 결정합니다. `NetworkProtocol` 빌드 대상과 Common의 의존성 분리는 유지합니다.
 
 </details>
@@ -64,7 +64,7 @@ flowchart TD
 
 `Run()`의 지역 자원은 애플리케이션의 실행 수명을 따릅니다. `ServerHost`를 시작한 뒤 `AsioServer`를 생성합니다. `AsioServer::m_networkRuntime`이 `ServerNetworkRuntime`을 단독 소유하고, runtime의 `m_serverHost`가 코어의 공유 소유권을 유지합니다. 생성의 역순으로 파괴되어 네트워크 작업을 종료한 뒤 마지막 코어 소유자가 해제됩니다. 바인딩 실패나 출력·이벤트 루프 예외도 같은 RAII 정리 경로를 거칩니다.
 
-`ServerHost::Run()` 내부의 `GameRoomManager`와 모든 `GameWorld`는 Tick 스레드만 접근합니다. `m_dataMutex`는 `m_pendingCommands`·`m_pendingInputs`·`m_clients`·`m_latestSnapshots`·`m_nextPlayerId`를 보호하고, `m_lifecycleMutex`는 코어의 시작과 종료를 직렬화합니다. `WorldCommand`는 `WorldCommandType::JOIN/LEAVE`와 요청 ID를 묶는 값 타입입니다. 이동 입력은 별도의 `m_pendingInputs`에 유저마다 최신 값 한 개만 보관합니다. 네트워크 콜백은 `Connect`, `Submit`, `Disconnect`를 호출할 뿐 월드를 직접 변경하지 않습니다.
+`ServerHost::Run()` 내부의 `GameRoomManager`와 모든 `GameWorld`는 Tick 스레드만 접근합니다. `m_dataMutex`는 `m_pendingCommands`·`m_pendingInputs`·`m_clients`·`m_latestSnapshots`·`m_nextPlayerId`·`m_reservations`·`m_matchmakingState`를 보호하고, `m_lifecycleMutex`는 코어의 시작과 종료를 직렬화합니다. `WorldCommand`는 `WorldCommandType::JOIN/LEAVE/RESERVE/CLAIM/CANCEL`와 요청 ID를 묶는 값 타입입니다. 이동 입력은 별도의 `m_pendingInputs`에 유저마다 최신 값 한 개만 보관합니다. 네트워크 콜백은 `Connect`, `Submit`, `Disconnect`를 호출할 뿐 월드를 직접 변경하지 않습니다.
 
 ## 입력에서 화면까지
 
@@ -94,9 +94,9 @@ sequenceDiagram
 
 ## 싱글플레이와 독립 서버
 
-싱글플레이의 `ClientApplication`은 `ServerHost`를 시작하고 `LocalTransport`로 입력과 Snapshot을 교환합니다. 소켓과 `ServerApplication`은 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
+싱글플레이의 `ClientApplication`은 메인 화면에서 닉네임을 입력하고 `SINGLE PLAYER`를 선택한 뒤 `ServerHost`를 시작하여 `LocalTransport`로 입력과 Snapshot을 교환합니다. 서버 배정 정보가 있으면 `MULTIPLAYER` 입력이 활성화되고, 선택 시 닉네임을 포함한 Hello로 `TcpClientTransport`가 접속합니다. 서버의 구조화된 입장 오류와 전송 오류는 클라이언트를 종료하지 않고 메뉴 모달에 표시합니다. 자동화용 `--smoke`만 메인 화면을 건너뛰고 실행 옵션에 맞는 전송 계층을 즉시 만듭니다. 소켓과 `ServerApplication`은 로컬 모드에 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
 
-`Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication` 구현을 제공하고, `TcpTransport`와 `ServerOptions`를 연결합니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며, Asio를 직접 포함하는 `ServerNetworkRuntime.h`의 독립 컴파일도 생략합니다.
+`Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication`과 `MatchmakingApi` 구현을 제공하고, `TcpTransport`·`ServerOptions` 및 비공개 HTTP 의존성 `MatchmakingHttp`를 연결합니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며, Asio를 직접 포함하는 `ServerNetworkRuntime.h`의 독립 컴파일도 생략합니다.
 
 ## 명명과 헤더·구현 분리
 
@@ -111,7 +111,7 @@ sequenceDiagram
 | `ServerCore` | `ServerHost.cpp`, `TickScheduler.cpp`, `GameRoom.cpp`, `GameRoomManager.cpp`, `GameRoomOptions.cpp` | Common, Threads |
 | `ServerOptions` | `ServerOptions.cpp` | Common |
 | `TcpTransport` | `AsioServer.cpp`, `ServerNetworkRuntime.cpp`, `TcpChannel.cpp`, `TcpClientTransport.cpp` | ServerCore, AsioStandalone, NetworkProtocol |
-| `ServerRuntime` | `ServerApplication.cpp` | TcpTransport, ServerOptions |
+| `ServerRuntime` | `ServerApplication.cpp`, `MatchmakingApi.cpp` | TcpTransport, ServerOptions, 비공개 MatchmakingHttp |
 | `NetworkProtocol` | `Codec.cpp` | Common, ProtocolMessages |
 
 ## 파일별 함수 안내
@@ -320,7 +320,7 @@ TCP 연결 한도는 Hello 대기를 포함해 `Capacity() × 2`개(기본 48개
 | `encode<Message>()` / `decode<Message>()` (cpp 내부) | 메시지 종류와 Protobuf 직렬화/역직렬화, 크기·파서 한도를 공통 처리합니다. |
 | `write_vector()` / `read_vector()` / `write_quaternion()` / `read_quaternion()` (cpp 내부) | 벡터·회전을 Protobuf 필드와 게임 값 타입 사이에서 검증하며 변환합니다. |
 
-`PROTOCOL_VERSION = 4`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. MessageType의 대문자 이름 변경은 wire 바이트 값을 바꾸지 않습니다. `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
+`PROTOCOL_VERSION = 6`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. MessageType의 대문자 이름 변경은 wire 바이트 값을 바꾸지 않습니다. `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
 
 </details>
 
@@ -364,7 +364,7 @@ flowchart LR
 
 TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + Protobuf 본문**입니다. 종류별 필수 값, 입력 범위, ID, 중복 플레이어, quaternion 정규화와 유한한 실수를 변환 시 검증합니다. 플레이어 ID는 클라이언트 입력 메시지에 없으며 접속 세션의 ID를 서버에서 주입합니다.
 
-최대 메시지는 8KiB이며, 코덱의 방어적 상한은 32명이며 최대 길이 플레이어·방 ID·Tick을 넣은 Snapshot은 종류 바이트를 포함해 4,311바이트입니다. 실제 게임방은 최대 3명만 허용합니다. 이를 수용하기 위해 이전 4KiB 한도를 올렸습니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는 16으로 제한합니다. 프로토콜 버전은 4이며 이전 v1/v2/v3 Hello는 거부합니다. 알 수 없는 Protobuf 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
+최대 메시지는 8KiB이며, 코덱의 방어적 상한은 32명입니다. 최대 길이 플레이어·방 ID·Tick과 16자 닉네임을 넣은 Snapshot은 종류 바이트를 포함해 4,887바이트입니다. 실제 게임방은 최대 3명만 허용합니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는 16으로 제한합니다. 프로토콜 버전은 6이며 이전 v1~v5 Hello는 거부합니다. 알 수 없는 Protobuf 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
 
 ## 시작과 종료
 
@@ -385,3 +385,59 @@ TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + 
 `ServerApplicationTests`는 실제 연결 후 종료, 중복 종료·실행, 실행 시간 만료, 이미 사용 중인 포트와 사전 취소를 검증합니다. `MultiRoomTests`는 Local/TCP 7명의 3/3/1 배정, 방별 상태·입력 격리, 빈자리 우선 배정과 정원 초과 응답을 검증합니다. `NetworkTests`는 비정상 프레임·부분 수신·활성 연결 종료를, `IntegrationTests`는 Local/TCP 물리 동작을 확인합니다. `RoomConcurrencyTests`는 동시 요청 40건, 취소·재시작, 입력 폭주 중 다른 방의 진행, 256개 방/768명 설정 한도를 검증합니다. 이는 성능이나 운영 수용량 보장은 아닙니다. `ProcessSmoke`는 별도 서버에 9명이 접속해 3개 방으로 나뉘는지, 10번째 거절·빈자리 재사용·시간 제한 종료를 검사하고 POSIX 환경에서는 SIGTERM 정상 종료도 확인합니다. Windows의 외부 SIGTERM 전달은 같은 방식으로 검증하지 않습니다.
 
 공끼리의 충돌, UDP, 예측·롤백, 사용자 인증·암호화는 구현 범위에 포함되지 않습니다. 운영용 공개 서버가 아닌 데모이며, 기본 루프백 또는 신뢰하는 테스트 네트워크에서 사용합니다.
+
+## 매칭 API와 예약 — Issue #43
+
+API 계약·예제 실행은 [MATCHMAKING_API.md](MATCHMAKING_API.md)에 정리합니다. `ServerApplication`은 코어 → TCP → 선택적 HTTP API 순서로 생성하며 역순으로 종료합니다. HTTP 수신 스레드와 최대 4개 작업 스레드는 `MatchmakingApi`가 소유합니다. 상태를 복사하거나 제한된 코어 명령 큐를 사용할 뿐, `GameWorld`에 접근하지 않습니다. 예약 정원 판단·소비·취소·만료는 Tick에서만 실행합니다.
+
+<details><summary>Server/Api/MatchmakingApi.h · MatchmakingApi.cpp — HTTP 관리 API</summary>
+
+- 생성자: 인증키 검증, 제한된 HTTP 스레드 풀·요청 크기·유휴 기한, 고정 경로 등록, 주소/포트 바인딩과 수신 시작.
+- `Authorize`: Bearer 헤더와 본문/쿼리 제약 검사. `Status`: 복사한 코어 상태의 Tick 나이를 확인해 준비 상태와 방별 접속·예약 수 응답.
+- `Reservation`: 인스턴스·입장권 헤더를 검사하고 생성/조회/취소를 코어에 전달. 적용 전은 202이며 확정된 자리만 reserved.
+- `Port`: 실제 바인딩 포트. 소멸자: HTTP 수신 중지 후 작업 스레드 종료까지 대기.
+- `instance_id`, `reservation_status`, `json_response`: 재시작 식별자·상태명·캐시 금지 JSON 생성. 입장권은 매칭 서비스가 암호학적 난수로 생성합니다.
+- 헤더는 httplib 타입을 전방 선언해 네트워크 없는 헤더 검사에도 HTTP 의존성이 전파되지 않습니다.
+
+</details>
+
+<details><summary>Server/Core/ServerHost.h · ServerHost.cpp — 예약과 입장 확정</summary>
+
+- `Reserve` / `Reservation` / `ReservationView`: 최대 4096개의 멱등 결과 기록과 남은 기한 복사. 최초 요청만 RESERVE 명령을 등록합니다.
+- `CancelReservation`: 중복 취소 명령을 억제하고 큐에 CANCEL 등록. 이미 소비한 입장권은 연결에 영향을 주지 않습니다.
+- `Connect(ticket)`: 유효한 예약의 CLAIM은 한 연결만 등록합니다. 빈 입장권은 ticket-only 모드에서 거부합니다. 실제 입장은 아직 PENDING입니다.
+- `ApplyCommand`: Tick에서 입장·예약·소비·취소·퇴장을 직렬 적용. 소비 전에 연결이 취소되면 자리도 반환합니다.
+- `ExpireReservations`: 만료된 미소비 자리 반환, 최초 기한 + 60초 뒤 결과 기록 삭제. 재시도는 기한을 연장하지 않습니다.
+- `Matchmaking`: Tick마다 게시한 방별 인원과 Tick/게시 시각을 잠금 아래 복사합니다. 예약 플레이어의 물리는 게시하지 않습니다.
+- `Run`: 명령 처리 앞에서 만료 정리, 물리 진행 뒤 점유 상태 게시. Stop은 예약 기록과 상태도 지웁니다.
+
+</details>
+
+<details><summary>Server/Core/GameRoom.h · GameRoom.cpp — 예약 자리</summary>
+
+- `Reserve`: 실제 플레이어와 예약을 합해 정원 3명 적용, 예약 ID만 보관.
+- `Claim`: 예약을 제거하고 해당 ID로 실제 플레이어 생성. 두 번 소비 불가.
+- `Join` / `Leave`: 직접 입장도 예약 자리를 존중하며 퇴장은 예약/플레이어 양쪽을 정리합니다. 둘 다 0일 때 빈 방 기한이 시작됩니다.
+- `ReservedCount`: 예약 수. `PlayerCount`와 Snapshot은 실제 플레이어만 포함합니다.
+
+</details>
+
+<details><summary>Server/Core/GameRoomManager.h · GameRoomManager.cpp — 공동 배정</summary>
+
+- `Allocate`: Join/Reserve가 공유하는 생성 순서 첫 빈자리 배정. 예약만 있는 방도 유지합니다.
+- `Reserve` / `Claim`: 예약 배정과 해당 방의 소비. 소속 기록에는 예약 ID도 포함됩니다.
+- `Occupancy`: 방 ID, 실제 인원, 예약 인원 벡터. `PlayerCount`는 실제 인원만 합산합니다.
+
+</details>
+
+<details><summary>Network/Protocol/Codec.h · Codec.cpp — v6 입장권과 닉네임</summary>
+
+`client_hello(ticket, nickname)` / `read_client_hello`가 선택적인 64자리 소문자 hex 입장권과 닉네임을 처리합니다. `ServerNetworkRuntime::HandleMessage`는 닉네임을 먼저 검증해 잘못된 값에는 `INVALID_NICKNAME`을 보내며 입장권을 소비하지 않습니다. `ServerHost`는 승인된 닉네임을 Snapshot의 플레이어 상태에 결합합니다. 플레이어·방 ID는 서버만 결정하며, 프레임 한도와 Snapshot 격리를 유지합니다.
+
+</details>
+
+<details><summary>Server/ServerOptions.h · ServerOptions.cpp · ServerApplication.cpp — 실행 설정</summary>
+
+옵션 파서는 API 포트, 별도 공개 수신, 입장권 필수 모드와 예약 기한을 검증합니다. `ServerApplication::Run`은 API 활성화 시 `MOONGTANGE_API_KEY`를 읽고 TCP 실제 포트를 API에 전달합니다. HTTP 설정이 없으면 기존 실행 방식이 유지됩니다.
+
+</details>

@@ -1,5 +1,6 @@
 #include "Client/Transport/TcpClientTransport.h"
 
+#include "Common/Protocol/AdmissionTicket.h"
 #include "Network/Protocol/Codec.h"
 #include "Network/TcpChannel.h"
 
@@ -19,8 +20,13 @@ namespace MoongTangE {
 class TcpClientTransport::ClientNetworkRuntime
 {
   public:
-    ClientNetworkRuntime(const std::string& host, std::uint16_t port)
+    ClientNetworkRuntime(const std::string& host, std::uint16_t port, std::string ticket,
+                         std::string nickname)
+        : m_ticket(std::move(ticket)), m_nickname(std::move(nickname))
     {
+        if (!m_ticket.empty() && !valid_admission_ticket(m_ticket)) {
+            throw std::invalid_argument("Invalid admission ticket");
+        }
         BeginConnection(host, port);
 
         m_networkThread = std::thread([this] {
@@ -181,7 +187,9 @@ class TcpClientTransport::ClientNetworkRuntime
                 RecordFailure(std::move(reason));
             });
 
-        m_channel->Send(wire::client_hello());
+        m_channel->Send(wire::client_hello(m_ticket, m_nickname));
+        m_ticket.clear();
+        m_nickname.clear();
     }
 
     void ReceiveMessage(const wire::Bytes& data)
@@ -193,9 +201,13 @@ class TcpClientTransport::ClientNetworkRuntime
         if (m_playerId == 0) {
             const auto admission = wire::read_server_hello(data);
             if (admission.status != AdmissionStatus::ACCEPTED) {
-                throw std::runtime_error(admission.status == AdmissionStatus::FULL
-                                             ? "All game rooms are full"
-                                             : "Game server unavailable");
+                if (admission.status == AdmissionStatus::FULL) {
+                    throw std::runtime_error("All game rooms are full");
+                }
+                if (admission.status == AdmissionStatus::INVALID_NICKNAME) {
+                    throw std::runtime_error("Enter a valid nickname before joining multiplayer");
+                }
+                throw std::runtime_error("Game server unavailable");
             }
             m_playerId = admission.playerId;
             m_roomId = admission.roomId;
@@ -262,11 +274,15 @@ class TcpClientTransport::ClientNetworkRuntime
     // The io thread alone owns the connection lifecycle and snapshot ordering.
     std::uint64_t m_lastReceivedTick{};
     bool m_terminal{};
+    std::string m_ticket;
+    std::string m_nickname;
     std::thread m_networkThread;
 };
 
-TcpClientTransport::TcpClientTransport(const std::string& host, std::uint16_t port)
-    : m_networkRuntime(std::make_unique<ClientNetworkRuntime>(host, port))
+TcpClientTransport::TcpClientTransport(const std::string& host, std::uint16_t port,
+                                       std::string ticket, std::string nickname)
+    : m_networkRuntime(std::make_unique<ClientNetworkRuntime>(host, port, std::move(ticket),
+                                                              std::move(nickname)))
 {
 }
 

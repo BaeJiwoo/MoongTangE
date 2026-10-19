@@ -18,6 +18,7 @@ def main():
     options = parser.parse_args()
     dependencies = options.build_dir.resolve() / "_deps"
     includes = (dependencies / "asio-src/include", dependencies / "raylib-src/src",
+                dependencies / "httplib-src",
                 dependencies / "protobuf-src/src", dependencies / "absl-src",
                 dependencies / "protobuf-src/third_party/utf8_range",
                 options.build_dir.resolve() / "generated")

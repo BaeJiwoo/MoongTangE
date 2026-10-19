@@ -11,7 +11,7 @@ int main(int argc, char** argv)
         const auto arguments = MoongTangE::command_line_arguments(argc, argv);
         const auto options = MoongTangE::parse_client_options(arguments);
         if (options.showHelp) {
-            std::cout << "Client [--single | --connect host:port] [--smoke]\n";
+            std::cout << "Client [--single | --connect host:port [--ticket hex]] [--smoke]\n";
             return 0;
         }
         MoongTangE::ClientApplication application(options);

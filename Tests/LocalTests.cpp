@@ -16,7 +16,7 @@ int main()
 
         auto server = std::make_shared<MoongTangE::ServerHost>();
         server->Start();
-        MoongTangE::LocalTransport a(server), b(server);
+        MoongTangE::LocalTransport a(server, "Alice"), b(server, "Bob");
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
             return a.Connected() && b.Connected();
         }));
@@ -33,6 +33,8 @@ int main()
                                                   -state->players[0].velocity.x / 0.5));
         MOONGTANGE_CHECK(state->players[0].orientation != MoongTangE::Quaternion{});
         MOONGTANGE_CHECK(state->players[1].velocity.x == 0);
+        MOONGTANGE_CHECK(state->players[0].nickname == "Alice" &&
+                         state->players[1].nickname == "Bob");
 
         a.Close();
         a.Close();

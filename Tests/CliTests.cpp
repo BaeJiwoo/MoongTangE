@@ -31,6 +31,13 @@ int main()
 
         using namespace std::string_view_literals;
         MOONGTANGE_CHECK(!MoongTangE::parse_client_options({}).remote);
+        const std::string ticket(64, 'a');
+        const auto ticketClient = MoongTangE::parse_client_options(
+            std::array{"--connect"sv, "localhost:27015"sv, "--ticket"sv, std::string_view(ticket)});
+        MOONGTANGE_CHECK(ticketClient.ticket == ticket);
+        MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
+            MoongTangE::parse_client_options(std::array{"--ticket"sv, std::string_view(ticket)});
+        }));
         const auto remote = MoongTangE::parse_client_options(
             std::array{"--connect"sv, "localhost:27015"sv, "--smoke"sv});
         MOONGTANGE_CHECK(remote.smoke && remote.remote->host == "localhost" &&
@@ -38,6 +45,7 @@ int main()
         for (const auto& arguments :
              std::vector<std::vector<std::string_view>>{{"--connect"},
                                                         {"--unknown"},
+                                                        {"--ticket", "invalid"},
                                                         {"--single", "--connect", "host:1"},
                                                         {"--connect", ""}}) {
             MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
@@ -51,6 +59,12 @@ int main()
                          !server.m_publicBind);
         MOONGTANGE_CHECK(server.m_rooms.m_maxRooms == 8 &&
                          server.m_rooms.m_emptyRoomLifetime.count() == 30);
+        MOONGTANGE_CHECK(!server.m_apiPort && !server.m_apiPublic && !server.m_requireTicket);
+        const auto api = MoongTangE::parse_server_options(
+            std::array{"--api-port"sv, "0"sv, "--api-public"sv, "--require-ticket"sv,
+                       "--reservation-seconds"sv, "1"sv});
+        MOONGTANGE_CHECK(api.m_apiPort == 0 && api.m_apiPublic && api.m_requireTicket &&
+                         api.m_reservationLifetime.count() == 1 && !api.m_publicBind);
         const auto rooms = MoongTangE::parse_server_options(
             std::array{"--max-rooms"sv, "2"sv, "--empty-room-seconds"sv, "0"sv});
         MOONGTANGE_CHECK(rooms.m_rooms.m_maxRooms == 2 &&
@@ -60,6 +74,12 @@ int main()
         MOONGTANGE_CHECK(MoongTangE::parse_server_options(std::array{"--help"sv}).m_showHelp);
         for (const auto& arguments :
              std::vector<std::vector<std::string_view>>{{"--port"},
+                                                        {"--api-port"},
+                                                        {"--api-port", "65536"},
+                                                        {"--api-public"},
+                                                        {"--require-ticket"},
+                                                        {"--reservation-seconds", "0"},
+                                                        {"--reservation-seconds", "301"},
                                                         {"--max-rooms"},
                                                         {"--max-rooms", "0"},
                                                         {"--max-rooms", "257"},

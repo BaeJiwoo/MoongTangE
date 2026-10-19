@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 
 namespace MoongTangE {
 
@@ -21,7 +22,9 @@ class ClientApplication
     void Run();
 
   private:
-    void SendInput();
+    void StartGame(MainMenuAction action);
+    void ReturnToMenu(std::string errorMessage);
+    bool SendInput();
     void ReceiveSnapshot();
 
     void ObserveSmokeProgress();
@@ -37,6 +40,8 @@ class ClientApplication
     std::optional<double> m_initialX;
     std::uint64_t m_sequence{};
     std::uint64_t m_roomId{};
+    std::string m_nickname;
+    std::string m_errorMessage;
 
     bool m_moved{};
     bool m_rolled{};

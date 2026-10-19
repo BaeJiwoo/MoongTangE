@@ -17,6 +17,8 @@ message Quaternion {
 
 message ClientHello {
   uint32 protocol_version = 1;
+  string admission_ticket = 2;
+  string nickname = 3;
 }
 
 message ServerHello {
@@ -29,6 +31,7 @@ message ServerHello {
     ACCEPTED = 1;
     FULL = 2;
     UNAVAILABLE = 3;
+    INVALID_NICKNAME = 4;
   }
   AdmissionStatus status = 4;
 }
@@ -46,6 +49,7 @@ message PlayerState {
   Vector3 velocity = 3;
   Quaternion orientation = 4;
   Vector3 angular_velocity = 5;
+  string nickname = 6;
 }
 
 message WorldSnapshot {

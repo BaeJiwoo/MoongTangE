@@ -1,5 +1,22 @@
 include(FetchContent)
 if(MOONGTANGE_BUILD_NETWORK)
+  # cpp-httplib v0.61.0, MIT; HTTP only (TLS termination belongs to the deployment proxy).
+  FetchContent_Declare(httplib
+    URL https://codeload.github.com/yhirose/cpp-httplib/tar.gz/c419c904da4ed0d057f169c225c58cc795c07e4d
+    URL_HASH SHA256=2a37947f7933d7bccbee420cee1ccf3bac6f1631ecebdc23625730df1452248e
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR moongtange-unused)
+  FetchContent_MakeAvailable(httplib)
+  add_library(MatchmakingHttp INTERFACE)
+  target_include_directories(MatchmakingHttp SYSTEM INTERFACE "${httplib_SOURCE_DIR}")
+  target_compile_definitions(MatchmakingHttp INTERFACE
+    CPPHTTPLIB_REQUEST_URI_MAX_LENGTH=256 CPPHTTPLIB_HEADER_MAX_LENGTH=1024
+    CPPHTTPLIB_HEADER_MAX_COUNT=32)
+  target_link_libraries(MatchmakingHttp INTERFACE Threads::Threads)
+  if(WIN32)
+    target_link_libraries(MatchmakingHttp INTERFACE ws2_32)
+  endif()
+
   FetchContent_Declare(asio
     URL https://codeload.github.com/chriskohlhoff/asio/tar.gz/8806a6803cde7054c3049d3666d3ec36786568c5
     URL_HASH SHA256=ca7f6c14f2bf91e61c7e81fb693f2f8fc86f93e85520d5fc7fd035d0f666bb35
