@@ -13,8 +13,9 @@ int main(int argc, char** argv)
         if (options.m_showHelp) {
             std::cout << "DedicatedServer [--port 27015] [--public] [--run-for seconds]\n"
                          "  [--max-rooms 8] [--empty-room-seconds 30]\n"
-                         "  [--api-port port] [--api-public] [--require-ticket]\n"
-                         "  [--reservation-seconds 30] API key: MOONGTANGE_API_KEY\n"
+                         "  [--matchmaking-url http://host:port --server-id ID]\n"
+                         "  [--advertise-host host --require-ticket]\n"
+                         "  [--reservation-seconds 30] Key: MOONGTANGE_CONTROL_KEY\n"
                          "  3 players per room; rooms are created on demand.\n";
             return 0;
         }

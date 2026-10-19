@@ -59,12 +59,16 @@ int main()
                          !server.m_publicBind);
         MOONGTANGE_CHECK(server.m_rooms.m_maxRooms == 8 &&
                          server.m_rooms.m_emptyRoomLifetime.count() == 30);
-        MOONGTANGE_CHECK(!server.m_apiPort && !server.m_apiPublic && !server.m_requireTicket);
-        const auto api = MoongTangE::parse_server_options(
-            std::array{"--api-port"sv, "0"sv, "--api-public"sv, "--require-ticket"sv,
+        MOONGTANGE_CHECK(!server.m_matchmakingUrl && !server.m_requireTicket);
+        const auto controlled = MoongTangE::parse_server_options(
+            std::array{"--matchmaking-url"sv, "http://127.0.0.1:27016"sv, "--server-id"sv,
+                       "game-1"sv, "--advertise-host"sv, "game.internal"sv, "--require-ticket"sv,
                        "--reservation-seconds"sv, "1"sv});
-        MOONGTANGE_CHECK(api.m_apiPort == 0 && api.m_apiPublic && api.m_requireTicket &&
-                         api.m_reservationLifetime.count() == 1 && !api.m_publicBind);
+        MOONGTANGE_CHECK(controlled.m_matchmakingUrl == "http://127.0.0.1:27016" &&
+                         controlled.m_serverId == "game-1" &&
+                         controlled.m_advertisedHost == "game.internal" &&
+                         controlled.m_requireTicket &&
+                         controlled.m_reservationLifetime.count() == 1 && !controlled.m_publicBind);
         const auto rooms = MoongTangE::parse_server_options(
             std::array{"--max-rooms"sv, "2"sv, "--empty-room-seconds"sv, "0"sv});
         MOONGTANGE_CHECK(rooms.m_rooms.m_maxRooms == 2 &&
@@ -74,9 +78,11 @@ int main()
         MOONGTANGE_CHECK(MoongTangE::parse_server_options(std::array{"--help"sv}).m_showHelp);
         for (const auto& arguments :
              std::vector<std::vector<std::string_view>>{{"--port"},
-                                                        {"--api-port"},
-                                                        {"--api-port", "65536"},
-                                                        {"--api-public"},
+                                                        {"--matchmaking-url"},
+                                                        {"--matchmaking-url", "https://host"},
+                                                        {"--matchmaking-url", "http://host"},
+                                                        {"--server-id", "bad id"},
+                                                        {"--advertise-host", "bad host"},
                                                         {"--require-ticket"},
                                                         {"--reservation-seconds", "0"},
                                                         {"--reservation-seconds", "301"},
