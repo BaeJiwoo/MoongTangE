@@ -1,10 +1,103 @@
+#include "Client/Rendering/DisplaySettings.h"
+#include "Client/Rendering/DisplaySettingsStore.h"
 #include "Client/Rendering/SnapshotInterpolator.h"
+#include "Client/Rendering/UiLayout.h"
 #include "TestSupport.h"
+
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 
 int main()
 {
     return MoongTangE::test::run([] {
         using namespace MoongTangE;
+
+        constexpr Resolution DEFAULT_RESOLUTION{1280, 800};
+        constexpr Resolution PREVIOUS_RESOLUTION{1280, 720};
+        constexpr Resolution NEXT_RESOLUTION{1600, 900};
+
+        MOONGTANGE_CHECK(ui_scale(1100, 720) == 1.0f);
+        MOONGTANGE_CHECK(ui_scale(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT) > 1.0f);
+        MOONGTANGE_CHECK(ui_scale(3840, 2160) == 3.0f);
+        MOONGTANGE_CHECK(ui_scale(0, 0) == 0.01f);
+
+        DisplaySettings settings;
+        MOONGTANGE_CHECK(settings.Active().resolution == DEFAULT_RESOLUTION);
+        MOONGTANGE_CHECK(settings.Pending() == settings.Active());
+        MOONGTANGE_CHECK(settings.Confirmed() == settings.Active());
+        MOONGTANGE_CHECK(settings.Active().windowMode == WindowMode::WINDOWED);
+        MOONGTANGE_CHECK(settings.Active().monitor == 0);
+        MOONGTANGE_CHECK(!settings.Active().vSync);
+        MOONGTANGE_CHECK(settings.Active().frameRateLimit == 60);
+        MOONGTANGE_CHECK(DisplaySettings::RESOLUTIONS.back() == (Resolution{3840, 2160}));
+
+        settings.SelectPreviousResolution();
+        MOONGTANGE_CHECK(settings.Pending().resolution == PREVIOUS_RESOLUTION);
+        settings.SelectPreviousWindowMode();
+        MOONGTANGE_CHECK(settings.Pending().windowMode == WindowMode::FULLSCREEN);
+        settings.SelectPreviousMonitor(3);
+        MOONGTANGE_CHECK(settings.Pending().monitor == 2);
+        settings.ToggleVSync();
+        MOONGTANGE_CHECK(settings.Pending().vSync);
+        settings.SelectPreviousFrameRateLimit();
+        MOONGTANGE_CHECK(settings.Pending().frameRateLimit == 30);
+        settings.Cancel();
+        MOONGTANGE_CHECK(settings.Pending() == settings.Active());
+
+        settings.SelectNextResolution();
+        MOONGTANGE_CHECK(settings.Pending().resolution == NEXT_RESOLUTION);
+        MOONGTANGE_CHECK(settings.Active().resolution == DEFAULT_RESOLUTION);
+        settings.SelectNextWindowMode();
+        MOONGTANGE_CHECK(settings.Pending().windowMode == WindowMode::BORDERLESS);
+        settings.SelectNextMonitor(3);
+        settings.ToggleVSync();
+        settings.SelectNextFrameRateLimit();
+        settings.Apply();
+        MOONGTANGE_CHECK(settings.Active().resolution == NEXT_RESOLUTION);
+        MOONGTANGE_CHECK(settings.Active().windowMode == WindowMode::BORDERLESS);
+        MOONGTANGE_CHECK(settings.Active().monitor == 1);
+        MOONGTANGE_CHECK(settings.Active().vSync);
+        MOONGTANGE_CHECK(settings.Active().frameRateLimit == 120);
+        MOONGTANGE_CHECK(settings.Confirmed().resolution == DEFAULT_RESOLUTION);
+
+        settings.Revert();
+        MOONGTANGE_CHECK(settings.Active() == DisplaySettingsState{});
+        MOONGTANGE_CHECK(settings.Pending() == settings.Active());
+
+        settings.SelectNextResolution();
+        settings.SelectNextWindowMode();
+        settings.SelectNextMonitor(3);
+        settings.ToggleVSync();
+        settings.SelectNextFrameRateLimit();
+        settings.Apply();
+        settings.Confirm();
+        MOONGTANGE_CHECK(settings.Confirmed() == settings.Active());
+        MOONGTANGE_CHECK(settings.Confirmed().monitor == 1);
+
+        settings.ClampMonitorCount(1);
+        MOONGTANGE_CHECK(settings.Active().monitor == 0);
+        MOONGTANGE_CHECK(settings.Pending().monitor == 0);
+        MOONGTANGE_CHECK(settings.Confirmed().monitor == 0);
+
+        const auto uniqueSuffix = std::chrono::steady_clock::now().time_since_epoch().count();
+        const auto settingsDirectory =
+            std::filesystem::temp_directory_path() /
+            ("MoongTangE-RenderingTests-" + std::to_string(uniqueSuffix));
+        const auto settingsPath = settingsDirectory / "display.cfg";
+        const DisplaySettingsState savedSettings{
+            {3840, 2160}, WindowMode::FULLSCREEN, 2, true, 144};
+        const DisplaySettingsStore settingsStore(settingsPath);
+        MOONGTANGE_CHECK(settingsStore.Save(savedSettings));
+        MOONGTANGE_CHECK(settingsStore.Load() == savedSettings);
+
+        {
+            std::ofstream invalidSettings(settingsPath, std::ios::trunc);
+            invalidSettings << "version=1\nwidth=999\n";
+        }
+        MOONGTANGE_CHECK(!settingsStore.Load());
+        MOONGTANGE_CHECK(std::filesystem::remove(settingsPath));
+        MOONGTANGE_CHECK(std::filesystem::remove(settingsDirectory));
 
         SnapshotInterpolator view;
         WorldSnapshot a{3, {{1, {0, 0.5, 0}, {}, {}, {}, "Alice"}}}, b = a;

@@ -11,6 +11,8 @@
 #include "Client/Transport/TcpClientTransport.h"
 #endif
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <memory>
 #include <raylib.h>
@@ -23,6 +25,7 @@ namespace {
 
 constexpr int SMOKE_FRAMES = 120;
 constexpr std::uint64_t SMOKE_PUSH_FRAMES = 60;
+constexpr double DISPLAY_CONFIRMATION_SECONDS = 15;
 
 std::unique_ptr<IClientTransport> make_transport(const ClientOptions& options,
                                                  MainMenuAction action, const std::string& nickname)
@@ -52,6 +55,8 @@ ClientApplication::ClientApplication(ClientOptions options) : m_options(std::mov
 {
     if (m_options.smoke) {
         m_nickname = "SmokePlayer";
+    } else if (const auto savedSettings = m_displaySettingsStore.Load()) {
+        m_displaySettings.LoadConfirmed(*savedSettings);
     }
 }
 
@@ -60,15 +65,70 @@ void ClientApplication::Run()
     GraphicsWindow window(m_options.smoke);
     if (m_options.smoke) {
         StartGame(m_options.remote ? MainMenuAction::MULTIPLAYER : MainMenuAction::SINGLE_PLAYER);
+    } else {
+        m_displaySettings.ClampMonitorCount(GetMonitorCount());
+        window.ApplyDisplaySettings(m_displaySettings.Active());
     }
 
     for (int frame = 0; !WindowShouldClose() && (!m_options.smoke || frame < SMOKE_FRAMES);
          ++frame) {
+        if (m_displayConfirmationDeadline && GetTime() >= *m_displayConfirmationDeadline) {
+            RevertDisplaySettings(window);
+        }
+
+        if (IsKeyPressed(KEY_ESCAPE) &&
+            (m_transport || (!m_optionsOpen && m_errorMessage.empty()))) {
+            break;
+        }
+
         if (!m_transport) {
-            const auto action =
-                m_renderer.DrawMainMenu(m_options.remote.has_value(), m_nickname, m_errorMessage);
+            const int confirmationSeconds =
+                m_displayConfirmationDeadline
+                    ? std::max(0, static_cast<int>(
+                                      std::ceil(*m_displayConfirmationDeadline - GetTime())))
+                    : 0;
+            const auto action = m_renderer.DrawMainMenu(
+                m_options.remote.has_value(), m_optionsOpen, m_displaySettings.Pending(),
+                m_displayConfirmationDeadline.has_value(), confirmationSeconds, m_nickname,
+                m_errorMessage);
             if (action == MainMenuAction::DISMISS_ERROR) {
                 m_errorMessage.clear();
+            } else if (action == MainMenuAction::SHOW_OPTIONS) {
+                m_displaySettings.Cancel();
+                m_optionsOpen = true;
+            } else if (action == MainMenuAction::PREVIOUS_RESOLUTION) {
+                m_displaySettings.SelectPreviousResolution();
+            } else if (action == MainMenuAction::NEXT_RESOLUTION) {
+                m_displaySettings.SelectNextResolution();
+            } else if (action == MainMenuAction::PREVIOUS_WINDOW_MODE) {
+                m_displaySettings.SelectPreviousWindowMode();
+            } else if (action == MainMenuAction::NEXT_WINDOW_MODE) {
+                m_displaySettings.SelectNextWindowMode();
+            } else if (action == MainMenuAction::PREVIOUS_MONITOR) {
+                m_displaySettings.SelectPreviousMonitor(GetMonitorCount());
+            } else if (action == MainMenuAction::NEXT_MONITOR) {
+                m_displaySettings.SelectNextMonitor(GetMonitorCount());
+            } else if (action == MainMenuAction::TOGGLE_VSYNC) {
+                m_displaySettings.ToggleVSync();
+            } else if (action == MainMenuAction::PREVIOUS_FRAME_RATE_LIMIT) {
+                m_displaySettings.SelectPreviousFrameRateLimit();
+            } else if (action == MainMenuAction::NEXT_FRAME_RATE_LIMIT) {
+                m_displaySettings.SelectNextFrameRateLimit();
+            } else if (action == MainMenuAction::APPLY_OPTIONS) {
+                if (m_displaySettings.Pending() == m_displaySettings.Active()) {
+                    m_optionsOpen = false;
+                } else {
+                    m_displaySettings.Apply();
+                    window.ApplyDisplaySettings(m_displaySettings.Active());
+                    m_displayConfirmationDeadline = GetTime() + DISPLAY_CONFIRMATION_SECONDS;
+                }
+            } else if (action == MainMenuAction::CANCEL_OPTIONS) {
+                m_displaySettings.Cancel();
+                m_optionsOpen = false;
+            } else if (action == MainMenuAction::CONFIRM_DISPLAY_SETTINGS) {
+                ConfirmDisplaySettings();
+            } else if (action == MainMenuAction::REVERT_DISPLAY_SETTINGS) {
+                RevertDisplaySettings(window);
             } else if (action != MainMenuAction::NONE) {
                 StartGame(action);
             }
@@ -113,6 +173,24 @@ void ClientApplication::Run()
     if (m_transport) {
         m_transport->Close();
     }
+}
+
+void ClientApplication::ConfirmDisplaySettings()
+{
+    m_displaySettings.Confirm();
+    m_displayConfirmationDeadline.reset();
+    m_optionsOpen = false;
+
+    if (!m_displaySettingsStore.Save(m_displaySettings.Confirmed())) {
+        m_errorMessage = "Display settings were kept but could not be saved";
+    }
+}
+
+void ClientApplication::RevertDisplaySettings(GraphicsWindow& window)
+{
+    m_displaySettings.Revert();
+    window.ApplyDisplaySettings(m_displaySettings.Active());
+    m_displayConfirmationDeadline.reset();
 }
 
 void ClientApplication::StartGame(MainMenuAction action)
