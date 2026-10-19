@@ -1,6 +1,6 @@
 # MoongTangE
 
-매칭 API 연결은 [API 계약과 실행 방법](docs/MATCHMAKING_API.md), [연동 예제](Tools/matchmaking_client.py)를 참고하세요. 별도 HTTP 포트에서 상태 조회와 자리 예약·취소를 제공하고, 예약까지 포함해 방당 3명을 제한합니다. `--api-port 27016 --require-ticket`과 `MOONGTANGE_API_KEY`로 활성화합니다. 프로토콜 v6이므로 클라이언트와 서버를 함께 업데이트합니다. 외부 매칭 서비스의 저장소는 아직 연결하지 않았으며 상태 조회를 사용하는 어댑터를 제공합니다.
+매칭 계층은 ASP.NET Core API와 C++ 게임 소켓 서버를 서로 다른 프로세스·호스트로 배포할 수 있게 분리되어 있습니다. [API 계약과 실행 방법](docs/MATCHMAKING_API.md), [연동 예제](Tools/matchmaking_client.py)를 참고하세요. C++ 서버는 HTTP를 수신하지 않고 외부 API로 등록·heartbeat를 보내며, 최종 예약과 일회용 입장권 소비는 서버 Tick이 처리합니다.
 
 MoongTangE는 C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 서비스입니다.
 
@@ -25,6 +25,7 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 | 영역 | 기술 |
 | --- | --- |
 | 언어 | C++20 |
+| 매칭 API | ASP.NET Core 8 |
 | 빌드 | CMake |
 | 네트워크 | Standalone Asio 1.38.2, TCP |
 | 직렬화 | Protobuf 36.2 (C++ 런타임 7.36.2), 프로토콜 v6 |
@@ -34,7 +35,7 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 
 ## 빌드
 
-CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 네트워크 자동 테스트에는 Python 3도 필요합니다. 첫 구성 시 고정된 외부 소스를 다운로드하므로 인터넷 연결이 필요합니다. 다운로드는 SHA-256으로 검증합니다.
+CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 분리형 매칭 API와 통합 테스트에는 .NET 8 SDK와 Python 3도 필요합니다. 첫 구성 시 고정된 외부 소스를 다운로드하므로 인터넷 연결이 필요합니다. 다운로드는 SHA-256으로 검증합니다.
 
 기존 빌드 폴더도 아래의 현재 옵션 이름으로 다시 구성하세요. 전체 빌드는 `MOONGTANGE_BUILD_CLIENT=ON`, `MOONGTANGE_BUILD_NETWORK=ON`이 기본값이고, 코어 전용 구성은 두 옵션을 명시적으로 `OFF`로 지정합니다.
 
