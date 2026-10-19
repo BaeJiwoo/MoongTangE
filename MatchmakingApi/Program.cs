@@ -18,12 +18,12 @@ app.Use(async (context, next) =>
 
 app.MapGet("/health", () => Results.Json(new { status = "ok" }));
 
-app.MapGet("/mm/status", (HttpRequest request, MatchmakingStore store) =>
+app.MapGet("/matchmaking/status", (HttpRequest request, MatchmakingStore store) =>
     Authorized(request, publicKey)
         ? Results.Json(store.Status(DateTimeOffset.UtcNow))
         : Unauthorized());
 
-app.MapMethods("/mm/reservations", ["GET", "PUT", "DELETE"],
+app.MapMethods("/matchmaking/reservations", ["GET", "PUT", "DELETE"],
     (HttpRequest request, MatchmakingStore store) =>
     {
         if (!Authorized(request, publicKey))
@@ -52,7 +52,7 @@ app.MapMethods("/mm/reservations", ["GET", "PUT", "DELETE"],
         return ReservationResult(store, reservation);
     });
 
-app.MapPut("/gsc/servers/{serverId}",
+app.MapPut("/game-servers/{serverId}/heartbeat",
     (string serverId, HttpRequest request, MatchmakingStore store) =>
     {
         if (!Authorized(request, controlKey) || !ValidServerId(serverId) ||
@@ -72,7 +72,7 @@ app.MapPut("/gsc/servers/{serverId}",
         return Results.Text(body, "text/plain", Encoding.UTF8);
     });
 
-app.MapPut("/gsc/servers/{serverId}/commands/{commandId:long}",
+app.MapPut("/game-servers/{serverId}/commands/{commandId:long}",
     async (string serverId, long commandId, HttpRequest request, MatchmakingStore store) =>
     {
         if (!Authorized(request, controlKey))
@@ -87,7 +87,7 @@ app.MapPut("/gsc/servers/{serverId}/commands/{commandId:long}",
             : Results.BadRequest();
     });
 
-app.MapPut("/gsc/servers/{serverId}/reservations/{ticket}",
+app.MapPut("/game-servers/{serverId}/reservations/{ticket}",
     async (string serverId, string ticket, HttpRequest request, MatchmakingStore store) =>
     {
         if (!Authorized(request, controlKey))

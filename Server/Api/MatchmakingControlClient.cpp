@@ -132,8 +132,8 @@ std::string MatchmakingControlClient::Heartbeat()
         {"X-Available", std::to_string(available)},
         {"X-Reservation-Seconds", std::to_string(m_options.m_reservationLifetime.count())},
     };
-    const auto response =
-        m_httpClient->Put("/gsc/servers/" + m_options.m_serverId, headers, "", "text/plain");
+    const auto response = m_httpClient->Put("/game-servers/" + m_options.m_serverId + "/heartbeat",
+                                            headers, "", "text/plain");
     return response && response->status == 200 && response->body.size() <= MAX_CONTROL_BODY
                ? response->body
                : std::string{};
@@ -183,7 +183,7 @@ void MatchmakingControlClient::ReportCommands()
             continue;
         }
 
-        const auto path = "/gsc/servers/" + m_options.m_serverId + "/commands/" +
+        const auto path = "/game-servers/" + m_options.m_serverId + "/commands/" +
                           std::to_string(entry->second.m_id);
         if (!Report(path, report_body(result))) {
             ++entry;
@@ -207,7 +207,7 @@ void MatchmakingControlClient::ReportReservationChanges()
             continue;
         }
 
-        const auto path = "/gsc/servers/" + m_options.m_serverId + "/reservations/" + entry->first;
+        const auto path = "/game-servers/" + m_options.m_serverId + "/reservations/" + entry->first;
         if (!Report(path, report_body(result))) {
             ++entry;
             continue;
