@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Common/Physics/Collision/SpherePlane.h"
+#include "Common/Physics/Collision/SphereTerrain.h"
 #include "Common/SimulationConfig.h"
 
 #include <algorithm>
@@ -37,15 +37,22 @@ class PhysicsWorld
         ValidateStep(body, dt, groundForce);
 
         groundForce.y = 0;
-        ApplyForces(body, dt, groundForce);
+        const auto initialContact = terrain_contact(body);
+        ApplyForces(body, dt, groundForce, initialContact);
         body.position.y += body.velocity.y * dt;
 
-        if (body.position.y <= body.radius) {
-            ResolveContact(body, dt, groundForce);
+        auto contact = terrain_contact(body);
+        if (contact.penetration >= 0) {
+            ResolveContact(body, dt, groundForce, contact);
         }
 
         body.position.x += body.velocity.x * dt;
         body.position.z += body.velocity.z * dt;
+
+        contact = terrain_contact(body);
+        if (contact.penetration > 0) {
+            resolve_terrain(body, contact);
+        }
 
         const auto rotation = Quaternion::FromRotation(body.angularVelocity * dt);
         body.orientation = (rotation * body.orientation).Normalized();
@@ -67,27 +74,28 @@ class PhysicsWorld
         }
     }
 
-    static void ApplyForces(RigidBody& body, double dt, Vector3 groundForce)
+    static void ApplyForces(RigidBody& body, double dt, Vector3 groundForce, TerrainContact contact)
     {
         const bool grounded =
-            body.position.y <= body.radius + CONTACT_TOLERANCE && body.velocity.y <= 0;
+            contact.penetration >= -CONTACT_TOLERANCE && dot(body.velocity, contact.normal) <= 0;
         if (grounded) {
+            groundForce = groundForce - contact.normal * dot(groundForce, contact.normal);
             body.velocity = body.velocity + groundForce * (dt / body.mass);
         }
 
         body.velocity = body.velocity + Vector3{0, -simulation::GRAVITY, 0} * dt;
     }
 
-    void ApplyGroundDrag(RigidBody& body, double dt) const
+    void ApplyGroundDrag(RigidBody& body, double dt, Vector3 normal) const
     {
         const double damping = std::exp(-m_material.groundDrag * dt / body.mass);
-        body.velocity.x *= damping;
-        body.velocity.z *= damping;
+        const Vector3 normalVelocity = normal * dot(body.velocity, normal);
+        body.velocity = normalVelocity + (body.velocity - normalVelocity) * damping;
     }
 
-    void ApplyRollingResistance(RigidBody& body, double dt) const
+    void ApplyRollingResistance(RigidBody& body, double dt, Vector3 normal) const
     {
-        const Vector3 rolling{body.angularVelocity.x, 0, body.angularVelocity.z};
+        const Vector3 rolling = body.angularVelocity - normal * dot(body.angularVelocity, normal);
         const double speed = rolling.Length();
         if (speed == 0) {
             return;
@@ -99,11 +107,11 @@ class PhysicsWorld
         body.angularVelocity = body.angularVelocity - rolling * (std::min(speed, change) / speed);
     }
 
-    void ApplyContactFriction(RigidBody& body, double normalImpulse) const
+    void ApplyContactFriction(RigidBody& body, double normalImpulse, Vector3 normal) const
     {
-        const Vector3 contactArm{0, -body.radius, 0};
-        const Vector3 slip =
-            Vector3{body.velocity.x, 0, body.velocity.z} + cross(body.angularVelocity, contactArm);
+        const Vector3 contactArm = normal * -body.radius;
+        Vector3 slip = body.velocity + cross(body.angularVelocity, contactArm);
+        slip = slip - normal * dot(slip, normal);
 
         // Solid-sphere I = 2/5 mr^2: one contact impulse changes translation and rotation.
         const double inverseEffectiveMass =
@@ -120,29 +128,31 @@ class PhysicsWorld
             body.angularVelocity + cross(contactArm, impulse) * (1.0 / body.Inertia());
     }
 
-    void SleepIfResting(RigidBody& body, Vector3 groundForce) const
+    void SleepIfResting(RigidBody& body, Vector3 groundForce, Vector3 normal) const
     {
-        const double linearSpeed = std::hypot(body.velocity.x, body.velocity.z);
-        const double rollingSpeed =
-            std::hypot(body.angularVelocity.x, body.angularVelocity.z) * body.radius;
+        const Vector3 tangentialVelocity = body.velocity - normal * dot(body.velocity, normal);
+        const Vector3 rollingVelocity =
+            body.angularVelocity - normal * dot(body.angularVelocity, normal);
+        const double linearSpeed = tangentialVelocity.Length();
+        const double rollingSpeed = rollingVelocity.Length() * body.radius;
         if (groundForce.Length() == 0 && m_material.rollingResistance > 0 &&
             linearSpeed < SLEEP_SPEED && rollingSpeed < SLEEP_SPEED) {
-            body.velocity.x = 0;
-            body.velocity.z = 0;
-            body.angularVelocity.x = 0;
-            body.angularVelocity.z = 0;
+            body.velocity = normal * dot(body.velocity, normal);
+            body.angularVelocity = normal * dot(body.angularVelocity, normal);
         }
     }
 
-    void ResolveContact(RigidBody& body, double dt, Vector3 groundForce) const
+    void ResolveContact(RigidBody& body, double dt, Vector3 groundForce,
+                        TerrainContact contact) const
     {
-        const double normalImpulse = body.mass * std::max(0.0, -body.velocity.y);
-        resolve_ground(body);
-        ApplyGroundDrag(body, dt);
-        ApplyRollingResistance(body, dt);
-        ApplyContactFriction(body, normalImpulse);
+        const double inwardSpeed = std::min(0.0, dot(body.velocity, contact.normal));
+        const double normalImpulse = body.mass * -inwardSpeed;
+        resolve_terrain(body, contact);
+        ApplyGroundDrag(body, dt, contact.normal);
+        ApplyRollingResistance(body, dt, contact.normal);
+        ApplyContactFriction(body, normalImpulse, contact.normal);
 
-        SleepIfResting(body, groundForce);
+        SleepIfResting(body, groundForce, contact.normal);
     }
 
     PhysicsMaterial m_material;

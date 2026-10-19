@@ -34,6 +34,30 @@ void gravity_and_ground_contact()
     MOONGTANGE_CHECK(body.position.y == 0.5 && body.velocity.y == 0);
 }
 
+void varied_terrain_contacts()
+{
+    const auto flat = terrain_sample(20, 20);
+    MOONGTANGE_CHECK(flat.height == 0 && flat.normal == Vector3{0, 1, 0});
+
+    const auto pointed = terrain_sample(POINTED_TERRAIN.x, POINTED_TERRAIN.z);
+    MOONGTANGE_CHECK(pointed.height == POINTED_TERRAIN.height);
+    const auto hill = terrain_sample(HILL_TERRAIN[0].x, HILL_TERRAIN[0].z);
+    MOONGTANGE_CHECK(hill.height == HILL_TERRAIN[0].radius + HILL_TERRAIN[0].centerY);
+
+    PhysicsWorld physics;
+    for (const auto position : {Vector3{POINTED_TERRAIN.x, 5, POINTED_TERRAIN.z},
+                                Vector3{HILL_TERRAIN[0].x, 5, HILL_TERRAIN[0].z}}) {
+        RigidBody body;
+        body.position = position;
+        for (int tick = 0; tick < 600; ++tick) {
+            physics.Step(body);
+            const auto terrain = terrain_sample(body.position.x, body.position.z);
+            const double normalDistance = (body.position.y - terrain.height) * terrain.normal.y;
+            MOONGTANGE_CHECK(normalDistance + 1e-9 >= body.radius);
+        }
+    }
+}
+
 void rolling_distance_matches_rotation()
 {
     const PhysicsWorld noResistance({0.8, 0, 0});
@@ -164,6 +188,7 @@ int main()
 {
     return MoongTangE::test::run([] {
         gravity_and_ground_contact();
+        varied_terrain_contacts();
         rolling_distance_matches_rotation();
         sliding_converts_to_rolling_and_coasts_to_rest();
         opposite_input_brakes_before_reversing();
