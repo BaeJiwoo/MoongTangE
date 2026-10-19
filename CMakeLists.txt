@@ -30,7 +30,8 @@ if(MOONGTANGE_BUILD_NETWORK)
     Server/Network/ServerNetworkRuntime.cpp Network/TcpChannel.cpp
     Client/Transport/TcpClientTransport.cpp)
   target_link_libraries(TcpTransport PUBLIC ServerCore AsioStandalone NetworkProtocol)
-  add_library(ServerRuntime Server/ServerApplication.cpp Server/Api/MatchmakingApi.cpp)
+  add_library(ServerRuntime Server/ServerApplication.cpp
+    Server/Api/MatchmakingControlClient.cpp)
   target_link_libraries(ServerRuntime PUBLIC TcpTransport ServerOptions PRIVATE MatchmakingHttp)
   if(MSVC)
     target_compile_definitions(ServerRuntime PRIVATE _CRT_SECURE_NO_WARNINGS)

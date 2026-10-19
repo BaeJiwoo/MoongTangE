@@ -1,6 +1,6 @@
 #include "Server/ServerApplication.h"
 
-#include "Server/Api/MatchmakingApi.h"
+#include "Server/Api/MatchmakingControlClient.h"
 #include "Server/Core/ServerHost.h"
 #include "Server/Network/AsioServer.h"
 
@@ -30,8 +30,8 @@ std::shared_ptr<ServerHost> start_server_core(const ServerOptions& options)
 ServerApplication::ServerApplication(ServerOptions options) : m_options(std::move(options))
 {
     m_options.m_rooms.Validate();
-    if ((m_options.m_apiPublic || m_options.m_requireTicket) && !m_options.m_apiPort) {
-        throw std::invalid_argument("Ticket/public API mode requires an API port");
+    if (m_options.m_requireTicket && !m_options.m_matchmakingUrl) {
+        throw std::invalid_argument("Ticket mode requires an external matchmaking service");
     }
     if (m_options.m_runDuration < std::chrono::seconds::zero()) {
         throw std::invalid_argument("Server duration cannot be negative");
@@ -51,16 +51,16 @@ void ServerApplication::Run()
     const auto serverCore = start_server_core(m_options);
     const std::string bindAddress = m_options.m_publicBind ? "0.0.0.0" : "127.0.0.1";
     AsioServer networkServer(serverCore, bindAddress, m_options.m_port);
-    std::unique_ptr<MatchmakingApi> matchmakingApi;
-    if (m_options.m_apiPort) {
-        const auto apiKey = std::getenv("MOONGTANGE_API_KEY");
-        if (!apiKey) {
-            throw std::invalid_argument("Set MOONGTANGE_API_KEY before enabling the API");
+    std::unique_ptr<MatchmakingControlClient> matchmakingControl;
+    if (m_options.m_matchmakingUrl) {
+        const auto controlKey = std::getenv("MOONGTANGE_CONTROL_KEY");
+        if (!controlKey) {
+            throw std::invalid_argument("Set MOONGTANGE_CONTROL_KEY before connecting matchmaking");
         }
-        matchmakingApi = std::make_unique<MatchmakingApi>(
-            serverCore, m_options.m_apiPublic ? "0.0.0.0" : "127.0.0.1", *m_options.m_apiPort,
-            apiKey, networkServer.Port(), m_options.m_requireTicket,
-            static_cast<unsigned>(m_options.m_reservationLifetime.count()));
+        matchmakingControl = std::make_unique<MatchmakingControlClient>(
+            serverCore, MatchmakingControlOptions{*m_options.m_matchmakingUrl, m_options.m_serverId,
+                                                  m_options.m_advertisedHost, networkServer.Port(),
+                                                  m_options.m_reservationLifetime, controlKey});
     }
 
     // Asio delivers signal callbacks on the control thread, outside the native signal handler.
@@ -84,9 +84,9 @@ void ServerApplication::Run()
     }
 
     std::cout << "Listening " << bindAddress << ':' << networkServer.Port() << std::endl;
-    if (matchmakingApi) {
-        std::cout << "Matchmaking API " << (m_options.m_apiPublic ? "0.0.0.0" : "127.0.0.1") << ':'
-                  << matchmakingApi->Port() << std::endl;
+    if (matchmakingControl) {
+        std::cout << "Matchmaking control " << *m_options.m_matchmakingUrl << " as "
+                  << m_options.m_serverId << std::endl;
     }
     if (m_options.m_publicBind) {
         std::cerr << "Warning: unauthenticated test server; use trusted networks only.\n";

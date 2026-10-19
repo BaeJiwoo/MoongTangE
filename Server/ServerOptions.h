@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace MoongTangE {
@@ -15,9 +16,10 @@ struct ServerOptions
     std::uint16_t m_port{27015};
     std::chrono::seconds m_runDuration{};
     GameRoomOptions m_rooms;
-    std::optional<std::uint16_t> m_apiPort;
+    std::optional<std::string> m_matchmakingUrl;
+    std::string m_serverId;
+    std::string m_advertisedHost;
     std::chrono::seconds m_reservationLifetime{30};
-    bool m_apiPublic{};
     bool m_requireTicket{};
     bool m_publicBind{};
     bool m_showHelp{};
