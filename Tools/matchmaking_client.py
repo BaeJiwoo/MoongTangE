@@ -88,7 +88,10 @@ def main():
     if options.client:
         host = assignment["host"]
         endpoint = ("[" + host + "]" if ":" in host else host) + ":" + str(assignment["port"])
-        return subprocess.call([options.client, "--connect", endpoint, "--ticket", assignment["ticket"]])
+        client_environment = os.environ.copy()
+        client_environment.pop("MOONGTANGE_API_KEY", None)
+        return subprocess.call([options.client, "--connect", endpoint, "--ticket", assignment["ticket"]],
+                               env=client_environment)
     # Demo output is an assignment delivered to the requesting user, not a server log.
     print(json.dumps(assignment))
     return 0

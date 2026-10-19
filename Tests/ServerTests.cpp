@@ -31,6 +31,7 @@ int main()
         }));
         auto state = server.SnapshotFor(id)->world;
         MOONGTANGE_CHECK(state.tick != 0);
+        MOONGTANGE_CHECK(state.players[0].nickname == "Player");
         MOONGTANGE_CHECK(state.players[0].angularVelocity.z < 0 &&
                          state.players[0].orientation.Unit());
 
@@ -45,6 +46,7 @@ int main()
                 return room.world.players.empty();
             });
         }));
+        MOONGTANGE_CHECK(server.Connect({}, "") == 0);
 
         server.Stop();
         server.Stop();

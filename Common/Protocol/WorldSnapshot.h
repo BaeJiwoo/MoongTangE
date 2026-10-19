@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace MoongTangE {
@@ -17,6 +18,7 @@ struct PlayerState
     Vector3 position{}, velocity{};
     Quaternion orientation{};
     Vector3 angularVelocity{};
+    std::string nickname;
 };
 
 struct WorldSnapshot

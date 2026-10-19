@@ -87,7 +87,7 @@ class GameWorld
         for (const auto& [id, player] : m_players) {
             const auto& body = player.body;
             result.players.push_back(
-                {id, body.position, body.velocity, body.orientation, body.angularVelocity});
+                {id, body.position, body.velocity, body.orientation, body.angularVelocity, {}});
         }
         return result;
     }

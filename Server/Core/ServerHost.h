@@ -40,7 +40,7 @@ class ServerHost
     bool Running() const;
 
     // Returns a request ID; only the tick thread confirms admission.
-    std::uint32_t Connect(const std::string& ticket = {});
+    std::uint32_t Connect(const std::string& ticket = {}, const std::string& nickname = "Player");
     AdmissionResult Admission(std::uint32_t playerId) const;
     void Disconnect(std::uint32_t playerId);
 
@@ -82,6 +82,7 @@ class ServerHost
     struct ClientState
     {
         AdmissionResult m_admission;
+        std::string m_nickname;
         std::uint64_t m_lastInputSequence{};
     };
 

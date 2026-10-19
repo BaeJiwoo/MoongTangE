@@ -1,6 +1,7 @@
 #include "Network/Protocol/Codec.h"
 
 #include "Common/Protocol/AdmissionTicket.h"
+#include "Common/Protocol/Nickname.h"
 #include "game.pb.h"
 
 #include <google/protobuf/io/coded_stream.h>
@@ -85,12 +86,14 @@ MessageType type(std::span<const std::uint8_t> data)
     return static_cast<MessageType>(data.front());
 }
 
-Bytes client_hello(const std::string& ticket)
+Bytes client_hello(const std::string& ticket, const std::string& nickname)
 {
     require(ticket.empty() || valid_admission_ticket(ticket));
+    require(nickname.size() <= MAX_NICKNAME_LENGTH);
     proto::ClientHello message;
     message.set_protocol_version(PROTOCOL_VERSION);
     message.set_admission_ticket(ticket);
+    message.set_nickname(nickname);
     return encode(MessageType::CLIENT_HELLO, message);
 }
 
@@ -99,7 +102,8 @@ Bytes server_hello(AdmissionResult admission)
     require((admission.status == AdmissionStatus::ACCEPTED && admission.playerId != 0 &&
              admission.roomId != 0) ||
             ((admission.status == AdmissionStatus::FULL ||
-              admission.status == AdmissionStatus::UNAVAILABLE) &&
+              admission.status == AdmissionStatus::UNAVAILABLE ||
+              admission.status == AdmissionStatus::INVALID_NICKNAME) &&
              admission.playerId == 0 && admission.roomId == 0));
     proto::ServerHello message;
     message.set_protocol_version(PROTOCOL_VERSION);
@@ -109,13 +113,14 @@ Bytes server_hello(AdmissionResult admission)
     return encode(MessageType::SERVER_HELLO, message);
 }
 
-std::string read_client_hello(std::span<const std::uint8_t> data)
+ClientHello read_client_hello(std::span<const std::uint8_t> data)
 {
     const auto message = decode<proto::ClientHello>(data, MessageType::CLIENT_HELLO);
     require(message.protocol_version() == PROTOCOL_VERSION);
     require(message.admission_ticket().empty() ||
             valid_admission_ticket(message.admission_ticket()));
-    return message.admission_ticket();
+    require(message.nickname().size() <= MAX_NICKNAME_LENGTH);
+    return {message.admission_ticket(), message.nickname()};
 }
 
 AdmissionResult read_server_hello(std::span<const std::uint8_t> data)
@@ -123,7 +128,7 @@ AdmissionResult read_server_hello(std::span<const std::uint8_t> data)
     const auto message = decode<proto::ServerHello>(data, MessageType::SERVER_HELLO);
     require(message.protocol_version() == PROTOCOL_VERSION);
     require(message.status() >= proto::ServerHello::ACCEPTED &&
-            message.status() <= proto::ServerHello::UNAVAILABLE);
+            message.status() <= proto::ServerHello::INVALID_NICKNAME);
     const AdmissionResult admission{static_cast<AdmissionStatus>(message.status()),
                                     message.player_id(), message.room_id()};
     require(admission.status == AdmissionStatus::ACCEPTED
@@ -167,6 +172,8 @@ Bytes snapshot(const RoomSnapshot& room)
 
         auto& record = *message.add_players();
         record.set_id(player.id);
+        require(player.nickname.empty() || valid_nickname(player.nickname));
+        record.set_nickname(player.nickname);
         write_vector(*record.mutable_position(), player.position);
         write_vector(*record.mutable_velocity(), player.velocity);
         write_quaternion(*record.mutable_orientation(), player.orientation);
@@ -187,12 +194,14 @@ RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
     std::set<std::uint32_t> ids;
     for (const auto& record : message.players()) {
         require(record.id() != 0 && ids.insert(record.id()).second);
+        require(record.nickname().empty() || valid_nickname(record.nickname()));
         require(record.has_position() && record.has_velocity() && record.has_orientation() &&
                 record.has_angular_velocity());
 
-        state.players.push_back(
-            {record.id(), read_vector(record.position()), read_vector(record.velocity()),
-             read_quaternion(record.orientation()), read_vector(record.angular_velocity())});
+        state.players.push_back({record.id(), read_vector(record.position()),
+                                 read_vector(record.velocity()),
+                                 read_quaternion(record.orientation()),
+                                 read_vector(record.angular_velocity()), record.nickname()});
     }
     return {message.room_id(), std::move(state)};
 }

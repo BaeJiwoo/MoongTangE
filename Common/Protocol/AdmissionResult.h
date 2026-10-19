@@ -9,7 +9,8 @@ enum class AdmissionStatus : std::uint8_t
     PENDING = 0,
     ACCEPTED = 1,
     FULL = 2,
-    UNAVAILABLE = 3
+    UNAVAILABLE = 3,
+    INVALID_NICKNAME = 4
 };
 
 struct AdmissionResult

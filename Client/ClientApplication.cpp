@@ -3,6 +3,7 @@
 #include "Client/Input/Keyboard.h"
 #include "Client/Rendering/GraphicsWindow.h"
 #include "Client/Transport/LocalTransport.h"
+#include "Common/Protocol/Nickname.h"
 #include "Common/SimulationConfig.h"
 #include "Server/Core/ServerHost.h"
 
@@ -23,19 +24,23 @@ namespace {
 constexpr int SMOKE_FRAMES = 120;
 constexpr std::uint64_t SMOKE_PUSH_FRAMES = 60;
 
-std::unique_ptr<IClientTransport> make_transport(const ClientOptions& options)
+std::unique_ptr<IClientTransport> make_transport(const ClientOptions& options,
+                                                 MainMenuAction action, const std::string& nickname)
 {
-    if (!options.remote) {
+    if (action == MainMenuAction::SINGLE_PLAYER) {
         auto server = std::make_shared<ServerHost>();
         server->Start();
 
         // LocalTransport retains shared ownership; releasing it stops the embedded server.
-        return std::make_unique<LocalTransport>(std::move(server));
+        return std::make_unique<LocalTransport>(std::move(server), nickname);
     }
 
 #ifdef MOONGTANGE_HAS_NETWORK
+    if (!options.remote) {
+        throw std::runtime_error("Multiplayer requires a server assignment");
+    }
     return std::make_unique<TcpClientTransport>(options.remote->host, options.remote->port,
-                                                options.ticket);
+                                                options.ticket, nickname);
 #else
     throw std::runtime_error("This build has TCP networking disabled");
 #endif
@@ -43,25 +48,46 @@ std::unique_ptr<IClientTransport> make_transport(const ClientOptions& options)
 
 } // namespace
 
-ClientApplication::ClientApplication(ClientOptions options)
-    : m_options(std::move(options)), m_transport(make_transport(m_options))
+ClientApplication::ClientApplication(ClientOptions options) : m_options(std::move(options))
 {
+    if (m_options.smoke) {
+        m_nickname = "SmokePlayer";
+    }
 }
 
 void ClientApplication::Run()
 {
     GraphicsWindow window(m_options.smoke);
+    if (m_options.smoke) {
+        StartGame(m_options.remote ? MainMenuAction::MULTIPLAYER : MainMenuAction::SINGLE_PLAYER);
+    }
 
     for (int frame = 0; !WindowShouldClose() && (!m_options.smoke || frame < SMOKE_FRAMES);
          ++frame) {
-        m_presentation.Advance(GetFrameTime());
-
-        const auto failure = m_transport->Error();
-        if (!failure.empty()) {
-            throw std::runtime_error(failure);
+        if (!m_transport) {
+            const auto action =
+                m_renderer.DrawMainMenu(m_options.remote.has_value(), m_nickname, m_errorMessage);
+            if (action == MainMenuAction::DISMISS_ERROR) {
+                m_errorMessage.clear();
+            } else if (action != MainMenuAction::NONE) {
+                StartGame(action);
+            }
+            continue;
         }
 
-        SendInput();
+        m_presentation.Advance(GetFrameTime());
+
+        auto failure = m_transport->Error();
+        if (!failure.empty()) {
+            ReturnToMenu(std::move(failure));
+            continue;
+        }
+
+        if (!SendInput()) {
+            failure = m_transport->Error();
+            ReturnToMenu(failure.empty() ? "Input was rejected by the server" : std::move(failure));
+            continue;
+        }
         ReceiveSnapshot();
 
         if (m_options.smoke) {
@@ -84,13 +110,39 @@ void ClientApplication::Run()
         ValidateSmokeProgress();
     }
 
-    m_transport->Close();
+    if (m_transport) {
+        m_transport->Close();
+    }
 }
 
-void ClientApplication::SendInput()
+void ClientApplication::StartGame(MainMenuAction action)
+{
+    if (action == MainMenuAction::SINGLE_PLAYER && !valid_nickname(m_nickname)) {
+        m_errorMessage = "Enter a valid nickname before starting";
+        return;
+    }
+    try {
+        m_transport = make_transport(m_options, action, m_nickname);
+    } catch (const std::exception& error) {
+        m_errorMessage = error.what();
+    }
+}
+
+void ClientApplication::ReturnToMenu(std::string errorMessage)
+{
+    m_transport->Close();
+    m_transport.reset();
+    m_presentation.Reset();
+    m_authoritativeState = {};
+    m_roomId = 0;
+    m_sequence = 0;
+    m_errorMessage = std::move(errorMessage);
+}
+
+bool ClientApplication::SendInput()
 {
     if (!m_transport->Connected()) {
-        return;
+        return true;
     }
 
     auto input = keyboard_input(m_transport->PlayerId(), ++m_sequence);
@@ -99,9 +151,7 @@ void ClientApplication::SendInput()
         input.z = 0;
     }
 
-    if (!m_transport->Send(input)) {
-        throw std::runtime_error("Input rejected: " + m_transport->Error());
-    }
+    return m_transport->Send(input);
 }
 
 void ClientApplication::ReceiveSnapshot()

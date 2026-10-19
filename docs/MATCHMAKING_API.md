@@ -23,7 +23,7 @@ sequenceDiagram
     M->>A: GET /v1/reservations
     A-->>M: 200 reserved, 방 ID, 남은 기한
     M-->>U: 게임 주소와 일회용 입장권
-    U->>T: TCP ClientHello(version=5, admission_ticket)
+    U->>T: TCP ClientHello(version=6, admission_ticket, nickname)
     T->>T: 입장권 소비 후 해당 방 입장
     T-->>U: ServerHello와 해당 방 Snapshot
 ```
@@ -72,7 +72,7 @@ API는 HTTP이며 게임 TCP도 현재 암호화하지 않습니다. 외부 매�
 `GET /v1/status`는 준비되었으면 200, 중지·시작 전·최근 Tick이 1초 이상 오래됐으면 503입니다.
 
 ```json
-{"instance_id":"<재시작마다 바뀌는 ID>","ready":true,"protocol_version":5,
+{"instance_id":"<재시작마다 바뀌는 ID>","ready":true,"protocol_version":6,
  "game_port":27015,"require_ticket":true,"reservation_seconds":30,
  "players_per_room":3,"capacity":24,"players":1,"reserved":2,"available":21,
  "tick":"123","tick_age_ms":5,"rooms":[{"room_id":"1","players":1,"reserved":2}]}
@@ -114,7 +114,7 @@ X-Admission-Ticket: <매칭 서비스가 secrets.token_hex(32) 등으로 생성�
 
 응답 유실 뒤 같은 입장권으로 PUT 또는 GET하면 기존 결과를 확인합니다. 생성 당시 기한이 지난 뒤 60초까지 결과를 보관하며, 이후 기록을 지웁니다. 이 보관 기간이 지난 요청을 다시 생성하는 것은 새 예약으로 취급될 수 있으므로 **한 번 발급한 입장권을 다시 사용하지 않습니다**. 프로세스 재시작 시 기록은 사라지며 인스턴스 헤더가 이전 요청의 재생성을 막습니다. 영속 저장소는 없습니다.
 
-입장권 없는 직접 접속은 일반 모드에서만 허용됩니다. 유효하지 않은/소비된/취소된/만료된 입장권은 직접 접속으로 대체하지 않고 `UNAVAILABLE`로 거부합니다. 프로토콜 v5는 v4 클라이언트와 호환되지 않아 양쪽을 함께 업데이트합니다.
+입장권 없는 직접 접속은 일반 모드에서만 허용됩니다. 유효하지 않은/소비된/취소된/만료된 입장권은 직접 접속으로 대체하지 않고 `UNAVAILABLE`로 거부합니다. 빈 값이나 정책에 맞지 않는 닉네임은 입장권을 소비하기 전에 `INVALID_NICKNAME`으로 거부합니다. 프로토콜 v6는 v5 클라이언트와 호환되지 않아 양쪽을 함께 업데이트합니다.
 
 ## 한도와 검증
 

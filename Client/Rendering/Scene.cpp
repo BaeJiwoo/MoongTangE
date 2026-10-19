@@ -1,5 +1,6 @@
 #include "Client/Rendering/Scene.h"
 
+#include "Common/Protocol/Nickname.h"
 #include "Common/SimulationConfig.h"
 
 #include <algorithm>
@@ -14,6 +15,42 @@ namespace {
 constexpr int BALL_RINGS = 20;
 constexpr int BALL_SECTORS = 32;
 constexpr float BALL_RADIUS = static_cast<float>(simulation::PLAYER_RADIUS);
+constexpr float START_BUTTON_WIDTH = 260;
+constexpr float START_BUTTON_HEIGHT = 64;
+constexpr float BUTTON_GAP = 18;
+constexpr float INPUT_WIDTH = 360;
+constexpr float INPUT_HEIGHT = 52;
+
+bool draw_menu_button(Rectangle bounds, const char* label, bool enabled)
+{
+    const bool hovered = enabled && CheckCollisionPointRec(GetMousePosition(), bounds);
+    const Color color = !enabled  ? Color{72, 78, 90, 255}
+                        : hovered ? Color{255, 151, 48, 255}
+                                  : Color{245, 128, 25, 255};
+    const Color textColor = enabled ? RAYWHITE : Color{145, 150, 160, 255};
+
+    DrawRectangleRounded(bounds, 0.18f, 8, color);
+    const int labelSize = 24;
+    DrawText(label,
+             static_cast<int>(bounds.x) +
+                 (static_cast<int>(bounds.width) - MeasureText(label, labelSize)) / 2,
+             static_cast<int>(bounds.y) + (static_cast<int>(bounds.height) - labelSize) / 2,
+             labelSize, textColor);
+
+    return hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+}
+
+void update_nickname(std::string& nickname)
+{
+    for (int character = GetCharPressed(); character != 0; character = GetCharPressed()) {
+        if (character >= 32 && character <= 126 && nickname.size() < MAX_NICKNAME_LENGTH) {
+            nickname.push_back(static_cast<char>(character));
+        }
+    }
+    if (IsKeyPressed(KEY_BACKSPACE) && !nickname.empty()) {
+        nickname.pop_back();
+    }
+}
 
 ::Vector3 render_vector(Vector3 value)
 {
@@ -54,9 +91,102 @@ void draw_overlay(std::uint64_t tick, std::uint32_t playerId, const char* mode, 
     DrawFPS(GetScreenWidth() - 100, 20);
 }
 
+void draw_player_label(const PlayerState& player, const Camera3D& camera)
+{
+    if (player.nickname.empty()) {
+        return;
+    }
+
+    const auto worldPosition =
+        render_vector(player.position + Vector3{0, simulation::PLAYER_RADIUS + 0.35, 0});
+    const auto screenPosition = GetWorldToScreen(worldPosition, camera);
+    const int fontSize = 16;
+    const int width = MeasureText(player.nickname.c_str(), fontSize);
+    DrawRectangle(static_cast<int>(screenPosition.x) - width / 2 - 5,
+                  static_cast<int>(screenPosition.y) - 3, width + 10, fontSize + 6,
+                  Color{12, 18, 30, 200});
+    DrawText(player.nickname.c_str(), static_cast<int>(screenPosition.x) - width / 2,
+             static_cast<int>(screenPosition.y), fontSize, RAYWHITE);
+}
+
 } // namespace
 
 SceneRenderer::SceneRenderer() : m_ballGeometry(MakeBallGeometry()) {}
+
+MainMenuAction SceneRenderer::DrawMainMenu(bool multiplayerAvailable, std::string& nickname,
+                                           const std::string& errorMessage) const
+{
+    const auto screenWidth = static_cast<float>(GetScreenWidth());
+    const auto screenHeight = static_cast<float>(GetScreenHeight());
+    const float buttonX = (screenWidth - START_BUTTON_WIDTH) * 0.5f;
+    const float firstButtonY = screenHeight * 0.52f;
+    const Rectangle singleButton{buttonX, firstButtonY, START_BUTTON_WIDTH, START_BUTTON_HEIGHT};
+    const Rectangle multiplayerButton{buttonX, firstButtonY + START_BUTTON_HEIGHT + BUTTON_GAP,
+                                      START_BUTTON_WIDTH, START_BUTTON_HEIGHT};
+
+    BeginDrawing();
+    ClearBackground(Color{22, 28, 42, 255});
+
+    const char* title = "MoongTangE";
+    const int titleSize = 54;
+    DrawText(title, (GetScreenWidth() - MeasureText(title, titleSize)) / 2,
+             static_cast<int>(screenHeight * 0.2f), titleSize, RAYWHITE);
+
+    const Rectangle nicknameBox{(screenWidth - INPUT_WIDTH) * 0.5f, screenHeight * 0.36f,
+                                INPUT_WIDTH, INPUT_HEIGHT};
+    DrawText("NICKNAME", static_cast<int>(nicknameBox.x), static_cast<int>(nicknameBox.y) - 25, 18,
+             LIGHTGRAY);
+    DrawRectangleRounded(nicknameBox, 0.12f, 6, Color{12, 18, 30, 255});
+    DrawRectangleRoundedLines(nicknameBox, 0.12f, 6, RAYWHITE);
+    const char* nicknameText = nickname.empty() ? "Enter nickname" : nickname.c_str();
+    DrawText(nicknameText, static_cast<int>(nicknameBox.x) + 16,
+             static_cast<int>(nicknameBox.y) + 15, 22,
+             nickname.empty() ? Color{110, 118, 132, 255} : RAYWHITE);
+
+    bool singleRequested = false;
+    bool multiplayerRequested = false;
+    if (errorMessage.empty()) {
+        update_nickname(nickname);
+        singleRequested = draw_menu_button(singleButton, "SINGLE PLAYER", true);
+        multiplayerRequested =
+            draw_menu_button(multiplayerButton, "MULTIPLAYER", multiplayerAvailable);
+    } else {
+        draw_menu_button(singleButton, "SINGLE PLAYER", false);
+        draw_menu_button(multiplayerButton, "MULTIPLAYER", false);
+    }
+
+    const char* hint =
+        multiplayerAvailable ? "Choose a game mode" : "Multiplayer requires a server assignment";
+    DrawText(hint, (GetScreenWidth() - MeasureText(hint, 16)) / 2,
+             static_cast<int>(multiplayerButton.y + multiplayerButton.height + 18), 16, LIGHTGRAY);
+
+    bool dismissError = false;
+    if (!errorMessage.empty()) {
+        const Rectangle shade{0, 0, screenWidth, screenHeight};
+        DrawRectangleRec(shade, Color{0, 0, 0, 150});
+        const Rectangle dialog{(screenWidth - 500) * 0.5f, (screenHeight - 210) * 0.5f, 500, 210};
+        DrawRectangleRounded(dialog, 0.08f, 8, Color{30, 37, 52, 255});
+        DrawText("COULD NOT START GAME", static_cast<int>(dialog.x) + 28,
+                 static_cast<int>(dialog.y) + 28, 24, Color{255, 151, 48, 255});
+        DrawText(errorMessage.data(), static_cast<int>(dialog.x) + 28,
+                 static_cast<int>(dialog.y) + 76, 18, RAYWHITE);
+        const Rectangle okButton{dialog.x + 170, dialog.y + 138, 160, 46};
+        dismissError = draw_menu_button(okButton, "OK", true) || IsKeyPressed(KEY_ENTER) ||
+                       IsKeyPressed(KEY_ESCAPE);
+    }
+    EndDrawing();
+
+    if (dismissError) {
+        return MainMenuAction::DISMISS_ERROR;
+    }
+    if (singleRequested) {
+        return MainMenuAction::SINGLE_PLAYER;
+    }
+    if (multiplayerRequested) {
+        return MainMenuAction::MULTIPLAYER;
+    }
+    return MainMenuAction::NONE;
+}
 
 std::vector<SceneRenderer::BallTriangle> SceneRenderer::MakeBallGeometry()
 {
@@ -131,6 +261,10 @@ void SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId, con
         DrawBall(player, player.id == playerId);
     }
     EndMode3D();
+
+    for (const auto& player : state.players) {
+        draw_player_label(player, camera);
+    }
 
     draw_overlay(state.tick, playerId, mode, status);
     EndDrawing();

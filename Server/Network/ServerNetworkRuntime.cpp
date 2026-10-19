@@ -1,5 +1,6 @@
 #include "Server/Network/ServerNetworkRuntime.h"
 
+#include "Common/Protocol/Nickname.h"
 #include "Network/Protocol/Codec.h"
 #include "Network/TcpChannel.h"
 
@@ -110,9 +111,15 @@ void ServerNetworkRuntime::HandleMessage(const std::shared_ptr<TcpChannel>& chan
 {
     auto& session = m_sessions.at(channel);
     if (!session.m_helloReceived) {
-        const auto ticket = wire::read_client_hello(data);
+        const auto hello = wire::read_client_hello(data);
         session.m_helloReceived = true;
-        session.m_playerId = m_serverHost->Connect(ticket);
+        if (!valid_nickname(hello.nickname)) {
+            session.m_rejected = true;
+            channel->SendAndClose(wire::server_hello({AdmissionStatus::INVALID_NICKNAME, 0, 0}),
+                                  "Invalid nickname");
+            return;
+        }
+        session.m_playerId = m_serverHost->Connect(hello.ticket, hello.nickname);
         CompleteAdmission(channel);
     } else if (wire::is_disconnect(data)) {
         channel->Close("Client disconnected");

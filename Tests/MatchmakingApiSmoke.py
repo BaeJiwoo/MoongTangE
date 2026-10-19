@@ -52,12 +52,13 @@ def varint(data, offset):
     raise AssertionError("Bad varint")
 
 
-def hello(game_port, ticket=""):
+def hello(game_port, ticket="", nickname="SmokePlayer"):
     peer = socket.create_connection(("127.0.0.1", game_port), timeout=3)
     try:
-        payload = bytes([1, 8, 5])
+        payload = bytes([1, 8, 6])
         if ticket:
             payload += bytes([18, 64]) + ticket.encode("ascii")
+        payload += bytes([26, len(nickname)]) + nickname.encode("ascii")
         peer.sendall(struct.pack("!I", len(payload)) + payload)
         size = struct.unpack("!I", receive_exact(peer, 4))[0]
         check(size <= 8192, "Oversized frame")
@@ -69,7 +70,7 @@ def hello(game_port, ticket=""):
             tag, offset = varint(response, offset)
             check(tag & 7 == 0, "Unexpected hello field")
             fields[tag >> 3], offset = varint(response, offset)
-        check(fields[1] == 5, "Wrong protocol version")
+        check(fields[1] == 6, "Wrong protocol version")
         return peer, fields
     except Exception:
         peer.close()

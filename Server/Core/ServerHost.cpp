@@ -1,6 +1,7 @@
 #include "Server/Core/ServerHost.h"
 
 #include "Common/Protocol/AdmissionTicket.h"
+#include "Common/Protocol/Nickname.h"
 #include "Common/SimulationConfig.h"
 #include "Server/Core/GameRoomManager.h"
 #include "Server/Core/TickScheduler.h"
@@ -67,10 +68,10 @@ void ServerHost::Stop()
     m_matchmakingState = {};
 }
 
-std::uint32_t ServerHost::Connect(const std::string& ticket)
+std::uint32_t ServerHost::Connect(const std::string& ticket, const std::string& nickname)
 {
     std::lock_guard lock(m_dataMutex);
-    if (!m_running || m_clients.size() >= Capacity() * 2 ||
+    if (!m_running || !valid_nickname(nickname) || m_clients.size() >= Capacity() * 2 ||
         m_pendingCommands.size() >= MAX_PENDING_COMMANDS || m_nextPlayerId == 0) {
         return 0;
     }
@@ -85,7 +86,7 @@ std::uint32_t ServerHost::Connect(const std::string& ticket)
         }
         auto& reservation = found->second;
         reservation.m_claimQueued = true;
-        m_clients.emplace(reservation.m_playerId, ClientState{});
+        m_clients.emplace(reservation.m_playerId, ClientState{AdmissionResult{}, nickname, 0});
         m_pendingCommands.push_back({WorldCommandType::CLAIM, reservation.m_playerId, ticket});
         return reservation.m_playerId;
     }
@@ -94,7 +95,7 @@ std::uint32_t ServerHost::Connect(const std::string& ticket)
     }
 
     const auto playerId = m_nextPlayerId++;
-    m_clients.emplace(playerId, ClientState{});
+    m_clients.emplace(playerId, ClientState{AdmissionResult{}, nickname, 0});
     m_pendingCommands.push_back({WorldCommandType::JOIN, playerId, {}});
     return playerId;
 }
@@ -290,6 +291,11 @@ void ServerHost::Run(std::stop_token stopToken)
             std::lock_guard lock(m_dataMutex);
             m_latestSnapshots.clear();
             for (auto& snapshot : snapshots) {
+                for (auto& player : snapshot.world.players) {
+                    if (const auto client = m_clients.find(player.id); client != m_clients.end()) {
+                        player.nickname = client->second.m_nickname;
+                    }
+                }
                 const auto roomId = snapshot.roomId;
                 m_latestSnapshots.emplace(roomId, std::move(snapshot));
             }

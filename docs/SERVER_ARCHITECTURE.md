@@ -6,15 +6,15 @@
 
 ### 방 입장 통신 — Issue #36
 
-프로토콜 v5는 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
+프로토콜 v6는 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
 성공한 Hello의 방 ID와 다른 Snapshot은 클라이언트가 거부합니다. `IClientTransport::RoomId()`는
 입장한 방을 제공하며 연결 종료 시 0입니다. 렌더링은 기존 `WorldSnapshot`을 사용하고,
 방이 바뀌면 보간 상태를 비웁니다. #37부터 실제 여러 방 배정과 비동기 입장 확정을 사용합니다.
 
 <details><summary>Network/Protocol/Codec.h · Codec.cpp — 방 통신</summary>
 
-- `server_hello` / `read_server_hello`: ACCEPTED는 양수 ID 두 개, FULL/UNAVAILABLE은 ID 0 두 개를 요구합니다. PENDING은 전송하지 않습니다.
-- `snapshot` / `read_snapshot`: 방 ID와 물리 Snapshot을 변환하고, 0인 방 ID와 기존 물리 값 오류를 거부합니다.
+- `server_hello` / `read_server_hello`: ACCEPTED는 양수 ID 두 개, FULL/UNAVAILABLE/INVALID_NICKNAME은 ID 0 두 개를 요구합니다. PENDING은 전송하지 않습니다.
+- `snapshot` / `read_snapshot`: 방 ID·닉네임·물리 Snapshot을 변환하고, 0인 방 ID와 기존 물리 값 오류를 거부합니다.
 - 입력에는 방 ID가 없으며 서버가 연결의 소속을 결정합니다. `NetworkProtocol` 빌드 대상과 Common의 의존성 분리는 유지합니다.
 
 </details>
@@ -94,7 +94,7 @@ sequenceDiagram
 
 ## 싱글플레이와 독립 서버
 
-싱글플레이의 `ClientApplication`은 `ServerHost`를 시작하고 `LocalTransport`로 입력과 Snapshot을 교환합니다. 소켓과 `ServerApplication`은 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
+싱글플레이의 `ClientApplication`은 메인 화면에서 닉네임을 입력하고 `SINGLE PLAYER`를 선택한 뒤 `ServerHost`를 시작하여 `LocalTransport`로 입력과 Snapshot을 교환합니다. 서버 배정 정보가 있으면 `MULTIPLAYER` 입력이 활성화되고, 선택 시 닉네임을 포함한 Hello로 `TcpClientTransport`가 접속합니다. 서버의 구조화된 입장 오류와 전송 오류는 클라이언트를 종료하지 않고 메뉴 모달에 표시합니다. 자동화용 `--smoke`만 메인 화면을 건너뛰고 실행 옵션에 맞는 전송 계층을 즉시 만듭니다. 소켓과 `ServerApplication`은 로컬 모드에 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
 
 `Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication`과 `MatchmakingApi` 구현을 제공하고, `TcpTransport`·`ServerOptions` 및 비공개 HTTP 의존성 `MatchmakingHttp`를 연결합니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며, Asio를 직접 포함하는 `ServerNetworkRuntime.h`의 독립 컴파일도 생략합니다.
 
@@ -320,7 +320,7 @@ TCP 연결 한도는 Hello 대기를 포함해 `Capacity() × 2`개(기본 48개
 | `encode<Message>()` / `decode<Message>()` (cpp 내부) | 메시지 종류와 Protobuf 직렬화/역직렬화, 크기·파서 한도를 공통 처리합니다. |
 | `write_vector()` / `read_vector()` / `write_quaternion()` / `read_quaternion()` (cpp 내부) | 벡터·회전을 Protobuf 필드와 게임 값 타입 사이에서 검증하며 변환합니다. |
 
-`PROTOCOL_VERSION = 4`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. MessageType의 대문자 이름 변경은 wire 바이트 값을 바꾸지 않습니다. `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
+`PROTOCOL_VERSION = 6`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. MessageType의 대문자 이름 변경은 wire 바이트 값을 바꾸지 않습니다. `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
 
 </details>
 
@@ -364,7 +364,7 @@ flowchart LR
 
 TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + Protobuf 본문**입니다. 종류별 필수 값, 입력 범위, ID, 중복 플레이어, quaternion 정규화와 유한한 실수를 변환 시 검증합니다. 플레이어 ID는 클라이언트 입력 메시지에 없으며 접속 세션의 ID를 서버에서 주입합니다.
 
-최대 메시지는 8KiB이며, 코덱의 방어적 상한은 32명이며 최대 길이 플레이어·방 ID·Tick을 넣은 Snapshot은 종류 바이트를 포함해 4,311바이트입니다. 실제 게임방은 최대 3명만 허용합니다. 이를 수용하기 위해 이전 4KiB 한도를 올렸습니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는 16으로 제한합니다. 프로토콜 버전은 4이며 이전 v1/v2/v3 Hello는 거부합니다. 알 수 없는 Protobuf 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
+최대 메시지는 8KiB이며, 코덱의 방어적 상한은 32명입니다. 최대 길이 플레이어·방 ID·Tick과 16자 닉네임을 넣은 Snapshot은 종류 바이트를 포함해 4,887바이트입니다. 실제 게임방은 최대 3명만 허용합니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는 16으로 제한합니다. 프로토콜 버전은 6이며 이전 v1~v5 Hello는 거부합니다. 알 수 없는 Protobuf 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
 
 ## 시작과 종료
 
@@ -430,9 +430,9 @@ API 계약·예제 실행은 [MATCHMAKING_API.md](MATCHMAKING_API.md)에 정리�
 
 </details>
 
-<details><summary>Network/Protocol/Codec.h · Codec.cpp — v5 입장권</summary>
+<details><summary>Network/Protocol/Codec.h · Codec.cpp — v6 입장권과 닉네임</summary>
 
-`client_hello(ticket)` / `read_client_hello`가 선택적인 64자리 소문자 hex 입장권을 처리합니다. `ServerNetworkRuntime::HandleMessage`는 이를 Connect에 전달합니다. 플레이어·방 ID는 서버만 결정하며, 프레임 한도와 Snapshot 격리를 유지합니다.
+`client_hello(ticket, nickname)` / `read_client_hello`가 선택적인 64자리 소문자 hex 입장권과 닉네임을 처리합니다. `ServerNetworkRuntime::HandleMessage`는 닉네임을 먼저 검증해 잘못된 값에는 `INVALID_NICKNAME`을 보내며 입장권을 소비하지 않습니다. `ServerHost`는 승인된 닉네임을 Snapshot의 플레이어 상태에 결합합니다. 플레이어·방 ID는 서버만 결정하며, 프레임 한도와 Snapshot 격리를 유지합니다.
 
 </details>
 

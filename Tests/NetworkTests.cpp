@@ -120,7 +120,8 @@ void slow_peer_queue_is_bounded_before_io_progress()
 
 void clients_receive_authoritative_rolling(const AsioServer& server, ServerHost& core)
 {
-    TcpClientTransport first("127.0.0.1", server.Port()), second("127.0.0.1", server.Port());
+    TcpClientTransport first("127.0.0.1", server.Port(), {}, "Alice"),
+        second("127.0.0.1", server.Port(), {}, "Bob");
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         return first.Connected() && second.Connected();
     }));
@@ -134,6 +135,7 @@ void clients_receive_authoritative_rolling(const AsioServer& server, ServerHost&
         if (auto state = first.Receive()) {
             for (const auto& player : state->players) {
                 if (player.id == firstId && player.velocity.x > 0.5) {
+                    MOONGTANGE_CHECK(player.nickname == "Alice");
                     MOONGTANGE_CHECK(MoongTangE::test::approx(player.angularVelocity.z,
                                                               -player.velocity.x / 0.5));
                     MOONGTANGE_CHECK(player.orientation != Quaternion{} &&
@@ -152,6 +154,25 @@ void clients_receive_authoritative_rolling(const AsioServer& server, ServerHost&
         return std::ranges::all_of(core.Snapshots(), [](const auto& room) {
             return room.world.players.empty();
         });
+    }));
+}
+
+void invalid_nickname_is_rejected(const AsioServer& server)
+{
+    asio::io_context io;
+    asio::ip::tcp::socket client(io);
+    client.connect({asio::ip::make_address("127.0.0.1"), server.Port()});
+    const auto greeting = wire::frame(wire::client_hello({}, ""));
+    asio::write(client, asio::buffer(greeting));
+
+    const auto admission = wire::read_server_hello(read_frame(client));
+    MOONGTANGE_CHECK(admission.status == AdmissionStatus::INVALID_NICKNAME);
+    MOONGTANGE_CHECK(admission.playerId == 0 && admission.roomId == 0);
+    MOONGTANGE_CHECK(closed(client));
+
+    TcpClientTransport invalid("127.0.0.1", server.Port(), {}, "");
+    MOONGTANGE_CHECK(test::wait_for([&] {
+        return invalid.Error() == "Enter a valid nickname before joining multiplayer";
     }));
 }
 
@@ -192,7 +213,7 @@ void fragmented_frames_and_disconnect(const AsioServer& server)
         asio::ip::tcp::socket raw(io);
         raw.connect(endpoint);
 
-        const auto greeting = wire::frame(wire::client_hello());
+        const auto greeting = wire::frame(wire::client_hello({}, "RawPlayer"));
         for (const auto byte : greeting) {
             asio::write(raw, asio::buffer(&byte, 1));
         }
@@ -287,6 +308,7 @@ int main()
         MoongTangE::AsioServer server(core, "127.0.0.1", 0);
 
         clients_receive_authoritative_rolling(server, *core);
+        invalid_nickname_is_rejected(server);
         fragmented_frames_and_disconnect(server);
         malformed_frames_are_rejected(server);
         connection_failure_and_early_close(server);
