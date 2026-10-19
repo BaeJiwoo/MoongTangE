@@ -1,6 +1,7 @@
 #include "Common/Game/GameWorld.h"
 #include "TestSupport.h"
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
 
@@ -73,5 +74,19 @@ int main()
             MOONGTANGE_CHECK(world.AddPlayer(id));
         }
         MOONGTANGE_CHECK(!world.AddPlayer(33));
+
+        MoongTangE::GameWorld collisionWorld;
+        MOONGTANGE_CHECK(collisionWorld.AddPlayer(1));
+        MOONGTANGE_CHECK(collisionWorld.AddPlayer(2));
+        MOONGTANGE_CHECK(collisionWorld.Apply({1, 1, 1, 0}));
+        MOONGTANGE_CHECK(collisionWorld.Apply({2, 1, -1, 0}));
+        for (int tick = 0; tick < 180; ++tick) {
+            collisionWorld.Step();
+            const auto players = collisionWorld.Snapshot().players;
+            const auto separation = players[1].position - players[0].position;
+            MOONGTANGE_CHECK(separation.Length() + 1e-9 >=
+                             2 * MoongTangE::simulation::PLAYER_RADIUS);
+            MOONGTANGE_CHECK(players[0].position.x <= players[1].position.x);
+        }
     });
 }

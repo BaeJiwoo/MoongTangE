@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common/Game/PlayerController.h"
+#include "Common/Physics/Collision/SphereSphere.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "Common/Protocol/InputCommand.h"
 #include "Common/Protocol/WorldSnapshot.h"
@@ -10,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <map>
 
 namespace MoongTangE {
@@ -76,6 +78,8 @@ class GameWorld
             m_physics.Step(player.body, PhysicsWorld::FIXED_DELTA, force);
         }
 
+        ResolvePlayerCollisions();
+
         ++m_tick;
     }
 
@@ -93,6 +97,8 @@ class GameWorld
     }
 
   private:
+    static constexpr int COLLISION_SOLVER_ITERATIONS = 4;
+
     struct Player
     {
         RigidBody body;
@@ -101,6 +107,21 @@ class GameWorld
         InputCommand input;
         std::uint64_t inputTick{};
     };
+
+    void ResolvePlayerCollisions()
+    {
+        for (int iteration = 0; iteration < COLLISION_SOLVER_ITERATIONS; ++iteration) {
+            for (auto first = m_players.begin(); first != m_players.end(); ++first) {
+                for (auto second = std::next(first); second != m_players.end(); ++second) {
+                    resolve_sphere_collision(first->second.body, second->second.body);
+                }
+            }
+            for (auto& [id, player] : m_players) {
+                (void)id;
+                m_physics.ConstrainToTerrain(player.body);
+            }
+        }
+    }
 
     std::map<std::uint32_t, Player> m_players;
     std::array<bool, MAX_PLAYERS> m_spawnSlots{};

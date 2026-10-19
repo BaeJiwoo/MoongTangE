@@ -1,3 +1,4 @@
+#include "Common/Physics/Collision/SphereSphere.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "TestSupport.h"
 
@@ -56,6 +57,30 @@ void varied_terrain_contacts()
             MOONGTANGE_CHECK(normalDistance + 1e-9 >= body.radius);
         }
     }
+}
+
+void sphere_pair_collision_response()
+{
+    RigidBody first;
+    RigidBody second;
+    first.position = {-0.4, 0.5, 0};
+    second.position = {0.4, 0.5, 0};
+    first.velocity = {1, 0, 0};
+    second.velocity = {-1, 0, 0};
+    const double energyBefore = kinetic_energy(first) + kinetic_energy(second);
+
+    MOONGTANGE_CHECK(resolve_sphere_collision(first, second));
+    MOONGTANGE_CHECK((second.position - first.position).Length() >= first.radius + second.radius);
+    MOONGTANGE_CHECK(first.velocity.x < 0 && second.velocity.x > 0);
+    MOONGTANGE_CHECK(kinetic_energy(first) + kinetic_energy(second) <= energyBefore);
+
+    first.position = {-0.4, 0.5, 0};
+    second.position = {0.4, 0.5, 0};
+    first.velocity = {-1, 0, 0};
+    second.velocity = {1, 0, 0};
+    MOONGTANGE_CHECK(resolve_sphere_collision(first, second));
+    MOONGTANGE_CHECK(first.velocity == Vector3{-1, 0, 0});
+    MOONGTANGE_CHECK(second.velocity == Vector3{1, 0, 0});
 }
 
 void rolling_distance_matches_rotation()
@@ -189,6 +214,7 @@ int main()
     return MoongTangE::test::run([] {
         gravity_and_ground_contact();
         varied_terrain_contacts();
+        sphere_pair_collision_response();
         rolling_distance_matches_rotation();
         sliding_converts_to_rolling_and_coasts_to_rest();
         opposite_input_brakes_before_reversing();

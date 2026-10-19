@@ -58,6 +58,14 @@ class PhysicsWorld
         body.orientation = (rotation * body.orientation).Normalized();
     }
 
+    void ConstrainToTerrain(RigidBody& body) const
+    {
+        const auto contact = terrain_contact(body);
+        if (contact.penetration > 0) {
+            resolve_terrain(body, contact);
+        }
+    }
+
   private:
     static constexpr double MAX_STEP = 0.1;
     static constexpr double CONTACT_TOLERANCE = 1e-9;
