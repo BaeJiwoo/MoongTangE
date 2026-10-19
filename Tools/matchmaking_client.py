@@ -1,6 +1,6 @@
 """Matching-service adapter/example; Python standard library only.
 
-Keep MOONGTANGE_API_KEY on the matching backend, never in the game client.
+Keep MOONGTANGE_PUBLIC_API_KEY on the matching backend, never in the game client.
 The caller authenticates the user and owns the user-to-ticket association.
 """
 import argparse
@@ -22,15 +22,13 @@ class MatchmakingClient:
             raise ValueError("API URL must be an http(s) origin without credentials or a path")
         self.api_key = api_key
 
-    def request(self, method, path, ticket=None, instance=None):
+    def request(self, method, path, ticket=None):
         connection_type = (http.client.HTTPSConnection if self.endpoint.scheme == "https"
                            else http.client.HTTPConnection)
         connection = connection_type(self.endpoint.hostname, self.endpoint.port, timeout=2)
         headers = {"Authorization": "Bearer " + self.api_key}
         if ticket is not None:
             headers["X-Admission-Ticket"] = ticket
-        if instance is not None:
-            headers["X-Server-Instance"] = instance
         try:
             connection.request(method, path, body=b"", headers=headers)
             response = connection.getresponse()
@@ -41,18 +39,17 @@ class MatchmakingClient:
         finally:
             connection.close()
 
-    def reserve(self, game_host):
-        code, state = self.request("GET", "/v1/status")
+    def reserve(self):
+        code, state = self.request("GET", "/matchmaking/status")
         if code != 200 or not state.get("ready"):
             raise RuntimeError("Game server is not ready")
         # 256-bit bearer credential doubles as the idempotency key. Never recycle it.
         ticket = secrets.token_hex(32)
-        instance = state["instance_id"]
         deadline = time.monotonic() + 5
         try:
             while time.monotonic() < deadline:
                 try:
-                    code, result = self.request("PUT", "/v1/reservations", ticket, instance)
+                    code, result = self.request("PUT", "/matchmaking/reservations", ticket)
                 except (OSError, http.client.HTTPException):
                     # A lost response may follow a successful allocation; reuse the same key.
                     time.sleep(0.05)
@@ -60,9 +57,9 @@ class MatchmakingClient:
                 if code == 200 and result.get("status") == "reserved":
                     if result["expires_in_ms"] <= 0:
                         raise TimeoutError("Reservation expired before assignment delivery")
-                    return {"host": game_host, "port": state["game_port"],
-                            "protocol_version": state["protocol_version"],
-                            "instance_id": instance, "room_id": result["room_id"],
+                    return {"host": result["game_host"], "port": result["game_port"],
+                            "protocol_version": result["protocol_version"],
+                            "server_id": result["server_id"], "room_id": result["room_id"],
                             "expires_in_ms": result["expires_in_ms"],
                             "ticket": ticket}
                 if code not in (202, 503):
@@ -72,7 +69,7 @@ class MatchmakingClient:
         except Exception:
             # Cancellation itself can fail; the bounded reservation TTL is the final cleanup.
             try:
-                self.request("DELETE", "/v1/reservations", ticket, instance)
+                self.request("DELETE", "/matchmaking/reservations", ticket)
             except (OSError, ValueError, http.client.HTTPException):
                 pass
             raise
@@ -81,15 +78,14 @@ class MatchmakingClient:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api", default="http://127.0.0.1:27016")
-    parser.add_argument("--game-host", default="127.0.0.1")
     parser.add_argument("--client", help="Launch this Client executable after reservation")
     options = parser.parse_args()
-    assignment = MatchmakingClient(options.api, os.environ["MOONGTANGE_API_KEY"]).reserve(options.game_host)
+    assignment = MatchmakingClient(options.api, os.environ["MOONGTANGE_PUBLIC_API_KEY"]).reserve()
     if options.client:
         host = assignment["host"]
         endpoint = ("[" + host + "]" if ":" in host else host) + ":" + str(assignment["port"])
         client_environment = os.environ.copy()
-        client_environment.pop("MOONGTANGE_API_KEY", None)
+        client_environment.pop("MOONGTANGE_PUBLIC_API_KEY", None)
         return subprocess.call([options.client, "--connect", endpoint, "--ticket", assignment["ticket"]],
                                env=client_environment)
     # Demo output is an assignment delivered to the requesting user, not a server log.

@@ -1,6 +1,6 @@
 # MoongTangE
 
-매칭 API 연결은 [API 계약과 실행 방법](docs/MATCHMAKING_API.md), [연동 예제](Tools/matchmaking_client.py)를 참고하세요. 별도 HTTP 포트에서 상태 조회와 자리 예약·취소를 제공하고, 예약까지 포함해 방당 3명을 제한합니다. `--api-port 27016 --require-ticket`과 `MOONGTANGE_API_KEY`로 활성화합니다. 프로토콜 v6이므로 클라이언트와 서버를 함께 업데이트합니다. 외부 매칭 서비스의 저장소는 아직 연결하지 않았으며 상태 조회를 사용하는 어댑터를 제공합니다.
+매칭 계층은 ASP.NET Core API와 C++ 게임 소켓 서버를 서로 다른 프로세스·호스트로 배포할 수 있게 분리되어 있습니다. [API 계약과 실행 방법](docs/MATCHMAKING_API.md), [연동 예제](Tools/matchmaking_client.py)를 참고하세요. C++ 서버는 HTTP를 수신하지 않고 외부 API로 등록·heartbeat를 보내며, 최종 예약과 일회용 입장권 소비는 서버 Tick이 처리합니다.
 
 MoongTangE는 C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 서비스입니다.
 
@@ -25,6 +25,7 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 | 영역 | 기술 |
 | --- | --- |
 | 언어 | C++20 |
+| 매칭 API | ASP.NET Core 8 |
 | 빌드 | CMake |
 | 네트워크 | Standalone Asio 1.38.2, TCP |
 | 직렬화 | Protobuf 36.2 (C++ 런타임 7.36.2), 프로토콜 v6 |
@@ -34,7 +35,7 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 
 ## 빌드
 
-CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 네트워크 자동 테스트에는 Python 3도 필요합니다. 첫 구성 시 고정된 외부 소스를 다운로드하므로 인터넷 연결이 필요합니다. 다운로드는 SHA-256으로 검증합니다.
+CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 분리형 매칭 API와 통합 테스트에는 .NET 8 SDK와 Python 3도 필요합니다. 첫 구성 시 고정된 외부 소스를 다운로드하므로 인터넷 연결이 필요합니다. 다운로드는 SHA-256으로 검증합니다.
 
 기존 빌드 폴더도 아래의 현재 옵션 이름으로 다시 구성하세요. 전체 빌드는 `MOONGTANGE_BUILD_CLIENT=ON`, `MOONGTANGE_BUILD_NETWORK=ON`이 기본값이고, 코어 전용 구성은 두 옵션을 명시적으로 `OFF`로 지정합니다.
 
@@ -97,6 +98,24 @@ Linux / macOS의 일반 단일 구성 빌드에서는 실행 파일이 `build/Cl
 `MULTIPLAYER`를 선택하면 `--connect` 또는 매치메이킹으로 배정받은 TCP 서버에 접속합니다.
 서버 배정 정보가 없으면 멀티플레이 버튼은 비활성화됩니다. `--smoke` 실행은 자동 테스트를
 위해 메인 화면을 건너뜁니다.
+
+메인 화면의 `OPTIONS`에서는 출력 모니터와 `WINDOWED`, `FULLSCREEN WINDOWED`(테두리 없는
+전체화면), `FULLSCREEN` 모드를 선택할 수 있습니다. 기본 창 크기는 `1280×800`이고 창 모드
+해상도는 `1100×720`, `1280×720`, `1280×800`, `1600×900`, `1920×1080`,
+`2560×1440`, `3840×2160`(4K)을 제공하며
+전체화면 계열은 선택한 모니터의 기본 해상도와 주사율을 사용합니다. raylib는 모니터가
+지원하는 전체 영상 모드 목록을 제공하지 않으므로 주사율은 현재 값을 표시하되 임의의
+선택지는 만들지 않습니다. VSync와 30, 60, 120, 144, 240 FPS 또는 무제한 프레임 제한도
+설정할 수 있습니다. 메뉴, 설정 창, 확인 창, 게임 HUD와 플레이어 이름표는 1100×720 기준
+UI 캔버스에서 화면 비율을 유지하며 현재 해상도에 맞게 함께 확대·축소됩니다.
+
+`APPLY`는 변경을 즉시 시험하고 15초 확인 창을 엽니다. `KEEP` 또는 Enter를 누른 설정만
+저장하며, `REVERT`, Escape 또는 제한 시간 만료 시 직전에 확인한 설정으로 복구합니다.
+일반 설정 화면의 `CANCEL`도 아직 적용하지 않은 선택을 버립니다. 확인한 설정은 Windows의
+`%APPDATA%\MoongTangE\display.cfg`, macOS의
+`~/Library/Application Support/MoongTangE/display.cfg`, Linux의
+`$XDG_CONFIG_HOME/MoongTangE/display.cfg`(미지정 시 `~/.config`)에 저장되어 다음 실행에
+적용됩니다.
 
 메인 화면에서 1~16자의 영문·숫자·공백·`_`·`-` 닉네임을 입력합니다. 서버는 멀티플레이
 입장 전에 닉네임을 검증하며 거부 사유는 클라이언트 팝업으로 표시됩니다. 입장한 플레이어의
