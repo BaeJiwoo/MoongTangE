@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,11 @@ class SceneRenderer
 {
   public:
     SceneRenderer();
+    ~SceneRenderer();
+    SceneRenderer(const SceneRenderer&) = delete;
+    SceneRenderer& operator=(const SceneRenderer&) = delete;
+    SceneRenderer(SceneRenderer&&) = delete;
+    SceneRenderer& operator=(SceneRenderer&&) = delete;
 
     MainMenuAction DrawMainMenu(bool multiplayerAvailable, bool optionsOpen,
                                 const DisplaySettingsState& selectedSettings, bool confirmationOpen,
@@ -55,8 +61,12 @@ class SceneRenderer
     static std::vector<BallTriangle> MakeBallGeometry();
 
     void DrawBall(const PlayerState& player, bool own) const;
+    void DrawCollectible(const CollectibleState& collectible) const;
+
+    class CollectibleModels;
 
     std::vector<BallTriangle> m_ballGeometry;
+    std::unique_ptr<CollectibleModels> m_collectibleModels;
 };
 
 } // namespace MoongTangE
