@@ -48,10 +48,11 @@ endif()
 if(MOONGTANGE_BUILD_CLIENT)
   add_executable(Client Client/main.cpp Client/ClientApplication.cpp Client/Rendering/Scene.cpp)
   target_link_libraries(Client PRIVATE ClientDisplaySettings ServerCore raylib)
-  add_custom_command(TARGET Client POST_BUILD
+  add_custom_target(moongtange_client_assets ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${PROJECT_SOURCE_DIR}/Assets" "$<TARGET_FILE_DIR:Client>/Assets"
     COMMENT "Copying client assets")
+  add_dependencies(Client moongtange_client_assets)
   if(MSVC)
     # std::getenv is used read-only for an optional smoke-test screenshot path.
     target_compile_definitions(Client PRIVATE _CRT_SECURE_NO_WARNINGS)
