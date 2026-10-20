@@ -1,4 +1,5 @@
 #include "Common/Game/GameWorld.h"
+#include "Common/Physics/Terrain.h"
 #include "TestSupport.h"
 
 #include <algorithm>
@@ -29,8 +30,10 @@ int main()
             MOONGTANGE_CHECK(collectible.id == index + 1);
             MOONGTANGE_CHECK(MoongTangE::valid_collectible_kind(collectible.kind));
             MOONGTANGE_CHECK(scales.insert(collectible.scale).second);
+            const auto terrain =
+                MoongTangE::terrain_sample(collectible.position.x, collectible.position.z);
             MOONGTANGE_CHECK(MoongTangE::test::approx(
-                collectible.position.y,
+                collectible.position.y - terrain.height,
                 MoongTangE::simulation::COLLECTIBLE_BASE_RADIUS * collectible.scale));
 
             for (std::size_t other = 0; other < index; ++other) {

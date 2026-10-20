@@ -3,6 +3,7 @@
 #include "Common/Game/PlayerController.h"
 #include "Common/Physics/DeformableBallCollider.h"
 #include "Common/Physics/PhysicsWorld.h"
+#include "Common/Physics/Terrain.h"
 #include "Common/Protocol/InputCommand.h"
 #include "Common/Protocol/WorldSnapshot.h"
 #include "Common/SimulationConfig.h"
@@ -259,7 +260,9 @@ class GameWorld
                 continue;
             }
 
-            position.y = falling ? simulation::COLLECTIBLE_DROP_HEIGHT : collectible.body.radius;
+            position.y =
+                falling ? simulation::COLLECTIBLE_DROP_HEIGHT
+                        : terrain_sample(position.x, position.z).height + collectible.body.radius;
             collectible.body.position = position;
             m_collectibles.push_back(collectible);
             ++m_nextCollectibleId;

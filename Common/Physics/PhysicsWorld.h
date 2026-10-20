@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/Physics/Collision/SphereTerrain.h"
 #include "Common/Physics/DeformableBallCollider.h"
 #include "Common/Physics/RigidBody.h"
 #include "Common/SimulationConfig.h"
@@ -43,28 +44,36 @@ class PhysicsWorld
     {
         ValidateStep(body, dt, groundForce);
 
-        const Vector3 contactArm = collider.Support(body.orientation, {0, -1, 0});
         groundForce.y = 0;
-        ApplyForces(body, contactArm, dt, groundForce);
+        auto contact = MakeContact(body, collider);
+        ApplyForces(body, contact, dt, groundForce);
         body.position.y += body.velocity.y * dt;
 
-        if (body.position.y + contactArm.y <= 0) {
-            ResolveContact(body, contactArm, dt, groundForce);
+        contact = MakeContact(body, collider);
+        if (contact.terrain.penetration >= 0) {
+            ResolveContact(body, contact, dt, groundForce);
         }
 
         body.position.x += body.velocity.x * dt;
         body.position.z += body.velocity.z * dt;
 
+        contact = MakeContact(body, collider);
+        CorrectPenetration(body, contact.terrain);
+
         const auto rotation = Quaternion::FromRotation(body.angularVelocity * dt);
         body.orientation = (rotation * body.orientation).Normalized();
 
-        const Vector3 updatedContactArm = collider.Support(body.orientation, {0, -1, 0});
-        if (body.position.y + updatedContactArm.y < 0) {
-            body.position.y = -updatedContactArm.y;
-        }
+        contact = MakeContact(body, collider);
+        CorrectPenetration(body, contact.terrain);
     }
 
   private:
+    struct ColliderTerrainContact
+    {
+        TerrainContact terrain;
+        Vector3 arm;
+    };
+
     static constexpr double MAX_STEP = 0.1;
     static constexpr double CONTACT_TOLERANCE = 1e-9;
     static constexpr double SLEEP_SPEED = 0.015;
@@ -80,28 +89,49 @@ class PhysicsWorld
         }
     }
 
-    static void ApplyForces(RigidBody& body, Vector3 contactArm, double dt, Vector3 groundForce)
+    static ColliderTerrainContact MakeContact(const RigidBody& body,
+                                              const DeformableBallCollider& collider)
     {
-        const Vector3 contactVelocity = body.velocity + cross(body.angularVelocity, contactArm);
-        const bool grounded = body.position.y + contactArm.y <= CONTACT_TOLERANCE &&
-                              contactVelocity.y <= CONTACT_TOLERANCE;
+        const auto sample = terrain_sample(body.position.x, body.position.z);
+        const Vector3 contactArm = collider.Support(body.orientation, sample.normal * -1);
+        const double normalDistance = (body.position.y - sample.height) * sample.normal.y;
+        const double supportDistance = -dot(contactArm, sample.normal);
+        return {{sample.normal, supportDistance - normalDistance}, contactArm};
+    }
+
+    static void CorrectPenetration(RigidBody& body, TerrainContact contact)
+    {
+        if (contact.penetration > 0) {
+            body.position = body.position + contact.normal * contact.penetration;
+        }
+    }
+
+    static void ApplyForces(RigidBody& body, const ColliderTerrainContact& contact, double dt,
+                            Vector3 groundForce)
+    {
+        const Vector3 contactVelocity = body.velocity + cross(body.angularVelocity, contact.arm);
+        const bool grounded = contact.terrain.penetration >= -CONTACT_TOLERANCE &&
+                              dot(contactVelocity, contact.terrain.normal) <= CONTACT_TOLERANCE;
         if (grounded) {
+            groundForce =
+                groundForce - contact.terrain.normal * dot(groundForce, contact.terrain.normal);
             body.velocity = body.velocity + groundForce * (dt / body.mass);
         }
 
         body.velocity = body.velocity + Vector3{0, -simulation::GRAVITY, 0} * dt;
     }
 
-    void ApplyGroundDrag(RigidBody& body, double dt) const
+    void ApplyGroundDrag(RigidBody& body, double dt, Vector3 normal) const
     {
         const double damping = std::exp(-m_material.groundDrag * dt / body.mass);
-        body.velocity.x *= damping;
-        body.velocity.z *= damping;
+        const Vector3 normalVelocity = normal * dot(body.velocity, normal);
+        body.velocity = normalVelocity + (body.velocity - normalVelocity) * damping;
     }
 
-    void ApplyRollingResistance(RigidBody& body, Vector3 contactArm, double dt) const
+    void ApplyRollingResistance(RigidBody& body, Vector3 contactArm, double dt,
+                                Vector3 normal) const
     {
-        const Vector3 rolling{body.angularVelocity.x, 0, body.angularVelocity.z};
+        const Vector3 rolling = body.angularVelocity - normal * dot(body.angularVelocity, normal);
         const double speed = rolling.Length();
         if (speed == 0) {
             return;
@@ -120,27 +150,27 @@ class PhysicsWorld
             body.angularVelocity + cross(contactArm, impulse) * (1.0 / body.Inertia());
     }
 
-    static double ApplyNormalImpulse(RigidBody& body, Vector3 contactArm)
+    static double ApplyNormalImpulse(RigidBody& body, Vector3 contactArm, Vector3 normal)
     {
-        constexpr Vector3 GROUND_NORMAL{0, 1, 0};
         const Vector3 contactVelocity = body.velocity + cross(body.angularVelocity, contactArm);
-        const double normalSpeed = dot(contactVelocity, GROUND_NORMAL);
+        const double normalSpeed = dot(contactVelocity, normal);
         if (normalSpeed >= 0) {
             return 0;
         }
 
-        const Vector3 rotationalArm = cross(contactArm, GROUND_NORMAL);
+        const Vector3 rotationalArm = cross(contactArm, normal);
         const double inverseEffectiveMass =
             1.0 / body.mass + dot(rotationalArm, rotationalArm) / body.Inertia();
         const double impulseMagnitude = -normalSpeed / inverseEffectiveMass;
-        ApplyImpulse(body, contactArm, GROUND_NORMAL * impulseMagnitude);
+        ApplyImpulse(body, contactArm, normal * impulseMagnitude);
         return impulseMagnitude;
     }
 
-    void ApplyContactFriction(RigidBody& body, Vector3 contactArm, double normalImpulse) const
+    void ApplyContactFriction(RigidBody& body, Vector3 contactArm, double normalImpulse,
+                              Vector3 normal) const
     {
         const Vector3 contactVelocity = body.velocity + cross(body.angularVelocity, contactArm);
-        const Vector3 slip{contactVelocity.x, 0, contactVelocity.z};
+        const Vector3 slip = contactVelocity - normal * dot(contactVelocity, normal);
         const double slipSpeed = slip.Length();
         if (slipSpeed == 0) {
             return;
@@ -157,29 +187,28 @@ class PhysicsWorld
         ApplyImpulse(body, contactArm, slipDirection * -impulseMagnitude);
     }
 
-    void SleepIfResting(RigidBody& body, Vector3 contactArm, Vector3 groundForce) const
+    void SleepIfResting(RigidBody& body, Vector3 contactArm, Vector3 groundForce,
+                        Vector3 normal) const
     {
-        const double linearSpeed = std::hypot(body.velocity.x, body.velocity.z);
+        const Vector3 tangentialVelocity = body.velocity - normal * dot(body.velocity, normal);
         const Vector3 contactSpin = cross(body.angularVelocity, contactArm);
-        const double rollingSpeed = std::hypot(contactSpin.x, contactSpin.z);
+        const Vector3 tangentialSpin = contactSpin - normal * dot(contactSpin, normal);
         if (groundForce.Length() == 0 && m_material.rollingResistance > 0 &&
-            linearSpeed < SLEEP_SPEED && rollingSpeed < SLEEP_SPEED) {
-            body.velocity.x = 0;
-            body.velocity.z = 0;
-            body.angularVelocity.x = 0;
-            body.angularVelocity.z = 0;
+            tangentialVelocity.Length() < SLEEP_SPEED && tangentialSpin.Length() < SLEEP_SPEED) {
+            body.velocity = normal * dot(body.velocity, normal);
+            body.angularVelocity = normal * dot(body.angularVelocity, normal);
         }
     }
 
-    void ResolveContact(RigidBody& body, Vector3 contactArm, double dt, Vector3 groundForce) const
+    void ResolveContact(RigidBody& body, const ColliderTerrainContact& contact, double dt,
+                        Vector3 groundForce) const
     {
-        body.position.y = -contactArm.y;
-        const double normalImpulse = ApplyNormalImpulse(body, contactArm);
-        ApplyGroundDrag(body, dt);
-        ApplyRollingResistance(body, contactArm, dt);
-        ApplyContactFriction(body, contactArm, normalImpulse);
-
-        SleepIfResting(body, contactArm, groundForce);
+        CorrectPenetration(body, contact.terrain);
+        const double normalImpulse = ApplyNormalImpulse(body, contact.arm, contact.terrain.normal);
+        ApplyGroundDrag(body, dt, contact.terrain.normal);
+        ApplyRollingResistance(body, contact.arm, dt, contact.terrain.normal);
+        ApplyContactFriction(body, contact.arm, normalImpulse, contact.terrain.normal);
+        SleepIfResting(body, contact.arm, groundForce, contact.terrain.normal);
     }
 
     PhysicsMaterial m_material;

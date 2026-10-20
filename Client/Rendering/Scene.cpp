@@ -1,6 +1,7 @@
 #include "Client/Rendering/Scene.h"
 
 #include "Client/Rendering/UiLayout.h"
+#include "Common/Physics/Terrain.h"
 #include "Common/Protocol/Nickname.h"
 #include "Common/SimulationConfig.h"
 
@@ -372,6 +373,22 @@ void draw_player_label(const PlayerState& player, const Camera3D& camera, const 
              static_cast<int>(screenPosition.y), fontSize, RAYWHITE);
 }
 
+void draw_terrain()
+{
+    DrawPlane({0, 0, 0}, {100, 100}, Color{50, 65, 80, 255});
+    DrawGrid(40, 1);
+
+    DrawCylinder({static_cast<float>(POINTED_TERRAIN.x), 0, static_cast<float>(POINTED_TERRAIN.z)},
+                 0, static_cast<float>(POINTED_TERRAIN.radius),
+                 static_cast<float>(POINTED_TERRAIN.height), 32, Color{150, 86, 54, 255});
+
+    for (const auto& hill : HILL_TERRAIN) {
+        DrawSphereEx({static_cast<float>(hill.x), static_cast<float>(hill.centerY),
+                      static_cast<float>(hill.z)},
+                     static_cast<float>(hill.radius), 24, 32, Color{74, 112, 72, 255});
+    }
+}
+
 } // namespace
 
 class SceneRenderer::CollectibleModels
@@ -657,8 +674,7 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
     ClearBackground(Color{22, 28, 42, 255});
 
     BeginMode3D(camera);
-    DrawPlane({target.x, 0, target.z}, {100, 100}, Color{50, 65, 80, 255});
-    DrawGrid(40, 1);
+    draw_terrain();
 
     for (const auto& collectible : state.collectibles) {
         DrawCollectible(collectible);
