@@ -189,6 +189,30 @@ void deformable_collider_uses_attached_spheres()
     MOONGTANGE_CHECK(!collider.FindOverlap({0, 1.56, 0}, 0.35));
 }
 
+void deformable_collider_changes_ground_contact()
+{
+    const PhysicsWorld physics({0, 0, 0});
+    DeformableBallCollider collider(simulation::PLAYER_RADIUS);
+    collider.AddSphere({0, 0.85, 0}, simulation::COLLECTIBLE_BASE_RADIUS);
+
+    RigidBody upsideDown;
+    upsideDown.position.y = simulation::PLAYER_RADIUS;
+    upsideDown.orientation = Quaternion::FromRotation({0, 0, std::numbers::pi});
+    physics.Step(upsideDown, collider);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(upsideDown.position.y, 1.2));
+    MOONGTANGE_CHECK(upsideDown.velocity.y == 0);
+
+    RigidBody offCenter;
+    offCenter.orientation = Quaternion::FromRotation({0, 0, 3 * std::numbers::pi / 4});
+    const auto initialContactArm = collider.Support(offCenter.orientation, {0, -1, 0});
+    offCenter.position.y = -initialContactArm.y;
+    physics.Step(offCenter, collider);
+    MOONGTANGE_CHECK(offCenter.angularVelocity.z < 0);
+
+    const auto updatedContactArm = collider.Support(offCenter.orientation, {0, -1, 0});
+    MOONGTANGE_CHECK(offCenter.position.y + updatedContactArm.y >= 0);
+}
+
 } // namespace
 
 int main()
@@ -203,5 +227,6 @@ int main()
         invalid_state_is_rejected();
         sphere_overlap_detects_contact();
         deformable_collider_uses_attached_spheres();
+        deformable_collider_changes_ground_contact();
     });
 }

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Common/Physics/Collision/SpherePlane.h"
+#include "Common/Physics/DeformableBallCollider.h"
+#include "Common/Physics/RigidBody.h"
 #include "Common/SimulationConfig.h"
 
 #include <algorithm>
@@ -34,14 +35,21 @@ class PhysicsWorld
 
     void Step(RigidBody& body, double dt = FIXED_DELTA, Vector3 groundForce = {}) const
     {
+        Step(body, DeformableBallCollider(body.radius), dt, groundForce);
+    }
+
+    void Step(RigidBody& body, const DeformableBallCollider& collider, double dt = FIXED_DELTA,
+              Vector3 groundForce = {}) const
+    {
         ValidateStep(body, dt, groundForce);
 
+        const Vector3 contactArm = collider.Support(body.orientation, {0, -1, 0});
         groundForce.y = 0;
-        ApplyForces(body, dt, groundForce);
+        ApplyForces(body, contactArm, dt, groundForce);
         body.position.y += body.velocity.y * dt;
 
-        if (body.position.y <= body.radius) {
-            ResolveContact(body, dt, groundForce);
+        if (body.position.y + contactArm.y <= 0) {
+            ResolveContact(body, contactArm, dt, groundForce);
         }
 
         body.position.x += body.velocity.x * dt;
@@ -49,6 +57,11 @@ class PhysicsWorld
 
         const auto rotation = Quaternion::FromRotation(body.angularVelocity * dt);
         body.orientation = (rotation * body.orientation).Normalized();
+
+        const Vector3 updatedContactArm = collider.Support(body.orientation, {0, -1, 0});
+        if (body.position.y + updatedContactArm.y < 0) {
+            body.position.y = -updatedContactArm.y;
+        }
     }
 
   private:
@@ -67,10 +80,11 @@ class PhysicsWorld
         }
     }
 
-    static void ApplyForces(RigidBody& body, double dt, Vector3 groundForce)
+    static void ApplyForces(RigidBody& body, Vector3 contactArm, double dt, Vector3 groundForce)
     {
+        const Vector3 contactVelocity = body.velocity + cross(body.angularVelocity, contactArm);
         const bool grounded =
-            body.position.y <= body.radius + CONTACT_TOLERANCE && body.velocity.y <= 0;
+            body.position.y + contactArm.y <= CONTACT_TOLERANCE && contactVelocity.y <= 0;
         if (grounded) {
             body.velocity = body.velocity + groundForce * (dt / body.mass);
         }
@@ -85,7 +99,7 @@ class PhysicsWorld
         body.velocity.z *= damping;
     }
 
-    void ApplyRollingResistance(RigidBody& body, double dt) const
+    void ApplyRollingResistance(RigidBody& body, Vector3 contactArm, double dt) const
     {
         const Vector3 rolling{body.angularVelocity.x, 0, body.angularVelocity.z};
         const double speed = rolling.Length();
@@ -95,36 +109,59 @@ class PhysicsWorld
 
         // Bound the contact torque so resistance alone cannot reverse the spin.
         const double change = m_material.rollingResistance * body.mass * simulation::GRAVITY *
-                              body.radius * dt / body.Inertia();
+                              contactArm.Length() * dt / body.Inertia();
         body.angularVelocity = body.angularVelocity - rolling * (std::min(speed, change) / speed);
     }
 
-    void ApplyContactFriction(RigidBody& body, double normalImpulse) const
+    static void ApplyImpulse(RigidBody& body, Vector3 contactArm, Vector3 impulse)
     {
-        const Vector3 contactArm{0, -body.radius, 0};
-        const Vector3 slip =
-            Vector3{body.velocity.x, 0, body.velocity.z} + cross(body.angularVelocity, contactArm);
-
-        // Solid-sphere I = 2/5 mr^2: one contact impulse changes translation and rotation.
-        const double inverseEffectiveMass =
-            1.0 / body.mass + body.radius * body.radius / body.Inertia();
-        Vector3 impulse = slip * (-1.0 / inverseEffectiveMass);
-        const double magnitude = impulse.Length();
-        const double limit = m_material.friction * normalImpulse;
-        if (magnitude > limit) {
-            impulse = impulse * (limit / magnitude);
-        }
-
         body.velocity = body.velocity + impulse * (1.0 / body.mass);
         body.angularVelocity =
             body.angularVelocity + cross(contactArm, impulse) * (1.0 / body.Inertia());
     }
 
-    void SleepIfResting(RigidBody& body, Vector3 groundForce) const
+    static double ApplyNormalImpulse(RigidBody& body, Vector3 contactArm)
+    {
+        constexpr Vector3 GROUND_NORMAL{0, 1, 0};
+        const Vector3 contactVelocity = body.velocity + cross(body.angularVelocity, contactArm);
+        const double normalSpeed = dot(contactVelocity, GROUND_NORMAL);
+        if (normalSpeed >= 0) {
+            return 0;
+        }
+
+        const Vector3 rotationalArm = cross(contactArm, GROUND_NORMAL);
+        const double inverseEffectiveMass =
+            1.0 / body.mass + dot(rotationalArm, rotationalArm) / body.Inertia();
+        const double impulseMagnitude = -normalSpeed / inverseEffectiveMass;
+        ApplyImpulse(body, contactArm, GROUND_NORMAL * impulseMagnitude);
+        return impulseMagnitude;
+    }
+
+    void ApplyContactFriction(RigidBody& body, Vector3 contactArm, double normalImpulse) const
+    {
+        const Vector3 contactVelocity = body.velocity + cross(body.angularVelocity, contactArm);
+        const Vector3 slip{contactVelocity.x, 0, contactVelocity.z};
+        const double slipSpeed = slip.Length();
+        if (slipSpeed == 0) {
+            return;
+        }
+
+        const Vector3 slipDirection = slip * (1.0 / slipSpeed);
+        const Vector3 rotationalArm = cross(contactArm, slipDirection);
+        const double inverseEffectiveMass =
+            1.0 / body.mass + dot(rotationalArm, rotationalArm) / body.Inertia();
+        double impulseMagnitude = slipSpeed / inverseEffectiveMass;
+        const double limit = m_material.friction * normalImpulse;
+        impulseMagnitude = std::min(impulseMagnitude, limit);
+
+        ApplyImpulse(body, contactArm, slipDirection * -impulseMagnitude);
+    }
+
+    void SleepIfResting(RigidBody& body, Vector3 contactArm, Vector3 groundForce) const
     {
         const double linearSpeed = std::hypot(body.velocity.x, body.velocity.z);
-        const double rollingSpeed =
-            std::hypot(body.angularVelocity.x, body.angularVelocity.z) * body.radius;
+        const Vector3 contactSpin = cross(body.angularVelocity, contactArm);
+        const double rollingSpeed = std::hypot(contactSpin.x, contactSpin.z);
         if (groundForce.Length() == 0 && m_material.rollingResistance > 0 &&
             linearSpeed < SLEEP_SPEED && rollingSpeed < SLEEP_SPEED) {
             body.velocity.x = 0;
@@ -134,15 +171,15 @@ class PhysicsWorld
         }
     }
 
-    void ResolveContact(RigidBody& body, double dt, Vector3 groundForce) const
+    void ResolveContact(RigidBody& body, Vector3 contactArm, double dt, Vector3 groundForce) const
     {
-        const double normalImpulse = body.mass * std::max(0.0, -body.velocity.y);
-        resolve_ground(body);
+        body.position.y = -contactArm.y;
+        const double normalImpulse = ApplyNormalImpulse(body, contactArm);
         ApplyGroundDrag(body, dt);
-        ApplyRollingResistance(body, dt);
-        ApplyContactFriction(body, normalImpulse);
+        ApplyRollingResistance(body, contactArm, dt);
+        ApplyContactFriction(body, contactArm, normalImpulse);
 
-        SleepIfResting(body, groundForce);
+        SleepIfResting(body, contactArm, groundForce);
     }
 
     PhysicsMaterial m_material;
