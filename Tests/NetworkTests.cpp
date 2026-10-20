@@ -93,6 +93,27 @@ void consumed_snapshots_cannot_rewind()
     MOONGTANGE_CHECK(!client.Receive());
 }
 
+void client_close_sends_disconnect_before_socket_shutdown()
+{
+    asio::io_context io;
+    asio::ip::tcp::acceptor listener(io, {asio::ip::make_address("127.0.0.1"), 0});
+    TcpClientTransport client("127.0.0.1", listener.local_endpoint().port());
+    auto peer = listener.accept();
+
+    wire::read_client_hello(read_frame(peer));
+    const auto greeting = wire::frame(wire::server_hello({AdmissionStatus::ACCEPTED, 1, 7}));
+    asio::write(peer, asio::buffer(greeting));
+    MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
+        return client.Connected();
+    }));
+
+    client.Close();
+    client.Close();
+    MOONGTANGE_CHECK(wire::is_disconnect(read_frame(peer)));
+    MOONGTANGE_CHECK(closed(peer));
+    MOONGTANGE_CHECK(!client.Connected() && client.Error().empty());
+}
+
 void slow_peer_queue_is_bounded_before_io_progress()
 {
     asio::io_context io;
@@ -302,6 +323,7 @@ int main()
         channel_starts_once_and_closes_once();
         slow_peer_queue_is_bounded_before_io_progress();
         consumed_snapshots_cannot_rewind();
+        client_close_sends_disconnect_before_socket_shutdown();
         clients_reject_foreign_rooms_and_report_full();
 
         auto core = std::make_shared<MoongTangE::ServerHost>();
