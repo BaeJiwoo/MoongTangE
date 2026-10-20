@@ -4,6 +4,8 @@
 
 namespace MoongTangE {
 
+GameRoom::GameRoom(std::uint64_t seed) : m_world(seed) {}
+
 bool GameRoom::Join(std::uint32_t playerId)
 {
     if (PlayerCount() + ReservedCount() >= GameRoomOptions::PLAYERS_PER_ROOM ||

@@ -78,13 +78,13 @@ void consumed_snapshots_cannot_rewind()
         return client.Connected();
     }));
 
-    send(wire::snapshot({7, {42, {{1, {}, {}}}}}));
+    send(wire::snapshot({7, {42, {{1, {}, {}, {}, {}, {}}}, {}}}));
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         const auto state = client.Receive();
         return state && state->tick == 42;
     }));
 
-    send(wire::snapshot({7, {41, {{1, {}, {}}}}}));
+    send(wire::snapshot({7, {41, {{1, {}, {}, {}, {}, {}}}, {}}}));
     // TCP ordering makes this terminal message a barrier after the stale snapshot.
     send(wire::Bytes{255});
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
@@ -192,7 +192,8 @@ void clients_reject_foreign_rooms_and_report_full()
             MOONGTANGE_CHECK(test::wait_for([&] {
                 return client.RoomId() == 7;
             }));
-            const auto foreign = wire::frame(wire::snapshot({8, {42, {{1, {}, {}}}}}));
+            const auto foreign =
+                wire::frame(wire::snapshot({8, {42, {{1, {}, {}, {}, {}, {}}}, {}}}));
             asio::write(peer, asio::buffer(foreign));
         }
         MOONGTANGE_CHECK(test::wait_for([&] {

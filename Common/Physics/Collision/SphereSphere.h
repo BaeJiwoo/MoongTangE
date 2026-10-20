@@ -8,11 +8,17 @@ namespace MoongTangE {
 
 inline constexpr double PLAYER_COLLISION_RESTITUTION = 0.15;
 
-inline bool resolve_sphere_collision(RigidBody& first, RigidBody& second)
+inline bool spheres_overlap(const RigidBody& first, const RigidBody& second)
+{
+    const Vector3 offset = first.position - second.position;
+    const double combinedRadius = first.radius + second.radius;
+    return dot(offset, offset) <= combinedRadius * combinedRadius;
+}
+
+inline bool resolve_sphere_collision(RigidBody& first, RigidBody& second, double minimumDistance)
 {
     const Vector3 separation = second.position - first.position;
     const double distanceSquared = dot(separation, separation);
-    const double minimumDistance = first.radius + second.radius;
     if (distanceSquared > minimumDistance * minimumDistance) {
         return false;
     }
@@ -41,6 +47,11 @@ inline bool resolve_sphere_collision(RigidBody& first, RigidBody& second)
     first.velocity = first.velocity - impulse * inverseFirstMass;
     second.velocity = second.velocity + impulse * inverseSecondMass;
     return true;
+}
+
+inline bool resolve_sphere_collision(RigidBody& first, RigidBody& second)
+{
+    return resolve_sphere_collision(first, second, first.radius + second.radius);
 }
 
 } // namespace MoongTangE

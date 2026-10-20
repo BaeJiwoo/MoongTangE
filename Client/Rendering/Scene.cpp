@@ -6,10 +6,13 @@
 #include "Common/SimulationConfig.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <filesystem>
 #include <numbers>
 #include <raylib.h>
 #include <rlgl.h>
+#include <stdexcept>
 
 namespace MoongTangE {
 namespace {
@@ -348,7 +351,93 @@ void draw_terrain()
 
 } // namespace
 
-SceneRenderer::SceneRenderer() : m_ballGeometry(MakeBallGeometry()) {}
+class SceneRenderer::CollectibleModels
+{
+  public:
+    struct Asset
+    {
+        Model model{};
+        ::Vector3 center{};
+        float normalizedScale{};
+    };
+
+    CollectibleModels()
+    {
+        constexpr std::array<const char*, 4> FILE_NAMES{"apple.glb", "banana.glb", "burger.glb",
+                                                        "donut.glb"};
+        try {
+            for (const auto* fileName : FILE_NAMES) {
+                m_assets[m_loadedCount] = Load(fileName);
+                ++m_loadedCount;
+            }
+        } catch (...) {
+            Unload();
+            throw;
+        }
+    }
+
+    ~CollectibleModels()
+    {
+        Unload();
+    }
+
+    CollectibleModels(const CollectibleModels&) = delete;
+    CollectibleModels& operator=(const CollectibleModels&) = delete;
+    CollectibleModels(CollectibleModels&&) = delete;
+    CollectibleModels& operator=(CollectibleModels&&) = delete;
+
+    const Asset& For(CollectibleKind kind) const
+    {
+        if (!valid_collectible_kind(kind)) {
+            throw std::invalid_argument("Invalid collectible kind");
+        }
+        return m_assets[static_cast<std::size_t>(kind) - 1];
+    }
+
+  private:
+    static Asset Load(const char* fileName)
+    {
+        const auto path =
+            std::filesystem::path(GetApplicationDirectory()) / "Assets" / "Models" / fileName;
+        Model model = LoadModel(path.string().c_str());
+        if (!IsModelValid(model)) {
+            throw std::runtime_error("Could not load collectible model: " + path.string());
+        }
+
+        const auto bounds = GetModelBoundingBox(model);
+        const float width = bounds.max.x - bounds.min.x;
+        const float height = bounds.max.y - bounds.min.y;
+        const float depth = bounds.max.z - bounds.min.z;
+        const float maximumExtent = std::max({width, height, depth});
+        if (!std::isfinite(maximumExtent) || maximumExtent <= 0) {
+            UnloadModel(model);
+            throw std::runtime_error("Collectible model has invalid bounds: " + path.string());
+        }
+
+        return {model,
+                {(bounds.min.x + bounds.max.x) * 0.5f, (bounds.min.y + bounds.max.y) * 0.5f,
+                 (bounds.min.z + bounds.max.z) * 0.5f},
+                static_cast<float>(2 * simulation::COLLECTIBLE_BASE_RADIUS) / maximumExtent};
+    }
+
+    void Unload()
+    {
+        while (m_loadedCount > 0) {
+            --m_loadedCount;
+            UnloadModel(m_assets[m_loadedCount].model);
+        }
+    }
+
+    std::array<Asset, 4> m_assets;
+    std::size_t m_loadedCount{};
+};
+
+SceneRenderer::SceneRenderer()
+    : m_ballGeometry(MakeBallGeometry()), m_collectibleModels(std::make_unique<CollectibleModels>())
+{
+}
+
+SceneRenderer::~SceneRenderer() = default;
 
 MainMenuAction SceneRenderer::DrawMainMenu(bool multiplayerAvailable, bool optionsOpen,
                                            const DisplaySettingsState& selectedSettings,
@@ -502,6 +591,33 @@ void SceneRenderer::DrawBall(const PlayerState& player, bool own) const
     rlEnd();
 }
 
+void SceneRenderer::DrawCollectible(const CollectibleState& collectible) const
+{
+    const auto& asset = m_collectibleModels->For(collectible.kind);
+    const float scale = asset.normalizedScale * static_cast<float>(collectible.scale);
+    const Vector3 center{asset.center.x, asset.center.y, asset.center.z};
+    const auto rotatedCenter = collectible.orientation.Rotate(center * scale);
+    const auto modelPosition = render_vector(collectible.position - rotatedCenter);
+
+    const double halfAngle = std::acos(std::clamp(collectible.orientation.w, -1.0, 1.0));
+    const double sine = std::sin(halfAngle);
+    ::Vector3 rotationAxis{0, 1, 0};
+    if (std::abs(sine) > 1e-9) {
+        rotationAxis = {static_cast<float>(collectible.orientation.x / sine),
+                        static_cast<float>(collectible.orientation.y / sine),
+                        static_cast<float>(collectible.orientation.z / sine)};
+    }
+    const float angleDegrees = static_cast<float>(2 * halfAngle * 180 / std::numbers::pi);
+
+    DrawCylinder({static_cast<float>(collectible.position.x), 0.006f,
+                  static_cast<float>(collectible.position.z)},
+                 static_cast<float>(simulation::COLLECTIBLE_BASE_RADIUS * collectible.scale),
+                 static_cast<float>(simulation::COLLECTIBLE_BASE_RADIUS * collectible.scale),
+                 0.002f, 24, Color{28, 37, 46, 180});
+    DrawModelEx(asset.model, modelPosition, rotationAxis, angleDegrees, {scale, scale, scale},
+                WHITE);
+}
+
 void SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
                          const char* status) const
 {
@@ -519,6 +635,9 @@ void SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId, con
     BeginMode3D(camera);
     draw_terrain();
 
+    for (const auto& collectible : state.collectibles) {
+        DrawCollectible(collectible);
+    }
     for (const auto& player : state.players) {
         DrawBall(player, player.id == playerId);
     }

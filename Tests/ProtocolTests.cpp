@@ -32,10 +32,10 @@ proto::WorldSnapshot protobuf_snapshot(const WorldSnapshot& state)
 
 void framing_and_version_negotiation()
 {
-    // Known Protobuf bytes: field 1, varint wire type, protocol version 6.
-    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 6});
-    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 6});
-    wire::read_client_hello(wire::Bytes{1, 8, 6});
+    // Known Protobuf bytes: field 1, varint wire type, protocol version 8.
+    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 8});
+    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 8});
+    wire::read_client_hello(wire::Bytes{1, 8, 8});
     const std::string ticket(64, 'a');
     const auto hello = wire::read_client_hello(wire::client_hello(ticket, "Alice"));
     MOONGTANGE_CHECK(hello.ticket == ticket && hello.nickname == "Alice");
@@ -218,7 +218,13 @@ void snapshots_validate_all_game_invariants()
                                 {2, 0, 1},
                                 Quaternion::FromRotation({0.1, 0, 0.2}),
                                 {2, 3, -4},
-                                "Alice"}}};
+                                "Alice"}},
+                              {{3,
+                                CollectibleKind::DONUT,
+                                {-2, 0.35, 4},
+                                Quaternion::FromRotation({0, 0.2, 0}),
+                                1.0,
+                                7}}};
     const auto original = protobuf_snapshot(state);
     const auto restored = wire::read_snapshot(wire::snapshot({1, state})).world;
     MOONGTANGE_CHECK(restored.tick == state.tick && restored.players.size() == 1);
@@ -227,7 +233,13 @@ void snapshots_validate_all_game_invariants()
     MOONGTANGE_CHECK(restored.players[0].orientation == state.players[0].orientation);
     MOONGTANGE_CHECK(restored.players[0].angularVelocity == state.players[0].angularVelocity);
     MOONGTANGE_CHECK(restored.players[0].nickname == "Alice");
-    MOONGTANGE_CHECK(wire::read_snapshot(wire::snapshot({1, {0, {}}})).world.tick == 0);
+    MOONGTANGE_CHECK(restored.collectibles.size() == 1);
+    MOONGTANGE_CHECK(restored.collectibles[0].kind == CollectibleKind::DONUT);
+    MOONGTANGE_CHECK(restored.collectibles[0].position == state.collectibles[0].position);
+    MOONGTANGE_CHECK(restored.collectibles[0].orientation == state.collectibles[0].orientation);
+    MOONGTANGE_CHECK(restored.collectibles[0].scale == 1.0);
+    MOONGTANGE_CHECK(restored.collectibles[0].attachedPlayerId == 7);
+    MOONGTANGE_CHECK(wire::read_snapshot(wire::snapshot({1, {0, {}, {}}})).world.tick == 0);
 
     auto reject = [](const proto::WorldSnapshot& message) {
         MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
@@ -265,6 +277,30 @@ void snapshots_validate_all_game_invariants()
     reject(bad);
 
     bad = original;
+    bad.mutable_collectibles(0)->set_id(0);
+    reject(bad);
+
+    bad = original;
+    bad.mutable_collectibles(0)->set_kind(proto::COLLECTIBLE_UNSPECIFIED);
+    reject(bad);
+
+    bad = original;
+    bad.mutable_collectibles(0)->clear_scale();
+    reject(bad);
+
+    bad = original;
+    bad.mutable_collectibles(0)->set_scale(std::numeric_limits<double>::infinity());
+    reject(bad);
+
+    bad = original;
+    bad.add_collectibles()->CopyFrom(original.collectibles(0));
+    reject(bad);
+
+    bad = original;
+    bad.mutable_collectibles(0)->set_attached_player_id(999);
+    reject(bad);
+
+    bad = original;
     bad.clear_players();
     for (std::uint32_t id = 1; id <= MAX_PLAYERS + 1; ++id) {
         auto& record = *bad.add_players();
@@ -280,7 +316,19 @@ void snapshots_validate_all_game_invariants()
     }));
 
     invalidState = state;
+    invalidState.collectibles[0].scale = 0;
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
+        wire::snapshot({1, invalidState});
+    }));
+
+    invalidState = state;
     invalidState.players[0].orientation = {0, 0, 0, 0};
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
+        wire::snapshot({1, invalidState});
+    }));
+
+    invalidState = state;
+    invalidState.collectibles[0].attachedPlayerId = 999;
     MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         wire::snapshot({1, invalidState});
     }));
@@ -288,7 +336,7 @@ void snapshots_validate_all_game_invariants()
 
 void maximum_snapshot_fits_bounded_frame()
 {
-    WorldSnapshot state{std::numeric_limits<std::uint64_t>::max(), {}};
+    WorldSnapshot state{std::numeric_limits<std::uint64_t>::max(), {}, {}};
     // Largest varints, all vector/quaternion components present, all 32 records.
     for (std::uint32_t index = 0; index < MAX_PLAYERS; ++index) {
         state.players.push_back({std::numeric_limits<std::uint32_t>::max() - index,
@@ -306,8 +354,26 @@ void maximum_snapshot_fits_bounded_frame()
     MOONGTANGE_CHECK(wire::frame_size(std::span(framed).first(wire::FRAME_HEADER_BYTES)) ==
                      bytes.size());
 
+    for (std::uint32_t index = 0; index < MAX_COLLECTIBLES; ++index) {
+        state.collectibles.push_back({std::numeric_limits<std::uint32_t>::max() - index,
+                                      CollectibleKind::BURGER,
+                                      {1, 2, 3},
+                                      {0.5, 0.5, 0.5, 0.5},
+                                      simulation::COLLECTIBLE_MAX_SCALE,
+                                      state.players.front().id});
+    }
+    const auto fullBytes = wire::snapshot({1, state});
+    MOONGTANGE_CHECK(fullBytes.size() <= wire::MAX_FRAME_BYTES);
+    MOONGTANGE_CHECK(wire::read_snapshot(fullBytes).world.collectibles.size() == MAX_COLLECTIBLES);
+
     state.players.push_back({1, {}, {}, {}, {}, "Extra"});
     MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
+        wire::snapshot({1, state});
+    }));
+
+    state.players.pop_back();
+    state.collectibles.push_back({1, CollectibleKind::APPLE, {}, {}, 1});
+    MOONGTANGE_CHECK(test::throws([&] {
         wire::snapshot({1, state});
     }));
 }

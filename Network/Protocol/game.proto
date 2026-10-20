@@ -52,10 +52,28 @@ message PlayerState {
   string nickname = 6;
 }
 
+enum CollectibleKind {
+  COLLECTIBLE_UNSPECIFIED = 0;
+  APPLE = 1;
+  BANANA = 2;
+  BURGER = 3;
+  DONUT = 4;
+}
+
+message CollectibleState {
+  uint32 id = 1;
+  CollectibleKind kind = 2;
+  Vector3 position = 3;
+  Quaternion orientation = 4;
+  optional double scale = 5;
+  uint32 attached_player_id = 6;
+}
+
 message WorldSnapshot {
   optional uint64 server_tick = 1;
   repeated PlayerState players = 2;
   uint64 room_id = 3;
+  repeated CollectibleState collectibles = 4;
 }
 
 message Disconnect {}
