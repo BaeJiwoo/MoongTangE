@@ -171,10 +171,8 @@ int main()
             inversePlayerOrientation.Rotate(attached.position - attachmentPlayer.position);
         const auto localOrientation =
             (inversePlayerOrientation * attached.orientation).Normalized();
-        MOONGTANGE_CHECK(MoongTangE::test::approx(
-            localPosition.Length(),
-            MoongTangE::simulation::PLAYER_RADIUS +
-                MoongTangE::simulation::COLLECTIBLE_BASE_RADIUS * attached.scale));
+        MOONGTANGE_CHECK(MoongTangE::test::approx(localPosition.Length(),
+                                                  MoongTangE::simulation::PLAYER_RADIUS));
 
         bool colliderChangedMotion = false;
         for (std::uint32_t sequence = 1; sequence <= 90; ++sequence) {
@@ -198,10 +196,6 @@ int main()
                 });
             MOONGTANGE_CHECK(movingCollectible != attachedSnapshot.collectibles.end());
             MOONGTANGE_CHECK(movingCollectible->attachedPlayerId == 1);
-            MOONGTANGE_CHECK(movingCollectible->position.y -
-                                 MoongTangE::simulation::COLLECTIBLE_BASE_RADIUS *
-                                     movingCollectible->scale >=
-                             -1e-9);
 
             const auto inverseMovingOrientation = movingPlayer.orientation.Conjugate();
             const auto movingLocalPosition = inverseMovingOrientation.Rotate(

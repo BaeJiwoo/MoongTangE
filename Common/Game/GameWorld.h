@@ -158,7 +158,7 @@ class GameWorld
         DeformableBallCollider collider(player.body.radius);
         for (const auto& collectible : m_collectibles) {
             if (collectible.attachedPlayerId == playerId) {
-                collider.AddSphere(collectible.localPosition, collectible.body.radius);
+                collider.AddCollectible(collectible.localPosition, collectible.body.radius);
             }
         }
         return collider;
@@ -177,33 +177,17 @@ class GameWorld
 
     void TryAttach(Collectible& collectible)
     {
-        constexpr double MIN_OFFSET = 1e-12;
         for (const auto& [playerId, player] : m_players) {
             const Quaternion inversePlayerOrientation = player.body.orientation.Conjugate();
             const Vector3 localObjectPosition =
                 inversePlayerOrientation.Rotate(collectible.body.position - player.body.position);
-            const auto contactSphere =
-                PlayerCollider(playerId, player)
-                    .FindOverlap(localObjectPosition, collectible.body.radius);
-            if (!contactSphere) {
+            const auto collider = PlayerCollider(playerId, player);
+            if (!collider.ContainsPickupCenter(localObjectPosition)) {
                 continue;
             }
 
-            Vector3 contactDirection = localObjectPosition - contactSphere->localCenter;
-            const double distance = contactDirection.Length();
-            if (distance > MIN_OFFSET) {
-                contactDirection = contactDirection * (1.0 / distance);
-            } else {
-                const double centerDistance = contactSphere->localCenter.Length();
-                contactDirection = centerDistance > MIN_OFFSET
-                                       ? contactSphere->localCenter * (1.0 / centerDistance)
-                                       : Vector3{0, 1, 0};
-            }
-
             collectible.attachedPlayerId = playerId;
-            collectible.localPosition =
-                contactSphere->localCenter +
-                contactDirection * (collectible.body.radius + contactSphere->radius);
+            collectible.localPosition = collider.PickupSurface(localObjectPosition);
             collectible.localOrientation =
                 (inversePlayerOrientation * collectible.body.orientation).Normalized();
             UpdateAttached(collectible, player);

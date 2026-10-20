@@ -185,6 +185,8 @@ void deformable_collider_separates_pickup_and_rolling_proxies()
         simulation::COLLECTIBLE_BASE_RADIUS * simulation::COLLECTIBLE_BASE_RADIUS *
             simulation::COLLECTIBLE_BASE_RADIUS);
     MOONGTANGE_CHECK(MoongTangE::test::approx(collider.PickupRadius(), expectedPickupRadius));
+    MOONGTANGE_CHECK(!collider.ContainsPickupCenter(
+        {0, simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS, 0}));
     const auto pickupSurface = collider.PickupSurface({0, 10, 0});
     MOONGTANGE_CHECK(pickupSurface.x == 0 && pickupSurface.z == 0);
     MOONGTANGE_CHECK(MoongTangE::test::approx(pickupSurface.y, expectedPickupRadius));

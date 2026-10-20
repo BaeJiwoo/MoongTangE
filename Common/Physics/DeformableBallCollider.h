@@ -57,7 +57,7 @@ class DeformableBallCollider
                                                return dot(first.direction, outwardDirection) <
                                                       dot(second.direction, outwardDirection);
                                            });
-        const double radialExtent = dot(localCenter, closestArm->direction) + radius;
+        const double radialExtent = centerDistance + radius;
         if (!std::isfinite(radialExtent)) {
             throw std::invalid_argument("Collectible collider extent overflow");
         }
