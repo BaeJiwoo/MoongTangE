@@ -172,34 +172,44 @@ void sphere_overlap_detects_contact()
     MOONGTANGE_CHECK(!spheres_overlap(first, second));
 }
 
-void deformable_collider_uses_attached_spheres()
+void deformable_collider_separates_pickup_and_rolling_proxies()
 {
     DeformableBallCollider collider(simulation::PLAYER_RADIUS);
-    collider.AddSphere({0, 0.85, 0}, simulation::COLLECTIBLE_BASE_RADIUS);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(collider.PickupRadius(), simulation::PLAYER_RADIUS));
+    MOONGTANGE_CHECK(collider.ContainsPickupCenter({0, simulation::PLAYER_RADIUS, 0}));
+    MOONGTANGE_CHECK(!collider.ContainsPickupCenter({0, simulation::PLAYER_RADIUS + 1e-6, 0}));
+
+    collider.AddCollectible({0, simulation::PLAYER_RADIUS, 0}, simulation::COLLECTIBLE_BASE_RADIUS);
+    const double expectedPickupRadius = std::cbrt(
+        simulation::PLAYER_RADIUS * simulation::PLAYER_RADIUS * simulation::PLAYER_RADIUS +
+        simulation::COLLECTIBLE_BASE_RADIUS * simulation::COLLECTIBLE_BASE_RADIUS *
+            simulation::COLLECTIBLE_BASE_RADIUS);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(collider.PickupRadius(), expectedPickupRadius));
+    const auto pickupSurface = collider.PickupSurface({0, 10, 0});
+    MOONGTANGE_CHECK(pickupSurface.x == 0 && pickupSurface.z == 0);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(pickupSurface.y, expectedPickupRadius));
 
     const auto uprightSupport = collider.Support({}, {0, -1, 0});
     MOONGTANGE_CHECK(uprightSupport == (Vector3{0, -simulation::PLAYER_RADIUS, 0}));
 
     const auto upsideDown = Quaternion::FromRotation({0, 0, std::numbers::pi});
     const auto extendedSupport = collider.Support(upsideDown, {0, -1, 0});
-    MOONGTANGE_CHECK(MoongTangE::test::approx(extendedSupport.y, -1.2));
-
-    const auto overlap = collider.FindOverlap({0, 1.54, 0}, 0.35);
-    MOONGTANGE_CHECK(overlap && overlap->localCenter == (Vector3{0, 0.85, 0}));
-    MOONGTANGE_CHECK(!collider.FindOverlap({0, 1.56, 0}, 0.35));
+    MOONGTANGE_CHECK(MoongTangE::test::approx(
+        extendedSupport.y, -(simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS)));
 }
 
 void deformable_collider_changes_ground_contact()
 {
     const PhysicsWorld physics({0, 0, 0});
     DeformableBallCollider collider(simulation::PLAYER_RADIUS);
-    collider.AddSphere({0, 0.85, 0}, simulation::COLLECTIBLE_BASE_RADIUS);
+    collider.AddCollectible({0, simulation::PLAYER_RADIUS, 0}, simulation::COLLECTIBLE_BASE_RADIUS);
 
     RigidBody upsideDown;
     upsideDown.position.y = simulation::PLAYER_RADIUS;
     upsideDown.orientation = Quaternion::FromRotation({0, 0, std::numbers::pi});
     physics.Step(upsideDown, collider);
-    MOONGTANGE_CHECK(MoongTangE::test::approx(upsideDown.position.y, 1.2));
+    MOONGTANGE_CHECK(MoongTangE::test::approx(
+        upsideDown.position.y, simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS));
     MOONGTANGE_CHECK(upsideDown.velocity.y == 0);
 
     RigidBody offCenter;
@@ -226,7 +236,7 @@ int main()
         repeated_simulation_keeps_normalized_orientation();
         invalid_state_is_rejected();
         sphere_overlap_detects_contact();
-        deformable_collider_uses_attached_spheres();
+        deformable_collider_separates_pickup_and_rolling_proxies();
         deformable_collider_changes_ground_contact();
     });
 }
