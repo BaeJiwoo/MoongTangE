@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Common/Game/PlayerController.h"
-#include "Common/Physics/Collision/SphereSphere.h"
+#include "Common/Physics/DeformableBallCollider.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "Common/Protocol/InputCommand.h"
 #include "Common/Protocol/WorldSnapshot.h"
@@ -88,11 +88,11 @@ class GameWorld
     void Step()
     {
         for (auto& [id, player] : m_players) {
-            (void)id;
             const bool inputFresh = m_tick - player.inputTick < simulation::INPUT_TIMEOUT_TICKS;
             const auto force =
                 inputFresh ? movement_force(player.input.x, player.input.z) : Vector3{};
-            m_physics.Step(player.body, PhysicsWorld::FIXED_DELTA, force);
+            m_physics.Step(player.body, PlayerCollider(id, player), PhysicsWorld::FIXED_DELTA,
+                           force);
         }
 
         for (auto& collectible : m_collectibles) {
@@ -153,6 +153,17 @@ class GameWorld
         Quaternion localOrientation{};
     };
 
+    DeformableBallCollider PlayerCollider(std::uint32_t playerId, const Player& player) const
+    {
+        DeformableBallCollider collider(player.body.radius);
+        for (const auto& collectible : m_collectibles) {
+            if (collectible.attachedPlayerId == playerId) {
+                collider.AddSphere(collectible.localPosition, collectible.body.radius);
+            }
+        }
+        return collider;
+    }
+
     static void UpdateAttached(Collectible& collectible, const Player& player)
     {
         const Vector3 worldOffset = player.body.orientation.Rotate(collectible.localPosition);
@@ -168,18 +179,31 @@ class GameWorld
     {
         constexpr double MIN_OFFSET = 1e-12;
         for (const auto& [playerId, player] : m_players) {
-            if (!spheres_overlap(collectible.body, player.body)) {
+            const Quaternion inversePlayerOrientation = player.body.orientation.Conjugate();
+            const Vector3 localObjectPosition =
+                inversePlayerOrientation.Rotate(collectible.body.position - player.body.position);
+            const auto contactSphere =
+                PlayerCollider(playerId, player)
+                    .FindOverlap(localObjectPosition, collectible.body.radius);
+            if (!contactSphere) {
                 continue;
             }
 
-            Vector3 offset = collectible.body.position - player.body.position;
-            const double distance = offset.Length();
-            offset = distance > MIN_OFFSET ? offset * (1.0 / distance) : Vector3{0, 1, 0};
-            offset = offset * (collectible.body.radius + player.body.radius);
+            Vector3 contactDirection = localObjectPosition - contactSphere->localCenter;
+            const double distance = contactDirection.Length();
+            if (distance > MIN_OFFSET) {
+                contactDirection = contactDirection * (1.0 / distance);
+            } else {
+                const double centerDistance = contactSphere->localCenter.Length();
+                contactDirection = centerDistance > MIN_OFFSET
+                                       ? contactSphere->localCenter * (1.0 / centerDistance)
+                                       : Vector3{0, 1, 0};
+            }
 
-            const Quaternion inversePlayerOrientation = player.body.orientation.Conjugate();
             collectible.attachedPlayerId = playerId;
-            collectible.localPosition = inversePlayerOrientation.Rotate(offset);
+            collectible.localPosition =
+                contactSphere->localCenter +
+                contactDirection * (collectible.body.radius + contactSphere->radius);
             collectible.localOrientation =
                 (inversePlayerOrientation * collectible.body.orientation).Normalized();
             UpdateAttached(collectible, player);

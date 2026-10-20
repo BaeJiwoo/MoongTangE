@@ -83,8 +83,8 @@ class PhysicsWorld
     static void ApplyForces(RigidBody& body, Vector3 contactArm, double dt, Vector3 groundForce)
     {
         const Vector3 contactVelocity = body.velocity + cross(body.angularVelocity, contactArm);
-        const bool grounded =
-            body.position.y + contactArm.y <= CONTACT_TOLERANCE && contactVelocity.y <= 0;
+        const bool grounded = body.position.y + contactArm.y <= CONTACT_TOLERANCE &&
+                              contactVelocity.y <= CONTACT_TOLERANCE;
         if (grounded) {
             body.velocity = body.velocity + groundForce * (dt / body.mass);
         }

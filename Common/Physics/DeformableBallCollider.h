@@ -41,21 +41,21 @@ class DeformableBallCollider
         }
 
         worldDirection = worldDirection * (1.0 / directionLength);
-        const Vector3 localDirection = orientation.Conjugate().Rotate(worldDirection);
         Vector3 bestPoint{};
         double bestProjection = 0;
         bool found = false;
 
         for (const auto& sphere : m_spheres) {
-            const Vector3 candidate = sphere.localCenter + localDirection * sphere.radius;
-            const double projection = dot(candidate, localDirection);
+            const Vector3 worldCenter = orientation.Rotate(sphere.localCenter);
+            const Vector3 candidate = worldCenter + worldDirection * sphere.radius;
+            const double projection = dot(candidate, worldDirection);
             if (!found || projection > bestProjection) {
                 bestPoint = candidate;
                 bestProjection = projection;
                 found = true;
             }
         }
-        return orientation.Rotate(bestPoint);
+        return bestPoint;
     }
 
     std::optional<ColliderSphere> FindOverlap(Vector3 localCenter, double radius) const
