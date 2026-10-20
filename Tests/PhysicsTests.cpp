@@ -193,12 +193,28 @@ void deformable_collider_separates_pickup_and_rolling_proxies()
     MOONGTANGE_CHECK(MoongTangE::test::approx(pickupSurface.y, expectedPickupRadius));
 
     const auto uprightSupport = collider.Support({}, {0, -1, 0});
-    MOONGTANGE_CHECK(uprightSupport == (Vector3{0, -simulation::PLAYER_RADIUS, 0}));
+    MOONGTANGE_CHECK(uprightSupport.x == 0 && uprightSupport.z == 0);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(uprightSupport.y, -expectedPickupRadius));
 
     const auto upsideDown = Quaternion::FromRotation({0, 0, std::numbers::pi});
     const auto extendedSupport = collider.Support(upsideDown, {0, -1, 0});
-    MOONGTANGE_CHECK(MoongTangE::test::approx(
-        extendedSupport.y, -(simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS)));
+    const double rawExcess =
+        simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS - expectedPickupRadius;
+    const double bumpLimit = expectedPickupRadius * 0.3;
+    const double expectedRollingRadius =
+        expectedPickupRadius + bumpLimit * rawExcess / (bumpLimit + rawExcess);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(extendedSupport.y, -expectedRollingRadius));
+
+    for (int index = 0; index < 12; ++index) {
+        collider.AddCollectible({0, -simulation::PLAYER_RADIUS, 0},
+                                simulation::COLLECTIBLE_BASE_RADIUS);
+    }
+    const double absorbedRadius = collider.PickupRadius();
+    MOONGTANGE_CHECK(absorbedRadius >
+                     simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS);
+    const auto absorbedSupport = collider.Support({}, {0, 1, 0});
+    MOONGTANGE_CHECK(absorbedSupport.x == 0 && absorbedSupport.z == 0);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(absorbedSupport.y, absorbedRadius));
 }
 
 void deformable_collider_changes_ground_contact()
@@ -211,12 +227,17 @@ void deformable_collider_changes_ground_contact()
     upsideDown.position.y = simulation::PLAYER_RADIUS;
     upsideDown.orientation = Quaternion::FromRotation({0, 0, std::numbers::pi});
     physics.Step(upsideDown, collider);
-    MOONGTANGE_CHECK(MoongTangE::test::approx(
-        upsideDown.position.y, simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS));
+    const double pickupRadius = collider.PickupRadius();
+    const double rawExcess =
+        simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS - pickupRadius;
+    const double bumpLimit = pickupRadius * 0.3;
+    const double expectedRollingRadius =
+        pickupRadius + bumpLimit * rawExcess / (bumpLimit + rawExcess);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(upsideDown.position.y, expectedRollingRadius));
     MOONGTANGE_CHECK(upsideDown.velocity.y == 0);
 
     RigidBody offCenter;
-    offCenter.orientation = Quaternion::FromRotation({0, 0, 3 * std::numbers::pi / 4});
+    offCenter.orientation = Quaternion::FromRotation({0, 0, 5 * std::numbers::pi / 6});
     const auto initialContactArm = collider.Support(offCenter.orientation, {0, -1, 0});
     offCenter.position.y = -initialContactArm.y;
     physics.Step(offCenter, collider);

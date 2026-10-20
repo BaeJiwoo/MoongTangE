@@ -13,7 +13,7 @@ namespace MoongTangE {
 struct RadialColliderArm
 {
     Vector3 direction{};
-    double length{};
+    double rawLength{};
 };
 
 // Separate fixed-cost proxies for smooth collection and irregular rolling.
@@ -56,23 +56,35 @@ class DeformableBallCollider
         const Vector3 outwardDirection = centerDistance > MIN_DIRECTION_LENGTH
                                              ? localCenter * (1.0 / centerDistance)
                                              : Vector3{0, 1, 0};
-        auto closestArm = std::max_element(m_arms.begin(), m_arms.end(),
-                                           [&](const auto& first, const auto& second) {
-                                               return dot(first.direction, outwardDirection) <
-                                                      dot(second.direction, outwardDirection);
-                                           });
         const double radialExtent = centerDistance + radius;
         if (!std::isfinite(radialExtent)) {
             throw std::invalid_argument("Collectible collider extent overflow");
         }
 
-        closestArm->length = std::max(closestArm->length, radialExtent);
+        const auto closestArm = std::max_element(m_arms.begin(), m_arms.end(),
+                                                 [&](const auto& first, const auto& second) {
+                                                     return dot(first.direction, outwardDirection) <
+                                                            dot(second.direction, outwardDirection);
+                                                 });
+        const double bestAlignment = dot(closestArm->direction, outwardDirection);
+        for (auto& arm : m_arms) {
+            const double alignment = dot(arm.direction, outwardDirection);
+            if (alignment < MIN_SPREAD_ALIGNMENT) {
+                continue;
+            }
+
+            const double fraction =
+                (alignment - MIN_SPREAD_ALIGNMENT) / (bestAlignment - MIN_SPREAD_ALIGNMENT);
+            const double weight = fraction * fraction * (3 - 2 * fraction);
+            const double weightedExtent = m_coreRadius + (radialExtent - m_coreRadius) * weight;
+            arm.rawLength = std::max(arm.rawLength, weightedExtent);
+        }
         m_volumeRadiusCubed = updatedVolumeRadiusCubed;
     }
 
     double PickupRadius() const
     {
-        return std::cbrt(m_volumeRadiusCubed);
+        return std::max(m_coreRadius, std::cbrt(m_volumeRadiusCubed));
     }
 
     bool ContainsPickupCenter(Vector3 localCenter) const
@@ -111,11 +123,17 @@ class DeformableBallCollider
         }
 
         worldDirection = worldDirection * (1.0 / directionLength);
-        Vector3 bestPoint = worldDirection * m_coreRadius;
-        double bestProjection = m_coreRadius;
+        const double rollingBaseRadius = PickupRadius();
+        Vector3 bestPoint = worldDirection * rollingBaseRadius;
+        double bestProjection = rollingBaseRadius;
 
         for (const auto& arm : m_arms) {
-            const Vector3 candidate = orientation.Rotate(arm.direction * arm.length);
+            const double rawExcess = std::max(0.0, arm.rawLength - rollingBaseRadius);
+            const double bumpLimit = rollingBaseRadius * MAX_BUMP_RATIO;
+            const double softenedExcess =
+                rawExcess > 0 ? bumpLimit * rawExcess / (bumpLimit + rawExcess) : 0;
+            const Vector3 candidate =
+                orientation.Rotate(arm.direction * (rollingBaseRadius + softenedExcess));
             const double projection = dot(candidate, worldDirection);
             if (projection > bestProjection) {
                 bestPoint = candidate;
@@ -128,6 +146,8 @@ class DeformableBallCollider
   private:
     static constexpr double MIN_DIRECTION_LENGTH = 1e-12;
     static constexpr double PICKUP_TOLERANCE = 1e-12;
+    static constexpr double MAX_BUMP_RATIO = 0.3;
+    static constexpr double MIN_SPREAD_ALIGNMENT = 0.86602540378443865;
     static constexpr std::size_t AXIS_ARM_COUNT = 6;
     static constexpr std::size_t FIBONACCI_ARM_COUNT = RADIAL_ARM_COUNT - AXIS_ARM_COUNT;
     static constexpr double GOLDEN_ANGLE = 2.39996322972865332;
