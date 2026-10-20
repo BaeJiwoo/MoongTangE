@@ -4,6 +4,8 @@
 #include "TestSupport.h"
 
 #include <array>
+#include <cstdint>
+#include <limits>
 #include <string_view>
 #include <vector>
 
@@ -17,6 +19,14 @@ int main()
         for (auto bad : {"", "-1", "65536", "10x", "0", "1.5"}) {
             MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
                 MoongTangE::unsigned_option(bad, 65535);
+            }));
+        }
+        MOONGTANGE_CHECK(MoongTangE::uint64_option("0") == 0);
+        MOONGTANGE_CHECK(MoongTangE::uint64_option("18446744073709551615") ==
+                         std::numeric_limits<std::uint64_t>::max());
+        for (auto bad : {"", "-1", "18446744073709551616", "1x"}) {
+            MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
+                MoongTangE::uint64_option(bad);
             }));
         }
 
@@ -42,12 +52,18 @@ int main()
             std::array{"--connect"sv, "localhost:27015"sv, "--smoke"sv});
         MOONGTANGE_CHECK(remote.smoke && remote.remote->host == "localhost" &&
                          remote.remote->port == 27015);
-        for (const auto& arguments :
-             std::vector<std::vector<std::string_view>>{{"--connect"},
-                                                        {"--unknown"},
-                                                        {"--ticket", "invalid"},
-                                                        {"--single", "--connect", "host:1"},
-                                                        {"--connect", ""}}) {
+        const auto seededClient =
+            MoongTangE::parse_client_options(std::array{"--single"sv, "--world-seed"sv, "42"sv});
+        MOONGTANGE_CHECK(seededClient.worldSeed == 42);
+        for (const auto& arguments : std::vector<std::vector<std::string_view>>{
+                 {"--connect"},
+                 {"--unknown"},
+                 {"--ticket", "invalid"},
+                 {"--world-seed"},
+                 {"--world-seed", "-1"},
+                 {"--world-seed", "1", "--connect", "host:1"},
+                 {"--single", "--connect", "host:1"},
+                 {"--connect", ""}}) {
             MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
                 MoongTangE::parse_client_options(arguments);
             }));
@@ -69,10 +85,11 @@ int main()
                          controlled.m_advertisedHost == "game.internal" &&
                          controlled.m_requireTicket &&
                          controlled.m_reservationLifetime.count() == 1 && !controlled.m_publicBind);
-        const auto rooms = MoongTangE::parse_server_options(
-            std::array{"--max-rooms"sv, "2"sv, "--empty-room-seconds"sv, "0"sv});
+        const auto rooms = MoongTangE::parse_server_options(std::array{
+            "--max-rooms"sv, "2"sv, "--empty-room-seconds"sv, "0"sv, "--world-seed"sv, "42"sv});
         MOONGTANGE_CHECK(rooms.m_rooms.m_maxRooms == 2 &&
-                         rooms.m_rooms.m_emptyRoomLifetime.count() == 0);
+                         rooms.m_rooms.m_emptyRoomLifetime.count() == 0 &&
+                         rooms.m_rooms.m_worldSeed == 42);
         MOONGTANGE_CHECK(MoongTangE::parse_server_options(std::array{"--public"sv}).m_publicBind);
         MOONGTANGE_CHECK(MoongTangE::parse_client_options(std::array{"--help"sv}).showHelp);
         MOONGTANGE_CHECK(MoongTangE::parse_server_options(std::array{"--help"sv}).m_showHelp);
@@ -92,6 +109,8 @@ int main()
                                                         {"--empty-room-seconds"},
                                                         {"--empty-room-seconds", "-1"},
                                                         {"--empty-room-seconds", "86401"},
+                                                        {"--world-seed"},
+                                                        {"--world-seed", "-1"},
                                                         {"--run-for"},
                                                         {"--run-for", "0"},
                                                         {"--run-for", "86401"},

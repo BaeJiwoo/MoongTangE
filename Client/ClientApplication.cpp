@@ -31,7 +31,9 @@ std::unique_ptr<IClientTransport> make_transport(const ClientOptions& options,
                                                  MainMenuAction action, const std::string& nickname)
 {
     if (action == MainMenuAction::SINGLE_PLAYER) {
-        auto server = std::make_shared<ServerHost>();
+        GameRoomOptions rooms;
+        rooms.m_worldSeed = options.worldSeed;
+        auto server = std::make_shared<ServerHost>(rooms);
         server->Start();
 
         // LocalTransport retains shared ownership; releasing it stops the embedded server.
