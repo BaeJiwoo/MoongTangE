@@ -7,7 +7,6 @@
 #include <array>
 #include <cstdint>
 #include <memory>
-#include <span>
 #include <string>
 #include <vector>
 
@@ -61,8 +60,7 @@ class SceneRenderer
 
     static std::vector<BallTriangle> MakeBallGeometry();
 
-    void DrawBall(const PlayerState& player, std::span<const CollectibleState> collectibles,
-                  bool own) const;
+    void DrawBall(const PlayerState& player, bool own) const;
     void DrawCollectible(const CollectibleState& collectible) const;
 
     class CollectibleModels;

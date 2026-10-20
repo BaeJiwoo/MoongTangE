@@ -134,38 +134,6 @@ Snapshot의 플레이어를 가리키는지 송수신 양쪽에서 검사합니�
 raylib 의존성을 추가하지 않습니다. 에셋 출처, 원본 CC0 고지와 SHA-256은
 [`Assets/README.md`](../Assets/README.md)에 기록합니다.
 
-### 부착 외피 변형
-
-클라이언트의 `BallDeformation`은 보간이 끝난 플레이어와 부착 물체 상태로 공 메시를
-변형합니다. 서버 물리나 프로토콜 상태를 추가하지 않습니다. 먼저 부착 물체 중심을 공의 로컬
-좌표로 바꿔 거리 `d`, 단위 방향 `a`, 표시 충돌 반지름 `r_o=0.35×scale`을 구합니다. 물체가
-영향을 주는 반각은 다음과 같습니다.
-
-```text
-halfAngle = min(π/2, atan2(r_o, d) × 1.75)
-cutoff    = cos(halfAngle)
-```
-
-공의 단위 정점 방향 `n`마다 `alignment=dot(n,a)`를 구하고 `cutoff`부터 물체 정면까지의 값을
-`smoothstep`으로 보간합니다. 정점 반지름 후보와 최종 반지름은 다음과 같습니다.
-
-```text
-influence      = smoothstep(clamp((alignment-cutoff)/(1-cutoff), 0, 1))
-targetRadius   = max(playerRadius, d + 0.15×r_o)
-candidate      = playerRadius + (targetRadius-playerRadius)×influence
-deformedRadius = max(playerRadius, 모든 candidate)
-```
-
-최댓값 결합은 가까운 여러 물체가 같은 정점을 무제한 팽창시키지 않습니다. 영향 목록도 로컬
-방향 순서로 정렬하므로 Snapshot의 물체 순서가 바뀌어도 같은 위치와 노멀을 선택합니다. 메시
-노멀은 선택된 반지름 함수의 접선 기울기에서 다시 구하고, 변형 위치와 노멀을 공의 자세로
-월드에 회전시켜 기존 패널 색과 조명을 유지합니다. `0.15×r_o`만 물체 중심 너머로 감싸므로
-모델의 바깥 부분은 계속 보입니다.
-
-이 외피는 표현 전용입니다. 권위 충돌 반지름, 질량, 관성 모멘트, plane 접촉과 공에 적용되는
-힘은 변하지 않습니다. 따라서 부착 개수가 달라도 기존 서버 결정론과 플레이어 운동은
-동일합니다.
-
 ## Tick 소유권과 처리 순서
 
 `GameWorld`와 내부 난수 상태, 물체 벡터는 해당 방을 담당하는 서버 Tick 스레드만 변경합니다.
@@ -195,7 +163,3 @@ deformedRadius = max(playerRadius, 모든 candidate)
 - 부착 유무와 관계없이 공 상태가 독립 `PhysicsWorld` 계산과 매 Tick 정확히 같은지 검사합니다.
 - 존재하지 않는 플레이어를 가리키는 부착 상태를 인코딩·디코딩 양쪽에서 거부합니다.
 - 플레이어 퇴장 시 물체가 같은 월드 위치에서 자유 상태로 바뀌는지 검사합니다.
-- 부착물이 없으면 기본 공 반지름과 노멀이 유지되고, 부착 방향만 물체 크기에 따라
-  팽창하는지 검사합니다.
-- 물체 입력 순서를 뒤집어도 변형 정점과 노멀이 같고, 회전한 공에서도 로컬 부착 방향이
-  유지되는지 검사합니다.

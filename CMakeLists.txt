@@ -24,8 +24,6 @@ target_link_libraries(ClientDisplaySettings PUBLIC Common)
 if(MSVC)
   target_compile_definitions(ClientDisplaySettings PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
-add_library(ClientBallDeformation Client/Rendering/BallDeformation.cpp)
-target_link_libraries(ClientBallDeformation PUBLIC Common)
 add_library(ServerCore Server/Core/ServerHost.cpp Server/Core/TickScheduler.cpp
   Server/Core/GameRoom.cpp Server/Core/GameRoomManager.cpp Server/Core/GameRoomOptions.cpp)
 target_link_libraries(ServerCore PUBLIC Common Threads::Threads)
@@ -49,7 +47,7 @@ if(MOONGTANGE_BUILD_NETWORK)
 endif()
 if(MOONGTANGE_BUILD_CLIENT)
   add_executable(Client Client/main.cpp Client/ClientApplication.cpp Client/Rendering/Scene.cpp)
-  target_link_libraries(Client PRIVATE ClientBallDeformation ClientDisplaySettings ServerCore raylib)
+  target_link_libraries(Client PRIVATE ClientDisplaySettings ServerCore raylib)
   add_custom_target(moongtange_client_assets ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${PROJECT_SOURCE_DIR}/Assets" "$<TARGET_FILE_DIR:Client>/Assets"

@@ -92,7 +92,7 @@ sequenceDiagram
 
 물리는 고정 `dt=1/60`을 사용합니다. 기본 Snapshot 게시 간격은 서버의 3 Tick입니다. 방별 Tick은 독립적이며 빈 방은 물리 계산을 건너뜁니다. TCP 서버는 약 50ms마다 아직 보내지 않은 최신 상태를 전송하므로 실제 도착 간격은 스케줄링과 네트워크에 영향을 받습니다. 클라이언트의 보간은 표시용이며 서버 상태를 변경하지 않습니다.
 
-## 결정론적 수집 물체와 부착 외피 — Issues #53, #54, #57
+## 결정론적 수집 물체와 부착 — Issues #53, #54
 
 방 생성 시 seed에 따라 간격을 둔 물체 8개를 만들고, 참가자가 있는 동안 5초마다 Y=8에서
 새 물체를 떨어뜨립니다. 모든 변경은 기존 Tick 스레드에서 일어나며 최대 24개입니다. 자세한
@@ -115,17 +115,6 @@ sequenceDiagram
 
 </details>
 
-<details><summary>Client/Rendering/BallDeformation.cpp · Scene.cpp — 표시 외피</summary>
-
-- `BallDeformation(player, collectibles)`은 보간된 부착 물체를 공 로컬 방향과 크기별 변형
-  영향으로 바꾸고, 입력 순서와 무관하도록 정렬합니다.
-- `Sample(direction)`은 겹치는 영향 중 가장 큰 반지름과 그 접선 기울기에서 변형 위치와
-  단위 노멀을 계산합니다.
-- `SceneRenderer::DrawBall()`은 기존 구 정점마다 이 결과를 적용하고 공의 자세로 월드에
-  회전시킵니다. 이 표현 경로는 서버 `RigidBody`와 권위 충돌 반지름을 변경하지 않습니다.
-
-</details>
-
 ## 싱글플레이와 독립 서버
 
 싱글플레이의 `ClientApplication`은 메인 화면에서 닉네임을 입력하고 `SINGLE PLAYER`를 선택한 뒤 `ServerHost`를 시작하여 `LocalTransport`로 입력과 Snapshot을 교환합니다. 서버 배정 정보가 있으면 `MULTIPLAYER` 입력이 활성화되고, 선택 시 닉네임을 포함한 Hello로 `TcpClientTransport`가 접속합니다. 서버의 구조화된 입장 오류와 전송 오류는 클라이언트를 종료하지 않고 메뉴 모달에 표시합니다. 자동화용 `--smoke`만 메인 화면을 건너뛰고 실행 옵션에 맞는 전송 계층을 즉시 만듭니다. 소켓과 `ServerApplication`은 로컬 모드에 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
@@ -142,7 +131,6 @@ sequenceDiagram
 
 | CMake 라이브러리 | 구현 파일 | 직접 연결하는 대상 |
 | --- | --- | --- |
-| `ClientBallDeformation` | `BallDeformation.cpp` | Common |
 | `ServerCore` | `ServerHost.cpp`, `TickScheduler.cpp`, `GameRoom.cpp`, `GameRoomManager.cpp`, `GameRoomOptions.cpp` | Common, Threads |
 | `ServerOptions` | `ServerOptions.cpp` | Common |
 | `TcpTransport` | `AsioServer.cpp`, `ServerNetworkRuntime.cpp`, `TcpChannel.cpp`, `TcpClientTransport.cpp` | ServerCore, AsioStandalone, NetworkProtocol |
