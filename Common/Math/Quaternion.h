@@ -45,6 +45,11 @@ struct Quaternion
         return {w / magnitude, x / magnitude, y / magnitude, z / magnitude};
     }
 
+    constexpr Quaternion Conjugate() const
+    {
+        return {w, -x, -y, -z};
+    }
+
     Quaternion operator*(Quaternion other) const
     {
         return {w * other.w - x * other.x - y * other.y - z * other.z,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common/Game/PlayerController.h"
+#include "Common/Physics/Collision/SphereSphere.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "Common/Protocol/InputCommand.h"
 #include "Common/Protocol/WorldSnapshot.h"
@@ -50,6 +51,7 @@ class GameWorld
     {
         const auto player = m_players.find(id);
         if (player != m_players.end()) {
+            DetachCollectibles(id, player->second);
             m_spawnSlots[player->second.spawnSlot] = false;
             m_players.erase(player);
         }
@@ -94,7 +96,13 @@ class GameWorld
         }
 
         for (auto& collectible : m_collectibles) {
+            if (collectible.attachedPlayerId != 0) {
+                UpdateAttached(collectible, m_players.at(collectible.attachedPlayerId));
+                continue;
+            }
+
             m_physics.Step(collectible.body);
+            TryAttach(collectible);
         }
 
         ++m_tick;
@@ -118,7 +126,8 @@ class GameWorld
         for (const auto& collectible : m_collectibles) {
             const auto& body = collectible.body;
             result.collectibles.push_back({collectible.id, collectible.kind, body.position,
-                                           body.orientation, collectible.scale});
+                                           body.orientation, collectible.scale,
+                                           collectible.attachedPlayerId});
         }
         return result;
     }
@@ -139,7 +148,58 @@ class GameWorld
         CollectibleKind kind{CollectibleKind::APPLE};
         RigidBody body;
         double scale{1};
+        std::uint32_t attachedPlayerId{};
+        Vector3 localPosition{};
+        Quaternion localOrientation{};
     };
+
+    static void UpdateAttached(Collectible& collectible, const Player& player)
+    {
+        const Vector3 worldOffset = player.body.orientation.Rotate(collectible.localPosition);
+        collectible.body.position = player.body.position + worldOffset;
+        collectible.body.orientation =
+            (player.body.orientation * collectible.localOrientation).Normalized();
+        collectible.body.velocity =
+            player.body.velocity + cross(player.body.angularVelocity, worldOffset);
+        collectible.body.angularVelocity = player.body.angularVelocity;
+    }
+
+    void TryAttach(Collectible& collectible)
+    {
+        constexpr double MIN_OFFSET = 1e-12;
+        for (const auto& [playerId, player] : m_players) {
+            if (!spheres_overlap(collectible.body, player.body)) {
+                continue;
+            }
+
+            Vector3 offset = collectible.body.position - player.body.position;
+            const double distance = offset.Length();
+            offset = distance > MIN_OFFSET ? offset * (1.0 / distance) : Vector3{0, 1, 0};
+            offset = offset * (collectible.body.radius + player.body.radius);
+
+            const Quaternion inversePlayerOrientation = player.body.orientation.Conjugate();
+            collectible.attachedPlayerId = playerId;
+            collectible.localPosition = inversePlayerOrientation.Rotate(offset);
+            collectible.localOrientation =
+                (inversePlayerOrientation * collectible.body.orientation).Normalized();
+            UpdateAttached(collectible, player);
+            return;
+        }
+    }
+
+    void DetachCollectibles(std::uint32_t playerId, const Player& player)
+    {
+        for (auto& collectible : m_collectibles) {
+            if (collectible.attachedPlayerId != playerId) {
+                continue;
+            }
+
+            UpdateAttached(collectible, player);
+            collectible.attachedPlayerId = 0;
+            collectible.localPosition = {};
+            collectible.localOrientation = {};
+        }
+    }
 
     double CollectibleScale(std::uint32_t id) const
     {
