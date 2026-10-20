@@ -12,11 +12,13 @@
 
 namespace MoongTangE {
 
-enum class MainMenuAction
+enum class MenuAction
 {
     NONE,
     SINGLE_PLAYER,
     MULTIPLAYER,
+    RESUME_GAME,
+    EXIT_GAME,
     SHOW_OPTIONS,
     PREVIOUS_WINDOW_MODE,
     NEXT_WINDOW_MODE,
@@ -44,12 +46,14 @@ class SceneRenderer
     SceneRenderer(SceneRenderer&&) = delete;
     SceneRenderer& operator=(SceneRenderer&&) = delete;
 
-    MainMenuAction DrawMainMenu(bool multiplayerAvailable, bool optionsOpen,
-                                const DisplaySettingsState& selectedSettings, bool confirmationOpen,
-                                int confirmationSeconds, std::string& nickname,
-                                const std::string& errorMessage) const;
-    void Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
-              const char* status) const;
+    MenuAction DrawMainMenu(bool multiplayerAvailable, bool optionsOpen,
+                            const DisplaySettingsState& selectedSettings, bool confirmationOpen,
+                            int confirmationSeconds, std::string& nickname,
+                            const std::string& errorMessage) const;
+    MenuAction Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
+                    const char* status, bool gameMenuOpen, bool optionsOpen,
+                    const DisplaySettingsState& selectedSettings, bool confirmationOpen,
+                    int confirmationSeconds) const;
 
   private:
     struct BallTriangle

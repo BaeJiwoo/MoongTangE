@@ -110,20 +110,27 @@ class TcpClientTransport::ClientNetworkRuntime
     // Called by the one consumer thread; all callbacks are drained before destruction.
     void Stop()
     {
+        bool sendDisconnect = false;
         {
             std::lock_guard lock(m_stateMutex);
             if (m_stopped) {
                 return;
             }
 
+            sendDisconnect = m_playerId != 0;
             m_stopped = true;
             m_playerId = 0;
             m_roomId = 0;
             m_latestSnapshot.reset();
         }
 
-        asio::post(m_ioContext, [this] {
-            Fail("Client closed");
+        asio::post(m_ioContext, [this, sendDisconnect] {
+            m_terminal = true;
+            if (sendDisconnect && m_channel) {
+                m_channel->SendAndClose(wire::disconnect(), "Client closed");
+            } else {
+                Fail("Client closed");
+            }
             m_workGuard.reset();
         });
         if (m_networkThread.joinable()) {
@@ -229,7 +236,7 @@ class TcpClientTransport::ClientNetworkRuntime
     void RecordFailure(std::string reason)
     {
         std::lock_guard lock(m_stateMutex);
-        if (m_errorMessage.empty()) {
+        if (!m_stopped && m_errorMessage.empty()) {
             m_errorMessage = std::move(reason);
         }
         m_playerId = 0;
