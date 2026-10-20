@@ -29,6 +29,10 @@ class DeformableBallCollider
         }
 
         m_volumeRadiusCubed = coreRadius * coreRadius * coreRadius;
+        if (!std::isfinite(m_volumeRadiusCubed)) {
+            throw std::invalid_argument("Core collider volume overflow");
+        }
+
         InitializeArms();
     }
 
@@ -88,6 +92,10 @@ class DeformableBallCollider
         }
 
         const double directionLength = localDirection.Length();
+        if (!std::isfinite(directionLength)) {
+            throw std::invalid_argument("Pickup direction overflow");
+        }
+
         const Vector3 direction = directionLength > MIN_DIRECTION_LENGTH
                                       ? localDirection * (1.0 / directionLength)
                                       : Vector3{0, 1, 0};
@@ -124,7 +132,7 @@ class DeformableBallCollider
     static constexpr std::size_t FIBONACCI_ARM_COUNT = RADIAL_ARM_COUNT - AXIS_ARM_COUNT;
     static constexpr double GOLDEN_ANGLE = 2.39996322972865332;
 
-    void InitializeArms()
+    static std::array<Vector3, RADIAL_ARM_COUNT> MakeArmDirections()
     {
         constexpr std::array<Vector3, AXIS_ARM_COUNT> AXIS_DIRECTIONS{{
             {1, 0, 0},
@@ -135,9 +143,10 @@ class DeformableBallCollider
             {0, 0, -1},
         }};
 
+        std::array<Vector3, RADIAL_ARM_COUNT> directions{};
         std::size_t armIndex = 0;
         for (const auto direction : AXIS_DIRECTIONS) {
-            m_arms[armIndex++] = {direction, m_coreRadius};
+            directions[armIndex++] = direction;
         }
 
         for (std::size_t index = 0; index < FIBONACCI_ARM_COUNT; ++index) {
@@ -148,7 +157,16 @@ class DeformableBallCollider
             const double angle = GOLDEN_ANGLE * static_cast<double>(index);
             const Vector3 direction{std::cos(angle) * horizontalRadius, y,
                                     std::sin(angle) * horizontalRadius};
-            m_arms[armIndex++] = {direction, m_coreRadius};
+            directions[armIndex++] = direction;
+        }
+        return directions;
+    }
+
+    void InitializeArms()
+    {
+        static const auto DIRECTIONS = MakeArmDirections();
+        for (std::size_t index = 0; index < RADIAL_ARM_COUNT; ++index) {
+            m_arms[index] = {DIRECTIONS[index], m_coreRadius};
         }
     }
 

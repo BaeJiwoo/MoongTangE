@@ -4,6 +4,7 @@
 #include "TestSupport.h"
 
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 namespace {
@@ -225,6 +226,22 @@ void deformable_collider_changes_ground_contact()
     MOONGTANGE_CHECK(offCenter.position.y + updatedContactArm.y >= 0);
 }
 
+void invalid_deformable_collider_is_rejected()
+{
+    MOONGTANGE_CHECK(MoongTangE::test::throws([] {
+        DeformableBallCollider invalid(0);
+    }));
+
+    DeformableBallCollider collider(simulation::PLAYER_RADIUS);
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
+        collider.AddCollectible({}, 0);
+    }));
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
+        collider.PickupSurface(
+            {std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0});
+    }));
+}
+
 } // namespace
 
 int main()
@@ -240,5 +257,6 @@ int main()
         sphere_overlap_detects_contact();
         deformable_collider_separates_pickup_and_rolling_proxies();
         deformable_collider_changes_ground_contact();
+        invalid_deformable_collider_is_rejected();
     });
 }
