@@ -1,4 +1,5 @@
 #include "Common/Physics/Collision/SphereSphere.h"
+#include "Common/Physics/DeformableBallCollider.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "TestSupport.h"
 
@@ -171,6 +172,23 @@ void sphere_overlap_detects_contact()
     MOONGTANGE_CHECK(!spheres_overlap(first, second));
 }
 
+void deformable_collider_uses_attached_spheres()
+{
+    DeformableBallCollider collider(simulation::PLAYER_RADIUS);
+    collider.AddSphere({0, 0.85, 0}, simulation::COLLECTIBLE_BASE_RADIUS);
+
+    const auto uprightSupport = collider.Support({}, {0, -1, 0});
+    MOONGTANGE_CHECK(uprightSupport == (Vector3{0, -simulation::PLAYER_RADIUS, 0}));
+
+    const auto upsideDown = Quaternion::FromRotation({0, 0, std::numbers::pi});
+    const auto extendedSupport = collider.Support(upsideDown, {0, -1, 0});
+    MOONGTANGE_CHECK(MoongTangE::test::approx(extendedSupport.y, -1.2));
+
+    const auto overlap = collider.FindOverlap({0, 1.54, 0}, 0.35);
+    MOONGTANGE_CHECK(overlap && overlap->localCenter == (Vector3{0, 0.85, 0}));
+    MOONGTANGE_CHECK(!collider.FindOverlap({0, 1.56, 0}, 0.35));
+}
+
 } // namespace
 
 int main()
@@ -184,5 +202,6 @@ int main()
         repeated_simulation_keeps_normalized_orientation();
         invalid_state_is_rejected();
         sphere_overlap_detects_contact();
+        deformable_collider_uses_attached_spheres();
     });
 }
