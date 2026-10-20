@@ -132,7 +132,7 @@ sequenceDiagram
 
 ## 싱글플레이와 독립 서버
 
-싱글플레이의 `ClientApplication`은 메인 화면에서 닉네임을 입력하고 `SINGLE PLAYER`를 선택한 뒤 `ServerHost`를 시작하여 `LocalTransport`로 입력과 Snapshot을 교환합니다. 서버 배정 정보가 있으면 `MULTIPLAYER` 입력이 활성화되고, 선택 시 닉네임을 포함한 Hello로 `TcpClientTransport`가 접속합니다. 서버의 구조화된 입장 오류와 전송 오류는 클라이언트를 종료하지 않고 메뉴 모달에 표시합니다. 자동화용 `--smoke`만 메인 화면을 건너뛰고 실행 옵션에 맞는 전송 계층을 즉시 만듭니다. 소켓과 `ServerApplication`은 로컬 모드에 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
+싱글플레이의 `ClientApplication`은 메인 화면에서 닉네임을 입력하고 `SINGLE PLAYER`를 선택한 뒤 `ServerHost`를 시작하여 `LocalTransport`로 입력과 Snapshot을 교환합니다. 서버 배정 정보가 있으면 `MULTIPLAYER` 입력이 활성화되고, 선택 시 닉네임을 포함한 Hello로 `TcpClientTransport`가 접속합니다. 서버의 구조화된 입장 오류와 전송 오류는 클라이언트를 종료하지 않고 메뉴 모달에 표시합니다. 게임 중 ESC는 종료 메뉴를 열고 이동 입력을 중립으로 유지합니다. `RESUME` 또는 ESC는 게임으로 돌아가며 `EXIT GAME`과 창 닫기는 전송 계층을 먼저 닫은 뒤 그래픽 창을 해제합니다. 자동화용 `--smoke`만 메인 화면을 건너뛰고 실행 옵션에 맞는 전송 계층을 즉시 만듭니다. 소켓과 `ServerApplication`은 로컬 모드에 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
 
 `Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication`과 outbound 전용 `MatchmakingControlClient`를 제공하고, `TcpTransport`·`ServerOptions` 및 비공개 HTTP 의존성 `MatchmakingHttp`를 연결합니다. ASP.NET `MatchmakingApi`는 CMake 대상과 주소 공간을 공유하지 않는 별도 프로젝트입니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며, Asio를 직접 포함하는 `ServerNetworkRuntime.h`의 독립 컴파일도 생략합니다.
 
@@ -375,7 +375,7 @@ TCP 연결 한도는 Hello 대기를 포함해 `Capacity() × 2`개(기본 48개
 | `Connected()` / `PlayerId()` / `RoomId()` / `Error()` | 잠금 아래 연결 상태·할당 ID·첫 오류를 조회합니다. |
 | `Send(input)` | 입력·연결·대기 큐 한도를 검사하고 네트워크 스레드에 전송을 게시합니다. |
 | `Receive()` | 잠금 아래 최신 Snapshot을 꺼냅니다. |
-| `Close()` / `Stop()` | 종료 상태를 설정하고 네트워크 정리와 스레드 join을 수행합니다. |
+| `Close()` / `Stop()` | 종료 상태를 설정합니다. 입장이 완료된 연결은 `Disconnect`를 송신 큐 끝에서 보낸 뒤 소켓을 닫고 네트워크 스레드를 join하며, 연결 중이거나 실패한 연결은 즉시 정리합니다. 반복 호출은 무시합니다. |
 | `BeginConnection()` / `ConnectSocket()` | 제한 시간을 설정하고 주소 해석과 TCP 연결을 시작합니다. |
 | `StartHandshake()` / `ReceiveMessage()` | TcpChannel 콜백을 등록하고 Hello와 증가하는 Tick의 Snapshot을 처리합니다. |
 | `RecordFailure()` / `Fail()` | 첫 오류를 보관하고 ID·주소 해석·타이머·소켓·채널을 정리합니다. |
