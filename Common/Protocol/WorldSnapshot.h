@@ -39,9 +39,8 @@ struct CollectibleState
 {
     std::uint32_t id{};
     CollectibleKind kind{CollectibleKind::APPLE};
-    Vector3 position{}, velocity{};
+    Vector3 position{};
     Quaternion orientation{};
-    Vector3 angularVelocity{};
     double scale{1};
 };
 

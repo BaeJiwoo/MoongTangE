@@ -4,6 +4,7 @@
 #include "Common/Protocol/Nickname.h"
 #include "game.pb.h"
 
+#include <cmath>
 #include <google/protobuf/io/coded_stream.h>
 #include <set>
 #include <stdexcept>
@@ -160,7 +161,8 @@ InputCommand read_input(std::span<const std::uint8_t> data, std::uint32_t sessio
 Bytes snapshot(const RoomSnapshot& room)
 {
     const auto& state = room.world;
-    require(room.roomId != 0 && state.players.size() <= MAX_PLAYERS);
+    require(room.roomId != 0 && state.players.size() <= MAX_PLAYERS &&
+            state.collectibles.size() <= MAX_COLLECTIBLES);
 
     proto::WorldSnapshot message;
     message.set_server_tick(state.tick);
@@ -179,6 +181,21 @@ Bytes snapshot(const RoomSnapshot& room)
         write_quaternion(*record.mutable_orientation(), player.orientation);
         write_vector(*record.mutable_angular_velocity(), player.angularVelocity);
     }
+
+    std::set<std::uint32_t> collectibleIds;
+    for (const auto& collectible : state.collectibles) {
+        require(collectible.id != 0 && collectibleIds.insert(collectible.id).second &&
+                valid_collectible_kind(collectible.kind) && std::isfinite(collectible.scale) &&
+                collectible.scale >= simulation::COLLECTIBLE_MIN_SCALE &&
+                collectible.scale <= simulation::COLLECTIBLE_MAX_SCALE);
+
+        auto& record = *message.add_collectibles();
+        record.set_id(collectible.id);
+        record.set_kind(static_cast<proto::CollectibleKind>(collectible.kind));
+        write_vector(*record.mutable_position(), collectible.position);
+        write_quaternion(*record.mutable_orientation(), collectible.orientation);
+        record.set_scale(collectible.scale);
+    }
     return encode(MessageType::SNAPSHOT, message);
 }
 
@@ -186,10 +203,12 @@ RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
 {
     const auto message = decode<proto::WorldSnapshot>(data, MessageType::SNAPSHOT);
     require(message.room_id() != 0 && message.has_server_tick() &&
-            message.players_size() <= static_cast<int>(MAX_PLAYERS));
+            message.players_size() <= static_cast<int>(MAX_PLAYERS) &&
+            message.collectibles_size() <= static_cast<int>(MAX_COLLECTIBLES));
 
-    WorldSnapshot state{message.server_tick(), {}};
+    WorldSnapshot state{message.server_tick(), {}, {}};
     state.players.reserve(static_cast<std::size_t>(message.players_size()));
+    state.collectibles.reserve(static_cast<std::size_t>(message.collectibles_size()));
 
     std::set<std::uint32_t> ids;
     for (const auto& record : message.players()) {
@@ -202,6 +221,19 @@ RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
                                  read_vector(record.velocity()),
                                  read_quaternion(record.orientation()),
                                  read_vector(record.angular_velocity()), record.nickname()});
+    }
+
+    std::set<std::uint32_t> collectibleIds;
+    for (const auto& record : message.collectibles()) {
+        require(record.id() != 0 && collectibleIds.insert(record.id()).second &&
+                record.kind() >= proto::APPLE && record.kind() <= proto::DONUT &&
+                record.has_position() && record.has_orientation() && record.has_scale() &&
+                std::isfinite(record.scale()) &&
+                record.scale() >= simulation::COLLECTIBLE_MIN_SCALE &&
+                record.scale() <= simulation::COLLECTIBLE_MAX_SCALE);
+        state.collectibles.push_back({record.id(), static_cast<CollectibleKind>(record.kind()),
+                                      read_vector(record.position()),
+                                      read_quaternion(record.orientation()), record.scale()});
     }
     return {message.room_id(), std::move(state)};
 }

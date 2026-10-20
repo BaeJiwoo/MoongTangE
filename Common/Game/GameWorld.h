@@ -118,8 +118,7 @@ class GameWorld
         for (const auto& collectible : m_collectibles) {
             const auto& body = collectible.body;
             result.collectibles.push_back({collectible.id, collectible.kind, body.position,
-                                           body.velocity, body.orientation, body.angularVelocity,
-                                           collectible.scale});
+                                           body.orientation, collectible.scale});
         }
         return result;
     }

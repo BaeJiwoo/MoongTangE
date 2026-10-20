@@ -104,6 +104,9 @@ int main()
         b.tick = 6;
         b.players[0].position.x = 1;
         b.players[0].orientation = Quaternion::FromRotation({0, 0, -2});
+        a.collectibles = {{1, CollectibleKind::APPLE, {0, 1, 0}, {}, 1}};
+        b.collectibles = a.collectibles;
+        b.collectibles[0].position.x = 2;
 
         view.Push(a);
         view.Push(b);
@@ -116,6 +119,7 @@ int main()
                 .Length() < 1e-9);
         MOONGTANGE_CHECK(a.players[0].position.x == 0 && b.players[0].position.x == 1);
         MOONGTANGE_CHECK(middle.players[0].nickname == "Alice");
+        MOONGTANGE_CHECK(MoongTangE::test::approx(middle.collectibles[0].position.x, 1));
 
         view.Push(a); // Stale packet cannot rewind the view.
         MOONGTANGE_CHECK(view.Sample().players[0].position == middle.players[0].position);

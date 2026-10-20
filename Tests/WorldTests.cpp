@@ -53,8 +53,6 @@ int main()
         MOONGTANGE_CHECK(droppedA.collectibles.size() == initialA.collectibles.size() + 1);
         MOONGTANGE_CHECK(droppedA.collectibles.back().position ==
                          droppedB.collectibles.back().position);
-        MOONGTANGE_CHECK(droppedA.collectibles.back().velocity ==
-                         droppedB.collectibles.back().velocity);
         MOONGTANGE_CHECK(droppedA.collectibles.back().position.y ==
                          MoongTangE::simulation::COLLECTIBLE_DROP_HEIGHT);
 

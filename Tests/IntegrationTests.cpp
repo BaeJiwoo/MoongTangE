@@ -91,6 +91,15 @@ void deterministic_transport_equivalence()
         MOONGTANGE_CHECK(a.players[0].velocity == b.players[0].velocity);
         MOONGTANGE_CHECK(a.players[0].orientation == b.players[0].orientation);
         MOONGTANGE_CHECK(a.players[0].angularVelocity == b.players[0].angularVelocity);
+        MOONGTANGE_CHECK(a.collectibles.size() == b.collectibles.size());
+        for (std::size_t index = 0; index < a.collectibles.size(); ++index) {
+            MOONGTANGE_CHECK(a.collectibles[index].id == b.collectibles[index].id);
+            MOONGTANGE_CHECK(a.collectibles[index].kind == b.collectibles[index].kind);
+            MOONGTANGE_CHECK(a.collectibles[index].position == b.collectibles[index].position);
+            MOONGTANGE_CHECK(a.collectibles[index].orientation ==
+                             b.collectibles[index].orientation);
+            MOONGTANGE_CHECK(a.collectibles[index].scale == b.collectibles[index].scale);
+        }
     }
 }
 
