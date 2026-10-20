@@ -92,11 +92,11 @@ sequenceDiagram
 
 물리는 고정 `dt=1/60`을 사용합니다. 기본 Snapshot 게시 간격은 서버의 3 Tick입니다. 방별 Tick은 독립적이며 빈 방은 물리 계산을 건너뜁니다. TCP 서버는 약 50ms마다 아직 보내지 않은 최신 상태를 전송하므로 실제 도착 간격은 스케줄링과 네트워크에 영향을 받습니다. 클라이언트의 보간은 표시용이며 서버 상태를 변경하지 않습니다.
 
-## 결정론적 수집 물체와 부착 — Issues #53, #54
+## 결정론적 수집 물체와 변형 콜라이더 — Issues #53, #54, #57
 
 방 생성 시 seed에 따라 간격을 둔 물체 8개를 만들고, 참가자가 있는 동안 5초마다 Y=8에서
 새 물체를 떨어뜨립니다. 모든 변경은 기존 Tick 스레드에서 일어나며 최대 24개입니다. 자세한
-상수, 난수 변환, 배치 거부, 공 충돌·로컬 부착, Snapshot과 GLB 정규화 규칙은
+상수, 난수 변환, 배치 거부, 복합 콜라이더·로컬 부착, Snapshot과 GLB 정규화 규칙은
 [수집 물체 시스템](COLLECTIBLE_SYSTEM.md)에 정리합니다.
 
 <details><summary>Common/Game/GameWorld.h · DeterministicRandom.h — 소환과 물리</summary>
@@ -104,14 +104,25 @@ sequenceDiagram
 - `GameWorld(seed)`는 시작 물체를 만들고 같은 seed의 생성 순서를 재현합니다.
 - `SpawnCollectible(falling)`은 종류·고유 크기·방향·XZ 후보를 만들고 최소 간격과 최대 개수를
   검사합니다.
-- `Step()`은 플레이어를 먼저 적분한 뒤 자유 물체의 물리와 충돌을 처리하거나 붙은 물체의
-  로컬 변환을 적용하고, Tick 증가 뒤 300 Tick 주기로 소환합니다.
-- `TryAttach()`는 구-구 겹침을 검사하고 첫 충돌 플레이어의 접촉면에서 로컬 위치·회전을
-  저장합니다. 이 경로는 플레이어 `RigidBody`를 변경하지 않습니다.
+- `PlayerCollider()`는 기본 공과 해당 플레이어의 부착물 구를 공 로컬 복합 콜라이더로
+  조립합니다. `Step()`은 이 콜라이더로 플레이어를 먼저 적분합니다.
+- `TryAttach()`는 자유 물체와 복합 콜라이더의 구들을 검사하고, 충돌한 구의 접촉면에 로컬
+  위치·회전을 저장합니다. 부착 순간에는 플레이어 `RigidBody`에 충격량을 적용하지 않습니다.
 - `UpdateAttached()`는 공의 월드 변환으로 붙은 물체의 위치·회전과 분리용 표면 속도를
   갱신합니다. `DetachCollectibles()`는 플레이어 퇴장 시 자유 상태로 되돌립니다.
 - `Snapshot()`은 물체 ID·종류·위치·자세·크기와 부착 플레이어 ID를 복사합니다.
 - `DeterministicRandom::Next/Index/Range`는 STL 분포에 기대지 않는 고정 난수 변환입니다.
+
+</details>
+
+<details><summary>Common/Physics/DeformableBallCollider.h · PhysicsWorld.h — 변형 접촉</summary>
+
+- `DeformableBallCollider::AddSphere()`는 부착물의 로컬 중심과 크기를 콜라이더에 추가합니다.
+- `Support()`는 월드 방향으로 가장 먼 기본 공 또는 부착물 구의 지지점을 선택합니다.
+- `FindOverlap()`은 자유 물체가 기본 공이나 이미 붙은 물체와 접하는지 검사합니다.
+- `PhysicsWorld::Step(body, collider, ...)`은 아래쪽 지지점을 plane 접촉 팔로 사용합니다.
+  정상·마찰 충격의 유효질량과 토크, 구름 저항과 정지 판정도 같은 접촉 팔을 사용하므로
+  부착 위치와 크기에 따라 실제 플레이어 운동이 달라집니다.
 
 </details>
 
