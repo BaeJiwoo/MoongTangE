@@ -31,7 +31,9 @@ std::unique_ptr<IClientTransport> make_transport(const ClientOptions& options,
                                                  MainMenuAction action, const std::string& nickname)
 {
     if (action == MainMenuAction::SINGLE_PLAYER) {
-        auto server = std::make_shared<ServerHost>();
+        GameRoomOptions rooms;
+        rooms.m_worldSeed = options.worldSeed;
+        auto server = std::make_shared<ServerHost>(rooms);
         server->Start();
 
         // LocalTransport retains shared ownership; releasing it stops the embedded server.
@@ -63,6 +65,7 @@ ClientApplication::ClientApplication(ClientOptions options) : m_options(std::mov
 void ClientApplication::Run()
 {
     GraphicsWindow window(m_options.smoke);
+    SceneRenderer renderer;
     if (m_options.smoke) {
         StartGame(m_options.remote ? MainMenuAction::MULTIPLAYER : MainMenuAction::SINGLE_PLAYER);
     } else {
@@ -87,7 +90,7 @@ void ClientApplication::Run()
                     ? std::max(0, static_cast<int>(
                                       std::ceil(*m_displayConfirmationDeadline - GetTime())))
                     : 0;
-            const auto action = m_renderer.DrawMainMenu(
+            const auto action = renderer.DrawMainMenu(
                 m_options.remote.has_value(), m_optionsOpen, m_displaySettings.Pending(),
                 m_displayConfirmationDeadline.has_value(), confirmationSeconds, m_nickname,
                 m_errorMessage);
@@ -157,9 +160,9 @@ void ClientApplication::Run()
         const auto status = m_transport->Connected()
                                 ? "Room " + std::to_string(m_transport->RoomId())
                                 : std::string("Joining...");
-        m_renderer.Draw(m_presentation.Sample(), m_transport->PlayerId(),
-                        m_options.remote ? "TCP dedicated server" : "Embedded server",
-                        status.c_str());
+        renderer.Draw(m_presentation.Sample(), m_transport->PlayerId(),
+                      m_options.remote ? "TCP dedicated server" : "Embedded server",
+                      status.c_str());
     }
 
     if (m_options.smoke) {

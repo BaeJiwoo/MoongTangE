@@ -1,7 +1,10 @@
 #pragma once
 
+#include "Common/SimulationConfig.h"
+
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 
 namespace MoongTangE {
 
@@ -13,6 +16,7 @@ struct GameRoomOptions
 
     std::size_t m_maxRooms{8};
     std::chrono::seconds m_emptyRoomLifetime{30};
+    std::uint64_t m_worldSeed{simulation::DEFAULT_WORLD_SEED};
 
     void Validate() const;
 };

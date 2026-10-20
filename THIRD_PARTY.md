@@ -11,8 +11,13 @@ No external physics engine is used. Common and ServerCore do not link raylib, As
 | utf8_range | Included in the pinned Protobuf archive | MIT | Protobuf UTF-8 support |
 | [cpp-httplib](https://github.com/yhirose/cpp-httplib/releases/tag/v0.61.0) | 0.61.0 / `c419c904da4ed0d057f169c225c58cc795c07e4d` | MIT | Outbound matchmaking control client |
 | upb | Included in the pinned Protobuf archive | BSD-3-Clause (Protobuf license) | Protobuf compiler support |
+| [Kenney Food Kit](https://kenney.nl/assets/food-kit) | 2.0 (2024-06-26) | CC0 1.0 | Client collectible models |
 
 CMake verifies the downloaded source archive against its SHA-256. raylib's source archive includes its license and the notices for embedded dependencies (including GLFW). Preserve those notices when redistributing binaries and source.
+
+The four committed Food Kit GLB files and their SHA-256 hashes are listed in
+[`Assets/README.md`](Assets/README.md). The upstream archive's CC0 notice is preserved as
+`Assets/License.txt`; the downloaded archive itself is not committed.
 
 cpp-httplib is fetched only in network builds through the private `MatchmakingHttp` dependency of `ServerRuntime`. Its optional TLS/compression libraries and examples/tests are not enabled. Preserve its [LICENSE](https://github.com/yhirose/cpp-httplib/blob/c419c904da4ed0d057f169c225c58cc795c07e4d/LICENSE) when redistributing. Common and ServerCore remain independent of HTTP and OS libraries.
 

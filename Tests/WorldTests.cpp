@@ -1,12 +1,73 @@
 #include "Common/Game/GameWorld.h"
 #include "TestSupport.h"
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
+#include <set>
 
 int main()
 {
     return MoongTangE::test::run([] {
+        constexpr std::uint64_t WORLD_SEED = 123456789;
+        MoongTangE::GameWorld seededA(WORLD_SEED), seededB(WORLD_SEED), seededC(WORLD_SEED + 1);
+        const auto initialA = seededA.Snapshot();
+        const auto initialB = seededB.Snapshot();
+        const auto initialC = seededC.Snapshot();
+        MOONGTANGE_CHECK(initialA.collectibles.size() ==
+                         MoongTangE::simulation::INITIAL_COLLECTIBLES);
+        MOONGTANGE_CHECK(initialA.collectibles.size() == initialB.collectibles.size());
+        MOONGTANGE_CHECK(initialA.collectibles[0].position == initialB.collectibles[0].position);
+        MOONGTANGE_CHECK(initialA.collectibles[0].kind == initialB.collectibles[0].kind);
+        MOONGTANGE_CHECK(initialA.collectibles[0].scale == initialB.collectibles[0].scale);
+        MOONGTANGE_CHECK(initialA.collectibles[0].position != initialC.collectibles[0].position);
+
+        std::set<double> scales;
+        for (std::size_t index = 0; index < initialA.collectibles.size(); ++index) {
+            const auto& collectible = initialA.collectibles[index];
+            MOONGTANGE_CHECK(collectible.id == index + 1);
+            MOONGTANGE_CHECK(MoongTangE::valid_collectible_kind(collectible.kind));
+            MOONGTANGE_CHECK(scales.insert(collectible.scale).second);
+            MOONGTANGE_CHECK(MoongTangE::test::approx(
+                collectible.position.y,
+                MoongTangE::simulation::COLLECTIBLE_BASE_RADIUS * collectible.scale));
+
+            for (std::size_t other = 0; other < index; ++other) {
+                const auto& previous = initialA.collectibles[other];
+                const MoongTangE::Vector3 offset{collectible.position.x - previous.position.x, 0,
+                                                 collectible.position.z - previous.position.z};
+                const double requiredDistance = MoongTangE::simulation::COLLECTIBLE_BASE_RADIUS *
+                                                    (collectible.scale + previous.scale) +
+                                                MoongTangE::simulation::COLLECTIBLE_MIN_GAP;
+                MOONGTANGE_CHECK(offset.Length() >= requiredDistance);
+            }
+        }
+
+        for (std::uint64_t tick = 0;
+             tick < MoongTangE::simulation::COLLECTIBLE_SPAWN_INTERVAL_TICKS; ++tick) {
+            seededA.Step();
+            seededB.Step();
+        }
+        const auto droppedA = seededA.Snapshot();
+        const auto droppedB = seededB.Snapshot();
+        MOONGTANGE_CHECK(droppedA.collectibles.size() == initialA.collectibles.size() + 1);
+        MOONGTANGE_CHECK(droppedA.collectibles.back().position ==
+                         droppedB.collectibles.back().position);
+        MOONGTANGE_CHECK(droppedA.collectibles.back().position.y ==
+                         MoongTangE::simulation::COLLECTIBLE_DROP_HEIGHT);
+
+        while (seededA.CollectibleCount() < MoongTangE::simulation::MAX_COLLECTIBLES) {
+            for (std::uint64_t tick = 0;
+                 tick < MoongTangE::simulation::COLLECTIBLE_SPAWN_INTERVAL_TICKS; ++tick) {
+                seededA.Step();
+            }
+        }
+        for (std::uint64_t tick = 0;
+             tick < MoongTangE::simulation::COLLECTIBLE_SPAWN_INTERVAL_TICKS; ++tick) {
+            seededA.Step();
+        }
+        MOONGTANGE_CHECK(seededA.CollectibleCount() == MoongTangE::simulation::MAX_COLLECTIBLES);
+
         MoongTangE::GameWorld world;
         MOONGTANGE_CHECK(world.AddPlayer(1));
         MOONGTANGE_CHECK(world.AddPlayer(2));

@@ -62,6 +62,16 @@ class SnapshotInterpolator
                 InterpolatePlayer(*previous, player, fraction);
             }
         }
+        for (auto& collectible : result.collectibles) {
+            const auto previous =
+                std::find_if(m_from.collectibles.begin(), m_from.collectibles.end(),
+                             [&](const CollectibleState& candidate) {
+                                 return candidate.id == collectible.id;
+                             });
+            if (previous != m_from.collectibles.end()) {
+                InterpolateCollectible(*previous, collectible, fraction);
+            }
+        }
         return result;
     }
 
@@ -75,6 +85,13 @@ class SnapshotInterpolator
         to.position = from.position * (1 - fraction) + to.position * fraction;
         to.velocity = from.velocity * (1 - fraction) + to.velocity * fraction;
         to.angularVelocity = from.angularVelocity * (1 - fraction) + to.angularVelocity * fraction;
+        to.orientation = interpolate(from.orientation, to.orientation, fraction);
+    }
+
+    static void InterpolateCollectible(const CollectibleState& from, CollectibleState& to,
+                                       double fraction)
+    {
+        to.position = from.position * (1 - fraction) + to.position * fraction;
         to.orientation = interpolate(from.orientation, to.orientation, fraction);
     }
 

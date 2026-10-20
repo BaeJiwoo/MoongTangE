@@ -65,7 +65,7 @@ def varint(data, offset):
 def hello(game_port, ticket="", nickname="SmokePlayer"):
     peer = socket.create_connection(("127.0.0.1", game_port), timeout=3)
     try:
-        payload = bytes([1, 8, 6])
+        payload = bytes([1, 8, 7])
         if ticket:
             payload += bytes([18, 64]) + ticket.encode("ascii")
         payload += bytes([26, len(nickname)]) + nickname.encode("ascii")

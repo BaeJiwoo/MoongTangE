@@ -89,6 +89,8 @@ ServerOptions parse_server_options(std::span<const std::string_view> arguments)
         } else if (argument == "--empty-room-seconds") {
             options.m_rooms.m_emptyRoomLifetime = std::chrono::seconds(unsigned_option(
                 reader.ValueFor(argument), GameRoomOptions::MAX_EMPTY_ROOM_SECONDS, true));
+        } else if (argument == "--world-seed") {
+            options.m_rooms.m_worldSeed = uint64_option(reader.ValueFor(argument));
         } else {
             throw std::invalid_argument("Unknown option: " + std::string(argument));
         }

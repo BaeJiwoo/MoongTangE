@@ -26,6 +26,20 @@ inline unsigned unsigned_option(std::string_view text, unsigned maximum, bool al
     return value;
 }
 
+inline std::uint64_t uint64_option(std::string_view text)
+{
+    if (text.empty()) {
+        throw std::invalid_argument("Empty numeric option");
+    }
+
+    std::uint64_t value{};
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (error != std::errc{} || end != text.data() + text.size()) {
+        throw std::invalid_argument("Invalid numeric option: " + std::string(text));
+    }
+    return value;
+}
+
 struct Endpoint
 {
     std::string host;

@@ -5,12 +5,16 @@
 #include "Common/Protocol/InputCommand.h"
 #include "Common/Protocol/WorldSnapshot.h"
 #include "Common/SimulationConfig.h"
+#include "Common/Utility/DeterministicRandom.h"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <numbers>
+#include <vector>
 
 namespace MoongTangE {
 
@@ -18,6 +22,14 @@ namespace MoongTangE {
 class GameWorld
 {
   public:
+    explicit GameWorld(std::uint64_t seed = simulation::DEFAULT_WORLD_SEED)
+        : m_random(seed), m_scaleOffset(m_random.Index(simulation::MAX_COLLECTIBLES))
+    {
+        for (std::size_t index = 0; index < simulation::INITIAL_COLLECTIBLES; ++index) {
+            SpawnCollectible(false);
+        }
+    }
+
     bool AddPlayer(std::uint32_t id)
     {
         if (id == 0 || m_players.size() >= MAX_PLAYERS || m_players.contains(id)) {
@@ -53,6 +65,11 @@ class GameWorld
         return m_players.size();
     }
 
+    std::size_t CollectibleCount() const
+    {
+        return m_collectibles.size();
+    }
+
     bool Apply(InputCommand input)
     {
         const auto player = m_players.find(input.playerId);
@@ -76,18 +93,32 @@ class GameWorld
             m_physics.Step(player.body, PhysicsWorld::FIXED_DELTA, force);
         }
 
+        for (auto& collectible : m_collectibles) {
+            m_physics.Step(collectible.body);
+        }
+
         ++m_tick;
+        if (m_tick % simulation::COLLECTIBLE_SPAWN_INTERVAL_TICKS == 0) {
+            SpawnCollectible(true);
+        }
     }
 
     WorldSnapshot Snapshot() const
     {
-        WorldSnapshot result{m_tick, {}};
+        WorldSnapshot result{m_tick, {}, {}};
         result.players.reserve(m_players.size());
+        result.collectibles.reserve(m_collectibles.size());
 
         for (const auto& [id, player] : m_players) {
             const auto& body = player.body;
             result.players.push_back(
                 {id, body.position, body.velocity, body.orientation, body.angularVelocity, {}});
+        }
+
+        for (const auto& collectible : m_collectibles) {
+            const auto& body = collectible.body;
+            result.collectibles.push_back({collectible.id, collectible.kind, body.position,
+                                           body.orientation, collectible.scale});
         }
         return result;
     }
@@ -102,9 +133,80 @@ class GameWorld
         std::uint64_t inputTick{};
     };
 
+    struct Collectible
+    {
+        std::uint32_t id{};
+        CollectibleKind kind{CollectibleKind::APPLE};
+        RigidBody body;
+        double scale{1};
+    };
+
+    double CollectibleScale(std::uint32_t id) const
+    {
+        constexpr std::size_t SCALE_STRIDE = 5;
+        const auto scaleIndex =
+            (m_scaleOffset + (static_cast<std::size_t>(id) - 1) * SCALE_STRIDE) %
+            simulation::MAX_COLLECTIBLES;
+        const double fraction =
+            static_cast<double>(scaleIndex) / static_cast<double>(simulation::MAX_COLLECTIBLES - 1);
+        return simulation::COLLECTIBLE_MIN_SCALE +
+               (simulation::COLLECTIBLE_MAX_SCALE - simulation::COLLECTIBLE_MIN_SCALE) * fraction;
+    }
+
+    bool CanPlaceCollectible(Vector3 position, double radius) const
+    {
+        return std::all_of(m_collectibles.begin(), m_collectibles.end(),
+                           [&](const Collectible& existing) {
+                               const Vector3 offset{position.x - existing.body.position.x, 0,
+                                                    position.z - existing.body.position.z};
+                               return offset.Length() >= radius + existing.body.radius +
+                                                             simulation::COLLECTIBLE_MIN_GAP;
+                           });
+    }
+
+    bool SpawnCollectible(bool falling)
+    {
+        if (m_collectibles.size() >= simulation::MAX_COLLECTIBLES) {
+            return false;
+        }
+
+        Collectible collectible;
+        collectible.id = m_nextCollectibleId;
+        collectible.kind = static_cast<CollectibleKind>(
+            static_cast<std::uint32_t>(CollectibleKind::APPLE) + m_random.Index(4));
+        collectible.scale = CollectibleScale(collectible.id);
+        collectible.body.radius = simulation::COLLECTIBLE_BASE_RADIUS * collectible.scale;
+        collectible.body.mass = simulation::COLLECTIBLE_BASE_MASS * collectible.scale *
+                                collectible.scale * collectible.scale;
+        collectible.body.orientation =
+            Quaternion::FromRotation({0, m_random.Range(0, 2 * std::numbers::pi), 0});
+
+        for (std::size_t attempt = 0; attempt < simulation::COLLECTIBLE_SPAWN_ATTEMPTS; ++attempt) {
+            Vector3 position{m_random.Range(-simulation::COLLECTIBLE_AREA_HALF_EXTENT,
+                                            simulation::COLLECTIBLE_AREA_HALF_EXTENT),
+                             0,
+                             m_random.Range(-simulation::COLLECTIBLE_AREA_HALF_EXTENT,
+                                            simulation::COLLECTIBLE_AREA_HALF_EXTENT)};
+            if (!CanPlaceCollectible(position, collectible.body.radius)) {
+                continue;
+            }
+
+            position.y = falling ? simulation::COLLECTIBLE_DROP_HEIGHT : collectible.body.radius;
+            collectible.body.position = position;
+            m_collectibles.push_back(collectible);
+            ++m_nextCollectibleId;
+            return true;
+        }
+        return false;
+    }
+
     std::map<std::uint32_t, Player> m_players;
     std::array<bool, MAX_PLAYERS> m_spawnSlots{};
+    std::vector<Collectible> m_collectibles;
     PhysicsWorld m_physics;
+    DeterministicRandom m_random;
+    std::size_t m_scaleOffset{};
+    std::uint32_t m_nextCollectibleId{1};
     std::uint64_t m_tick{};
 };
 

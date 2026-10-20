@@ -28,7 +28,7 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 | 매칭 API | ASP.NET Core 8 |
 | 빌드 | CMake |
 | 네트워크 | Standalone Asio 1.38.2, TCP |
-| 직렬화 | Protobuf 36.2 (C++ 런타임 7.36.2), 프로토콜 v6 |
+| 직렬화 | Protobuf 36.2 (C++ 런타임 7.36.2), 프로토콜 v7 |
 | 렌더링 | raylib 6.0 |
 | 테스트 | CTest |
 | CI | GitHub Actions |
@@ -90,7 +90,9 @@ Linux / macOS의 일반 단일 구성 빌드에서는 실행 파일이 `build/Cl
 
 ```sh
 ./build/Client --single
+./build/Client --single --world-seed 42
 ./build/DedicatedServer --port 27015
+./build/DedicatedServer --port 27015 --world-seed 42
 ./build/Client --connect 127.0.0.1:27015
 ```
 
@@ -123,6 +125,12 @@ UI 캔버스에서 화면 비율을 유지하며 현재 해상도에 맞게 함�
 
 W/A/S/D를 누르면 바닥의 공에 힘이 가해져 서서히 가속합니다. 키를 놓으면 관성으로 굴러가다가 멈추고, 반대 방향 키는 먼저 제동한 뒤 방향을 바꿉니다. 공중에서는 조작력이 작용하지 않습니다. Escape로 종료합니다. 자신의 공은 주황색, 다른 플레이어는 파란색이며 흰 무늬가 실제 자세에 맞춰 회전합니다. 중력은 (0,-9.81,0), 질량은 1 kg, 반지름은 0.5 m, 최초 위치는 (0,2,0)입니다. 추가 플레이어는 X축으로 간격을 두고 생성됩니다. 대각선 입력의 힘은 정규화됩니다.
 
+각 방은 seed로 재현 가능한 수집 물체 8개로 시작하고, 참가자가 있는 동안 5초마다 물체 하나를
+Y=8에서 떨어뜨립니다. 물체는 중력과 plane 접촉을 적용받으며 최대 24개입니다. 종류는 사과,
+바나나, 버거, 도넛이고 각 물체 크기는 0.65–1.25배 범위에서 겹치지 않게 순회합니다.
+`--world-seed`로 싱글플레이 또는 독립 서버 배치를 재현할 수 있습니다. 구현 규칙과 CC0 에셋
+정보는 [수집 물체 시스템 문서](docs/COLLECTIBLE_SYSTEM.md)에 있습니다.
+
 공은 속이 찬 구의 회전 관성 `I=2mr²/5`를 사용합니다. 접촉점의 미끄럼 속도로 마찰 충격량을 계산해 이동 속도와 각속도를 연결합니다. 미끄러지지 않을 때는 `이동 거리 = 반지름 × 회전각`을 만족합니다. 바닥 마찰 계수 0.8, 구름 저항 계수 0.12, 바닥 선형 감쇠 1.8 kg/s, 최대 조작력 10 N을 사용합니다. 구름 저항과 감쇠는 조작감을 위한 단순 모델이며, 아주 느려진 공은 정지 처리합니다. 공중에서는 회전 관성이 유지됩니다.
 
 서버 기본 바인딩은 `127.0.0.1`입니다. 신뢰할 수 있는 테스트 LAN에서만 `--public`을 사용해 `0.0.0.0`으로 바인딩하세요. 이 프로토콜에는 사용자 인증이나 암호화가 없으므로 인터넷에 공개하지 마세요. 방화벽 포트 개방은 자동으로 수행하지 않습니다.
@@ -149,12 +157,13 @@ Server/       실행 진입점, ServerOptions.h/.cpp, ServerApplication.h/.cpp
 Server/Core/  ServerHost, GameRoomManager, GameRoom, GameRoomOptions, TickScheduler
 Server/Network/ AsioServer.h/.cpp, ServerNetworkRuntime.h/.cpp
 Client/       raylib 화면과 키보드, LocalTransport/TcpClientTransport
+Assets/       Kenney Food Kit CC0 GLB와 원본 라이선스 고지
 Network/      TcpChannel.h/.cpp, Protobuf 스키마와 Codec.h/.cpp
 Tests/        단위 테스트, 루프백, 프로세스 통합 테스트
 cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 ```
 
-싱글플레이는 같은 프로세스의 ServerCore에 메시지를 전달합니다. 멀티플레이는 Protobuf로 해석한 TCP 입력을 같은 ServerCore의 큐로 전달합니다. 이동과 회전 물리는 Tick 스레드에서만 변경됩니다. 클라이언트는 약 20Hz로 받은 Snapshot의 위치와 자세를 화면에서 보간합니다. 약 50ms의 표시 지연이 추가되며 클라이언트 예측은 하지 않습니다. Protobuf 기반 프로토콜 v6는 기존 v1~v5와 호환되지 않으므로 클라이언트와 서버를 함께 업데이트해야 합니다. 자세한 메시지 규격과 제한은 [PROTOCOL.md](PROTOCOL.md)를 참고하세요.
+싱글플레이는 같은 프로세스의 ServerCore에 메시지를 전달합니다. 멀티플레이는 Protobuf로 해석한 TCP 입력을 같은 ServerCore의 큐로 전달합니다. 이동과 회전 물리는 Tick 스레드에서만 변경됩니다. 클라이언트는 약 20Hz로 받은 Snapshot의 위치와 자세를 화면에서 보간합니다. 약 50ms의 표시 지연이 추가되며 클라이언트 예측은 하지 않습니다. Protobuf 기반 프로토콜 v7은 이전 버전과 호환되지 않으므로 클라이언트와 서버를 함께 업데이트해야 합니다. 자세한 메시지 규격과 제한은 [PROTOCOL.md](PROTOCOL.md)를 참고하세요.
 
 ## 테스트와 제한
 

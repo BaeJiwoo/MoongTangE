@@ -39,7 +39,6 @@ class ClientApplication
     ClientOptions m_options;
     std::unique_ptr<IClientTransport> m_transport;
 
-    SceneRenderer m_renderer;
     SnapshotInterpolator m_presentation;
     DisplaySettings m_displaySettings;
     DisplaySettingsStore m_displaySettingsStore;
