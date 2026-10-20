@@ -1,5 +1,6 @@
 #include "Client/Rendering/Scene.h"
 
+#include "Client/Rendering/BallDeformation.h"
 #include "Client/Rendering/UiLayout.h"
 #include "Common/Protocol/Nickname.h"
 #include "Common/SimulationConfig.h"
@@ -18,7 +19,6 @@ namespace {
 
 constexpr int BALL_RINGS = 20;
 constexpr int BALL_SECTORS = 32;
-constexpr float BALL_RADIUS = static_cast<float>(simulation::PLAYER_RADIUS);
 constexpr float START_BUTTON_WIDTH = 260;
 constexpr float START_BUTTON_HEIGHT = 64;
 constexpr float BUTTON_GAP = 18;
@@ -547,13 +547,15 @@ std::vector<SceneRenderer::BallTriangle> SceneRenderer::MakeBallGeometry()
     return triangles;
 }
 
-void SceneRenderer::DrawBall(const PlayerState& player, bool own) const
+void SceneRenderer::DrawBall(const PlayerState& player,
+                             std::span<const CollectibleState> collectibles, bool own) const
 {
     DrawCylinder(
         {static_cast<float>(player.position.x), 0.008f, static_cast<float>(player.position.z)},
         0.48f, 0.48f, 0.002f, 32, Color{28, 37, 46, 255});
 
     const auto lightDirection = Vector3{-0.4, 0.8, 0.5}.Normalized();
+    const BallDeformation deformation(player, collectibles);
     rlBegin(RL_TRIANGLES);
     for (const auto& triangle : m_ballGeometry) {
         const Color color = triangle.light
@@ -561,9 +563,11 @@ void SceneRenderer::DrawBall(const PlayerState& player, bool own) const
                                 : (own ? Color{245, 128, 25, 255} : Color{32, 125, 225, 255});
 
         for (const auto vertex : triangle.vertices) {
-            const auto normal = player.orientation.Rotate(vertex);
+            const auto deformed = deformation.Sample(vertex);
+            const auto normal = player.orientation.Rotate(deformed.normal);
             const double shade = 0.4 + 0.6 * std::max(0.0, dot(normal, lightDirection));
-            const auto world = render_vector(player.position + normal * BALL_RADIUS);
+            const auto world =
+                render_vector(player.position + player.orientation.Rotate(deformed.position));
 
             rlColor4ub(static_cast<unsigned char>(color.r * shade),
                        static_cast<unsigned char>(color.g * shade),
@@ -623,7 +627,7 @@ void SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId, con
         DrawCollectible(collectible);
     }
     for (const auto& player : state.players) {
-        DrawBall(player, player.id == playerId);
+        DrawBall(player, state.collectibles, player.id == playerId);
     }
     EndMode3D();
 
