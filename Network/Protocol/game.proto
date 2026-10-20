@@ -66,6 +66,7 @@ message CollectibleState {
   Vector3 position = 3;
   Quaternion orientation = 4;
   optional double scale = 5;
+  uint32 attached_player_id = 6;
 }
 
 message WorldSnapshot {
