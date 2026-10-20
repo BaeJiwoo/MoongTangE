@@ -67,6 +67,20 @@ class PhysicsWorld
         CorrectPenetration(body, contact.terrain);
     }
 
+    void ConstrainToTerrain(RigidBody& body) const
+    {
+        ConstrainToTerrain(body, DeformableBallCollider(body.radius));
+    }
+
+    void ConstrainToTerrain(RigidBody& body, const DeformableBallCollider& collider) const
+    {
+        const auto contact = MakeContact(body, collider);
+        if (contact.terrain.penetration > 0) {
+            CorrectPenetration(body, contact.terrain);
+            ApplyNormalImpulse(body, contact.arm, contact.terrain.normal);
+        }
+    }
+
   private:
     struct ColliderTerrainContact
     {

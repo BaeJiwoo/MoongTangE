@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common/Game/PlayerController.h"
+#include "Common/Physics/Collision/SphereSphere.h"
 #include "Common/Physics/DeformableBallCollider.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "Common/Physics/Terrain.h"
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <map>
 #include <numbers>
 #include <vector>
@@ -96,6 +98,8 @@ class GameWorld
                            force);
         }
 
+        ResolvePlayerCollisions();
+
         for (auto& collectible : m_collectibles) {
             if (collectible.attachedPlayerId != 0) {
                 UpdateAttached(collectible, m_players.at(collectible.attachedPlayerId));
@@ -134,6 +138,8 @@ class GameWorld
     }
 
   private:
+    static constexpr int COLLISION_SOLVER_ITERATIONS = 4;
+
     struct Player
     {
         RigidBody body;
@@ -163,6 +169,37 @@ class GameWorld
             }
         }
         return collider;
+    }
+
+    void ResolvePlayerCollisions()
+    {
+        std::map<std::uint32_t, DeformableBallCollider> colliders;
+        for (const auto& [id, player] : m_players) {
+            colliders.emplace(id, PlayerCollider(id, player));
+        }
+
+        for (int iteration = 0; iteration < COLLISION_SOLVER_ITERATIONS; ++iteration) {
+            for (auto first = m_players.begin(); first != m_players.end(); ++first) {
+                for (auto second = std::next(first); second != m_players.end(); ++second) {
+                    const Vector3 separation =
+                        second->second.body.position - first->second.body.position;
+                    const double distance = separation.Length();
+                    const Vector3 normal =
+                        distance > 0 ? separation * (1.0 / distance) : Vector3{1, 0, 0};
+                    const auto& firstCollider = colliders.at(first->first);
+                    const auto& secondCollider = colliders.at(second->first);
+                    const double minimumDistance =
+                        dot(firstCollider.Support(first->second.body.orientation, normal), normal) +
+                        dot(secondCollider.Support(second->second.body.orientation, normal * -1),
+                            normal * -1);
+                    resolve_sphere_collision(first->second.body, second->second.body,
+                                             minimumDistance);
+                }
+            }
+            for (auto& [id, player] : m_players) {
+                m_physics.ConstrainToTerrain(player.body, colliders.at(id));
+            }
+        }
     }
 
     static void UpdateAttached(Collectible& collectible, const Player& player)
