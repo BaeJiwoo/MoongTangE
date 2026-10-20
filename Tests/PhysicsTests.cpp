@@ -1,8 +1,10 @@
 #include "Common/Physics/Collision/SphereSphere.h"
+#include "Common/Physics/DeformableBallCollider.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "TestSupport.h"
 
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 namespace {
@@ -171,6 +173,96 @@ void sphere_overlap_detects_contact()
     MOONGTANGE_CHECK(!spheres_overlap(first, second));
 }
 
+void deformable_collider_separates_pickup_and_rolling_proxies()
+{
+    DeformableBallCollider collider(simulation::PLAYER_RADIUS);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(collider.PickupRadius(), simulation::PLAYER_RADIUS));
+    MOONGTANGE_CHECK(collider.ContainsPickupCenter({0, simulation::PLAYER_RADIUS, 0}));
+    MOONGTANGE_CHECK(!collider.ContainsPickupCenter({0, simulation::PLAYER_RADIUS + 1e-6, 0}));
+
+    collider.AddCollectible({0, simulation::PLAYER_RADIUS, 0}, simulation::COLLECTIBLE_BASE_RADIUS);
+    const double expectedPickupRadius = std::cbrt(
+        simulation::PLAYER_RADIUS * simulation::PLAYER_RADIUS * simulation::PLAYER_RADIUS +
+        simulation::COLLECTIBLE_BASE_RADIUS * simulation::COLLECTIBLE_BASE_RADIUS *
+            simulation::COLLECTIBLE_BASE_RADIUS);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(collider.PickupRadius(), expectedPickupRadius));
+    MOONGTANGE_CHECK(!collider.ContainsPickupCenter(
+        {0, simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS, 0}));
+    const auto pickupSurface = collider.PickupSurface({0, 10, 0});
+    MOONGTANGE_CHECK(pickupSurface.x == 0 && pickupSurface.z == 0);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(pickupSurface.y, expectedPickupRadius));
+
+    const auto uprightSupport = collider.Support({}, {0, -1, 0});
+    MOONGTANGE_CHECK(uprightSupport.x == 0 && uprightSupport.z == 0);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(uprightSupport.y, -expectedPickupRadius));
+
+    const auto upsideDown = Quaternion::FromRotation({0, 0, std::numbers::pi});
+    const auto extendedSupport = collider.Support(upsideDown, {0, -1, 0});
+    const double rawExcess =
+        simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS - expectedPickupRadius;
+    const double bumpLimit = expectedPickupRadius * 0.3;
+    const double expectedRollingRadius =
+        expectedPickupRadius + bumpLimit * rawExcess / (bumpLimit + rawExcess);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(extendedSupport.y, -expectedRollingRadius));
+
+    for (int index = 0; index < 12; ++index) {
+        collider.AddCollectible({0, -simulation::PLAYER_RADIUS, 0},
+                                simulation::COLLECTIBLE_BASE_RADIUS);
+    }
+    const double absorbedRadius = collider.PickupRadius();
+    MOONGTANGE_CHECK(absorbedRadius >
+                     simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS);
+    const auto absorbedSupport = collider.Support({}, {0, 1, 0});
+    MOONGTANGE_CHECK(absorbedSupport.x == 0 && absorbedSupport.z == 0);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(absorbedSupport.y, absorbedRadius));
+}
+
+void deformable_collider_changes_ground_contact()
+{
+    const PhysicsWorld physics({0, 0, 0});
+    DeformableBallCollider collider(simulation::PLAYER_RADIUS);
+    collider.AddCollectible({0, simulation::PLAYER_RADIUS, 0}, simulation::COLLECTIBLE_BASE_RADIUS);
+
+    RigidBody upsideDown;
+    upsideDown.position.y = simulation::PLAYER_RADIUS;
+    upsideDown.orientation = Quaternion::FromRotation({0, 0, std::numbers::pi});
+    physics.Step(upsideDown, collider);
+    const double pickupRadius = collider.PickupRadius();
+    const double rawExcess =
+        simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS - pickupRadius;
+    const double bumpLimit = pickupRadius * 0.3;
+    const double expectedRollingRadius =
+        pickupRadius + bumpLimit * rawExcess / (bumpLimit + rawExcess);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(upsideDown.position.y, expectedRollingRadius));
+    MOONGTANGE_CHECK(upsideDown.velocity.y == 0);
+
+    RigidBody offCenter;
+    offCenter.orientation = Quaternion::FromRotation({0, 0, 5 * std::numbers::pi / 6});
+    const auto initialContactArm = collider.Support(offCenter.orientation, {0, -1, 0});
+    offCenter.position.y = -initialContactArm.y;
+    physics.Step(offCenter, collider);
+    MOONGTANGE_CHECK(offCenter.angularVelocity.z < 0);
+
+    const auto updatedContactArm = collider.Support(offCenter.orientation, {0, -1, 0});
+    MOONGTANGE_CHECK(offCenter.position.y + updatedContactArm.y >= 0);
+}
+
+void invalid_deformable_collider_is_rejected()
+{
+    MOONGTANGE_CHECK(MoongTangE::test::throws([] {
+        DeformableBallCollider invalid(0);
+    }));
+
+    DeformableBallCollider collider(simulation::PLAYER_RADIUS);
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
+        collider.AddCollectible({}, 0);
+    }));
+    MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
+        collider.PickupSurface(
+            {std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0});
+    }));
+}
+
 } // namespace
 
 int main()
@@ -184,5 +276,8 @@ int main()
         repeated_simulation_keeps_normalized_orientation();
         invalid_state_is_rejected();
         sphere_overlap_detects_contact();
+        deformable_collider_separates_pickup_and_rolling_proxies();
+        deformable_collider_changes_ground_contact();
+        invalid_deformable_collider_is_rejected();
     });
 }

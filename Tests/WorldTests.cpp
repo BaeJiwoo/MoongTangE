@@ -69,7 +69,7 @@ int main()
         }
         MOONGTANGE_CHECK(seededA.CollectibleCount() == MoongTangE::simulation::MAX_COLLECTIBLES);
 
-        MoongTangE::GameWorld world;
+        MoongTangE::GameWorld world(WORLD_SEED);
         MOONGTANGE_CHECK(world.AddPlayer(1));
         MOONGTANGE_CHECK(world.AddPlayer(2));
         MOONGTANGE_CHECK(!world.AddPlayer(1));
@@ -96,7 +96,7 @@ int main()
         MOONGTANGE_CHECK(
             MoongTangE::test::approx(s.players[0].velocity.x, s.players[0].velocity.z));
 
-        MoongTangE::GameWorld straight;
+        MoongTangE::GameWorld straight(WORLD_SEED);
         MOONGTANGE_CHECK(straight.AddPlayer(1));
         MOONGTANGE_CHECK(straight.Apply({1, 1, 1, 0}));
         for (int i = 0; i < 60; ++i) {
@@ -171,11 +171,10 @@ int main()
             inversePlayerOrientation.Rotate(attached.position - attachmentPlayer.position);
         const auto localOrientation =
             (inversePlayerOrientation * attached.orientation).Normalized();
-        MOONGTANGE_CHECK(MoongTangE::test::approx(
-            localPosition.Length(),
-            MoongTangE::simulation::PLAYER_RADIUS +
-                MoongTangE::simulation::COLLECTIBLE_BASE_RADIUS * attached.scale));
+        MOONGTANGE_CHECK(MoongTangE::test::approx(localPosition.Length(),
+                                                  MoongTangE::simulation::PLAYER_RADIUS));
 
+        bool colliderChangedMotion = false;
         for (std::uint32_t sequence = 1; sequence <= 90; ++sequence) {
             MOONGTANGE_CHECK(attachingWorld.Apply({1, sequence, 1, 0}));
             comparisonPhysics.Step(comparisonPlayer, MoongTangE::PhysicsWorld::FIXED_DELTA,
@@ -184,10 +183,11 @@ int main()
 
             attachedSnapshot = attachingWorld.Snapshot();
             const auto& movingPlayer = attachedSnapshot.players.front();
-            MOONGTANGE_CHECK(movingPlayer.position == comparisonPlayer.position);
-            MOONGTANGE_CHECK(movingPlayer.velocity == comparisonPlayer.velocity);
-            MOONGTANGE_CHECK(movingPlayer.orientation == comparisonPlayer.orientation);
-            MOONGTANGE_CHECK(movingPlayer.angularVelocity == comparisonPlayer.angularVelocity);
+            colliderChangedMotion =
+                colliderChangedMotion || movingPlayer.position != comparisonPlayer.position ||
+                movingPlayer.velocity != comparisonPlayer.velocity ||
+                movingPlayer.orientation != comparisonPlayer.orientation ||
+                movingPlayer.angularVelocity != comparisonPlayer.angularVelocity;
 
             const auto movingCollectible = std::find_if(
                 attachedSnapshot.collectibles.begin(), attachedSnapshot.collectibles.end(),
@@ -207,6 +207,7 @@ int main()
                 (movingLocalOrientation.Rotate({1, 0, 0}) - localOrientation.Rotate({1, 0, 0}))
                     .Length() < 1e-9);
         }
+        MOONGTANGE_CHECK(colliderChangedMotion);
 
         const auto attachedBeforeRemoval =
             std::find_if(attachedSnapshot.collectibles.begin(), attachedSnapshot.collectibles.end(),
