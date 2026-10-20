@@ -1,9 +1,11 @@
+#include "Client/Rendering/BallDeformation.h"
 #include "Client/Rendering/DisplaySettings.h"
 #include "Client/Rendering/DisplaySettingsStore.h"
 #include "Client/Rendering/SnapshotInterpolator.h"
 #include "Client/Rendering/UiLayout.h"
 #include "TestSupport.h"
 
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -17,6 +19,56 @@ int main()
         constexpr Resolution DEFAULT_RESOLUTION{1280, 800};
         constexpr Resolution PREVIOUS_RESOLUTION{1280, 720};
         constexpr Resolution NEXT_RESOLUTION{1600, 900};
+
+        const PlayerState deformationPlayer{
+            7,  {1, 2, 3}, {}, Quaternion::FromRotation({0, std::numbers::pi / 2, 0}),
+            {}, "Deformer"};
+        const Vector3 localAttachmentPosition{0.85, 0, 0};
+        const CollectibleState deformationCollectible{
+            1,
+            CollectibleKind::APPLE,
+            deformationPlayer.position +
+                deformationPlayer.orientation.Rotate(localAttachmentPosition),
+            {},
+            1,
+            deformationPlayer.id};
+
+        const BallDeformation undeformed(deformationPlayer, {});
+        const auto undeformedVertex = undeformed.Sample({3, 0, 0});
+        MOONGTANGE_CHECK(
+            MoongTangE::test::approx(undeformedVertex.position.x, simulation::PLAYER_RADIUS));
+        MOONGTANGE_CHECK(undeformedVertex.position.y == 0);
+        MOONGTANGE_CHECK(undeformedVertex.normal == (Vector3{1, 0, 0}));
+
+        const std::array singleAttachment{deformationCollectible};
+        const BallDeformation deformed(deformationPlayer, singleAttachment);
+        const auto attachmentVertex = deformed.Sample({1, 0, 0});
+        MOONGTANGE_CHECK(attachmentVertex.position.x > simulation::PLAYER_RADIUS);
+        MOONGTANGE_CHECK(attachmentVertex.position.x <
+                         localAttachmentPosition.Length() + simulation::COLLECTIBLE_BASE_RADIUS);
+        MOONGTANGE_CHECK(attachmentVertex.normal == (Vector3{1, 0, 0}));
+        MOONGTANGE_CHECK(deformed.Sample({-1, 0, 0}).position.x == -simulation::PLAYER_RADIUS);
+
+        CollectibleState wideCollectible = deformationCollectible;
+        wideCollectible.id = 2;
+        wideCollectible.position =
+            deformationPlayer.position + deformationPlayer.orientation.Rotate({0, 0.85, 0});
+        const std::array orderedAttachments{deformationCollectible, wideCollectible};
+        const std::array reversedAttachments{wideCollectible, deformationCollectible};
+        const BallDeformation ordered(deformationPlayer, orderedAttachments);
+        const BallDeformation reversed(deformationPlayer, reversedAttachments);
+        const Vector3 sharedDirection = Vector3{1, 1, 0}.Normalized();
+        const auto orderedVertex = ordered.Sample(sharedDirection);
+        const auto reversedVertex = reversed.Sample(sharedDirection);
+        MOONGTANGE_CHECK((orderedVertex.position - reversedVertex.position).Length() < 1e-12);
+        MOONGTANGE_CHECK((orderedVertex.normal - reversedVertex.normal).Length() < 1e-12);
+        MOONGTANGE_CHECK(MoongTangE::test::approx(orderedVertex.normal.Length(), 1));
+
+        CollectibleState largerCollectible = deformationCollectible;
+        largerCollectible.scale = simulation::COLLECTIBLE_MAX_SCALE;
+        const std::array largerAttachment{largerCollectible};
+        const BallDeformation larger(deformationPlayer, largerAttachment);
+        MOONGTANGE_CHECK(larger.Sample({1, 0, 0}).position.x > attachmentVertex.position.x);
 
         MOONGTANGE_CHECK(ui_scale(1100, 720) == 1.0f);
         MOONGTANGE_CHECK(ui_scale(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT) > 1.0f);
