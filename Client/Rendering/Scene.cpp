@@ -26,8 +26,8 @@ constexpr float INPUT_WIDTH = 360;
 constexpr float INPUT_HEIGHT = 52;
 constexpr float OPTIONS_DIALOG_WIDTH = 680;
 constexpr float OPTIONS_DIALOG_HEIGHT = 640;
-constexpr float EXIT_DIALOG_WIDTH = 520;
-constexpr float EXIT_DIALOG_HEIGHT = 260;
+constexpr float GAME_MENU_WIDTH = 520;
+constexpr float GAME_MENU_HEIGHT = 390;
 
 struct UiCanvas
 {
@@ -144,8 +144,8 @@ SelectorRequests draw_setting_selector(const Rectangle& dialog, float rowY, cons
             draw_menu_button(nextButton, ">", enabled)};
 }
 
-MainMenuAction draw_options_dialog(float screenWidth, float screenHeight,
-                                   const DisplaySettingsState& selectedSettings)
+MenuAction draw_options_dialog(float screenWidth, float screenHeight,
+                               const DisplaySettingsState& selectedSettings)
 {
     const Rectangle shade{0, 0, screenWidth, screenHeight};
     DrawRectangleRec(shade, Color{0, 0, 0, 150});
@@ -212,43 +212,42 @@ MainMenuAction draw_options_dialog(float screenWidth, float screenHeight,
         draw_menu_button(cancelButton, "CANCEL", true) || IsKeyPressed(KEY_ESCAPE);
 
     if (applyRequested) {
-        return MainMenuAction::APPLY_OPTIONS;
+        return MenuAction::APPLY_OPTIONS;
     }
     if (cancelRequested) {
-        return MainMenuAction::CANCEL_OPTIONS;
+        return MenuAction::CANCEL_OPTIONS;
     }
     if (modeRequests.previous) {
-        return MainMenuAction::PREVIOUS_WINDOW_MODE;
+        return MenuAction::PREVIOUS_WINDOW_MODE;
     }
     if (modeRequests.next) {
-        return MainMenuAction::NEXT_WINDOW_MODE;
+        return MenuAction::NEXT_WINDOW_MODE;
     }
     if (monitorRequests.previous) {
-        return MainMenuAction::PREVIOUS_MONITOR;
+        return MenuAction::PREVIOUS_MONITOR;
     }
     if (monitorRequests.next) {
-        return MainMenuAction::NEXT_MONITOR;
+        return MenuAction::NEXT_MONITOR;
     }
     if (resolutionRequests.previous) {
-        return MainMenuAction::PREVIOUS_RESOLUTION;
+        return MenuAction::PREVIOUS_RESOLUTION;
     }
     if (resolutionRequests.next) {
-        return MainMenuAction::NEXT_RESOLUTION;
+        return MenuAction::NEXT_RESOLUTION;
     }
     if (vSyncRequests.previous || vSyncRequests.next) {
-        return MainMenuAction::TOGGLE_VSYNC;
+        return MenuAction::TOGGLE_VSYNC;
     }
     if (frameRateRequests.previous) {
-        return MainMenuAction::PREVIOUS_FRAME_RATE_LIMIT;
+        return MenuAction::PREVIOUS_FRAME_RATE_LIMIT;
     }
     if (frameRateRequests.next) {
-        return MainMenuAction::NEXT_FRAME_RATE_LIMIT;
+        return MenuAction::NEXT_FRAME_RATE_LIMIT;
     }
-    return MainMenuAction::NONE;
+    return MenuAction::NONE;
 }
 
-MainMenuAction draw_display_confirmation(float screenWidth, float screenHeight,
-                                         int confirmationSeconds)
+MenuAction draw_display_confirmation(float screenWidth, float screenHeight, int confirmationSeconds)
 {
     const Rectangle shade{0, 0, screenWidth, screenHeight};
     DrawRectangleRec(shade, Color{0, 0, 0, 175});
@@ -269,39 +268,51 @@ MainMenuAction draw_display_confirmation(float screenWidth, float screenHeight,
     const Rectangle keepButton{dialog.x + 55, dialog.y + 185, 210, 54};
     const Rectangle revertButton{dialog.x + 295, dialog.y + 185, 210, 54};
     if (draw_menu_button(keepButton, "KEEP", true) || IsKeyPressed(KEY_ENTER)) {
-        return MainMenuAction::CONFIRM_DISPLAY_SETTINGS;
+        return MenuAction::CONFIRM_DISPLAY_SETTINGS;
     }
     if (draw_menu_button(revertButton, "REVERT", true) || IsKeyPressed(KEY_ESCAPE)) {
-        return MainMenuAction::REVERT_DISPLAY_SETTINGS;
+        return MenuAction::REVERT_DISPLAY_SETTINGS;
     }
-    return MainMenuAction::NONE;
+    return MenuAction::NONE;
 }
 
-GameMenuAction draw_exit_dialog(float screenWidth, float screenHeight)
+MenuAction draw_game_menu(float screenWidth, float screenHeight, bool optionsOpen,
+                          const DisplaySettingsState& selectedSettings, bool confirmationOpen,
+                          int confirmationSeconds)
 {
+    if (optionsOpen) {
+        return confirmationOpen
+                   ? draw_display_confirmation(screenWidth, screenHeight, confirmationSeconds)
+                   : draw_options_dialog(screenWidth, screenHeight, selectedSettings);
+    }
+
     const Rectangle shade{0, 0, screenWidth, screenHeight};
     DrawRectangleRec(shade, Color{0, 0, 0, 175});
 
-    const Rectangle dialog{(screenWidth - EXIT_DIALOG_WIDTH) * 0.5f,
-                           (screenHeight - EXIT_DIALOG_HEIGHT) * 0.5f, EXIT_DIALOG_WIDTH,
-                           EXIT_DIALOG_HEIGHT};
+    const Rectangle dialog{(screenWidth - GAME_MENU_WIDTH) * 0.5f,
+                           (screenHeight - GAME_MENU_HEIGHT) * 0.5f, GAME_MENU_WIDTH,
+                           GAME_MENU_HEIGHT};
     DrawRectangleRounded(dialog, 0.08f, 8, Color{30, 37, 52, 255});
-    DrawText("EXIT GAME?", static_cast<int>(dialog.x) + 30, static_cast<int>(dialog.y) + 28, 28,
+    DrawText("GAME MENU", static_cast<int>(dialog.x) + 30, static_cast<int>(dialog.y) + 28, 28,
              Color{255, 151, 48, 255});
-    DrawText("The current session will be disconnected safely.", static_cast<int>(dialog.x) + 30,
-             static_cast<int>(dialog.y) + 82, 18, RAYWHITE);
-    DrawText("Press ESC to keep playing.", static_cast<int>(dialog.x) + 30,
-             static_cast<int>(dialog.y) + 112, 16, LIGHTGRAY);
+    DrawText("The server keeps running while this menu is open.", static_cast<int>(dialog.x) + 30,
+             static_cast<int>(dialog.y) + 76, 17, RAYWHITE);
+    DrawText("Movement input is neutral. Press ESC to resume.", static_cast<int>(dialog.x) + 30,
+             static_cast<int>(dialog.y) + 106, 16, LIGHTGRAY);
 
-    const Rectangle resumeButton{dialog.x + 45, dialog.y + 170, 195, 54};
-    const Rectangle exitButton{dialog.x + 280, dialog.y + 170, 195, 54};
-    if (draw_menu_button(resumeButton, "RESUME", true)) {
-        return GameMenuAction::RESUME;
+    const Rectangle resumeButton{dialog.x + 80, dialog.y + 150, 360, 54};
+    const Rectangle optionsButton{dialog.x + 80, dialog.y + 222, 360, 54};
+    const Rectangle exitButton{dialog.x + 80, dialog.y + 294, 360, 54};
+    if (draw_menu_button(resumeButton, "RESUME GAME", true)) {
+        return MenuAction::RESUME_GAME;
+    }
+    if (draw_menu_button(optionsButton, "OPTIONS", true)) {
+        return MenuAction::SHOW_OPTIONS;
     }
     if (draw_menu_button(exitButton, "EXIT GAME", true)) {
-        return GameMenuAction::EXIT_GAME;
+        return MenuAction::EXIT_GAME;
     }
-    return GameMenuAction::NONE;
+    return MenuAction::NONE;
 }
 
 ::Vector3 render_vector(Vector3 value)
@@ -451,11 +462,10 @@ SceneRenderer::SceneRenderer()
 
 SceneRenderer::~SceneRenderer() = default;
 
-MainMenuAction SceneRenderer::DrawMainMenu(bool multiplayerAvailable, bool optionsOpen,
-                                           const DisplaySettingsState& selectedSettings,
-                                           bool confirmationOpen, int confirmationSeconds,
-                                           std::string& nickname,
-                                           const std::string& errorMessage) const
+MenuAction SceneRenderer::DrawMainMenu(bool multiplayerAvailable, bool optionsOpen,
+                                       const DisplaySettingsState& selectedSettings,
+                                       bool confirmationOpen, int confirmationSeconds,
+                                       std::string& nickname, const std::string& errorMessage) const
 {
     const auto uiCanvas = make_ui_canvas();
     const float screenWidth = REFERENCE_WINDOW_WIDTH;
@@ -511,7 +521,7 @@ MainMenuAction SceneRenderer::DrawMainMenu(bool multiplayerAvailable, bool optio
              static_cast<int>(optionsButton.y + optionsButton.height + 18), 16, LIGHTGRAY);
 
     bool dismissError = false;
-    MainMenuAction optionsAction = MainMenuAction::NONE;
+    MenuAction optionsAction = MenuAction::NONE;
     if (optionsOpen) {
         optionsAction =
             confirmationOpen
@@ -534,21 +544,21 @@ MainMenuAction SceneRenderer::DrawMainMenu(bool multiplayerAvailable, bool optio
     EndDrawing();
 
     if (dismissError) {
-        return MainMenuAction::DISMISS_ERROR;
+        return MenuAction::DISMISS_ERROR;
     }
-    if (optionsAction != MainMenuAction::NONE) {
+    if (optionsAction != MenuAction::NONE) {
         return optionsAction;
     }
     if (singleRequested) {
-        return MainMenuAction::SINGLE_PLAYER;
+        return MenuAction::SINGLE_PLAYER;
     }
     if (multiplayerRequested) {
-        return MainMenuAction::MULTIPLAYER;
+        return MenuAction::MULTIPLAYER;
     }
     if (optionsRequested) {
-        return MainMenuAction::SHOW_OPTIONS;
+        return MenuAction::SHOW_OPTIONS;
     }
-    return MainMenuAction::NONE;
+    return MenuAction::NONE;
 }
 
 std::vector<SceneRenderer::BallTriangle> SceneRenderer::MakeBallGeometry()
@@ -630,8 +640,10 @@ void SceneRenderer::DrawCollectible(const CollectibleState& collectible) const
                 WHITE);
 }
 
-GameMenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId,
-                                   const char* mode, const char* status, bool exitMenuOpen) const
+MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
+                               const char* status, bool gameMenuOpen, bool optionsOpen,
+                               const DisplaySettingsState& selectedSettings, bool confirmationOpen,
+                               int confirmationSeconds) const
 {
     const auto uiCanvas = make_ui_canvas();
     const auto target = camera_target(state, playerId);
@@ -663,8 +675,9 @@ GameMenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t pla
 
     draw_overlay(state.tick, playerId, mode, status);
     const auto gameMenuAction =
-        exitMenuOpen ? draw_exit_dialog(REFERENCE_WINDOW_WIDTH, REFERENCE_WINDOW_HEIGHT)
-                     : GameMenuAction::NONE;
+        gameMenuOpen ? draw_game_menu(REFERENCE_WINDOW_WIDTH, REFERENCE_WINDOW_HEIGHT, optionsOpen,
+                                      selectedSettings, confirmationOpen, confirmationSeconds)
+                     : MenuAction::NONE;
     end_ui();
     EndDrawing();
     return gameMenuAction;
