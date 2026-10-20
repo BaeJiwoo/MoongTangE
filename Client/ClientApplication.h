@@ -26,11 +26,13 @@ class ClientApplication
     void Run();
 
   private:
-    void StartGame(MainMenuAction action);
+    bool HandleMenuAction(MenuAction action, GraphicsWindow& window);
+    void StartGame(MenuAction action);
     void ReturnToMenu(std::string errorMessage);
+    void CloseTransport();
     void ConfirmDisplaySettings();
     void RevertDisplaySettings(GraphicsWindow& window);
-    bool SendInput();
+    bool SendInput(bool movementEnabled);
     void ReceiveSnapshot();
 
     void ObserveSmokeProgress();
@@ -52,6 +54,7 @@ class ClientApplication
     std::string m_errorMessage;
 
     bool m_optionsOpen{};
+    bool m_gameMenuOpen{};
     bool m_moved{};
     bool m_rolled{};
 };
