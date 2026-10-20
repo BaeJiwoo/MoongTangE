@@ -1,3 +1,4 @@
+#include "Common/Physics/Collision/SphereSphere.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "TestSupport.h"
 
@@ -158,6 +159,18 @@ void invalid_state_is_rejected()
     }));
 }
 
+void sphere_overlap_detects_contact()
+{
+    RigidBody first;
+    RigidBody second;
+    first.position = {0, 0.5, 0};
+    second.position = {1, 0.5, 0};
+    MOONGTANGE_CHECK(spheres_overlap(first, second));
+
+    second.position.x = 1.000001;
+    MOONGTANGE_CHECK(!spheres_overlap(first, second));
+}
+
 } // namespace
 
 int main()
@@ -170,5 +183,6 @@ int main()
         airborne_spin_ignores_ground_forces();
         repeated_simulation_keeps_normalized_orientation();
         invalid_state_is_rejected();
+        sphere_overlap_detects_contact();
     });
 }

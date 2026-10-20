@@ -33,6 +33,8 @@ int main()
         const auto q = MoongTangE::Quaternion::FromRotation({0, 0, std::numbers::pi / 2});
         MOONGTANGE_CHECK((q.Rotate({1, 0, 0}) - Vector3{0, 1, 0}).Length() < 1e-9);
         MOONGTANGE_CHECK(((q * q).Rotate({1, 0, 0}) - Vector3{-1, 0, 0}).Length() < 1e-9);
+        MOONGTANGE_CHECK((q.Conjugate().Rotate(q.Rotate({1, 2, 3})) - Vector3{1, 2, 3}).Length() <
+                         1e-9);
 
         const auto halfway = MoongTangE::interpolate({}, q, 0.5);
         MOONGTANGE_CHECK(MoongTangE::test::approx(halfway.Rotate({1, 0, 0}).x, std::sqrt(0.5)));

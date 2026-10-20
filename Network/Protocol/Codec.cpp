@@ -187,7 +187,8 @@ Bytes snapshot(const RoomSnapshot& room)
         require(collectible.id != 0 && collectibleIds.insert(collectible.id).second &&
                 valid_collectible_kind(collectible.kind) && std::isfinite(collectible.scale) &&
                 collectible.scale >= simulation::COLLECTIBLE_MIN_SCALE &&
-                collectible.scale <= simulation::COLLECTIBLE_MAX_SCALE);
+                collectible.scale <= simulation::COLLECTIBLE_MAX_SCALE &&
+                (collectible.attachedPlayerId == 0 || ids.contains(collectible.attachedPlayerId)));
 
         auto& record = *message.add_collectibles();
         record.set_id(collectible.id);
@@ -195,6 +196,7 @@ Bytes snapshot(const RoomSnapshot& room)
         write_vector(*record.mutable_position(), collectible.position);
         write_quaternion(*record.mutable_orientation(), collectible.orientation);
         record.set_scale(collectible.scale);
+        record.set_attached_player_id(collectible.attachedPlayerId);
     }
     return encode(MessageType::SNAPSHOT, message);
 }
@@ -230,10 +232,12 @@ RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
                 record.has_position() && record.has_orientation() && record.has_scale() &&
                 std::isfinite(record.scale()) &&
                 record.scale() >= simulation::COLLECTIBLE_MIN_SCALE &&
-                record.scale() <= simulation::COLLECTIBLE_MAX_SCALE);
+                record.scale() <= simulation::COLLECTIBLE_MAX_SCALE &&
+                (record.attached_player_id() == 0 || ids.contains(record.attached_player_id())));
         state.collectibles.push_back({record.id(), static_cast<CollectibleKind>(record.kind()),
                                       read_vector(record.position()),
-                                      read_quaternion(record.orientation()), record.scale()});
+                                      read_quaternion(record.orientation()), record.scale(),
+                                      record.attached_player_id()});
     }
     return {message.room_id(), std::move(state)};
 }

@@ -42,6 +42,7 @@ struct CollectibleState
     Vector3 position{};
     Quaternion orientation{};
     double scale{1};
+    std::uint32_t attachedPlayerId{};
 };
 
 struct WorldSnapshot
