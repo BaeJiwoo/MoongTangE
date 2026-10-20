@@ -6,7 +6,7 @@
 
 ### 방 입장 통신 — Issue #36
 
-프로토콜 v6는 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
+프로토콜 v8은 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
 성공한 Hello의 방 ID와 다른 Snapshot은 클라이언트가 거부합니다. `IClientTransport::RoomId()`는
 입장한 방을 제공하며 연결 종료 시 0입니다. 렌더링은 기존 `WorldSnapshot`을 사용하고,
 방이 바뀌면 보간 상태를 비웁니다. #37부터 실제 여러 방 배정과 비동기 입장 확정을 사용합니다.
@@ -34,8 +34,8 @@
 | `ServerApplication` | 독립 서버 시작, 종료 요청·시그널·시간 제한, 실행 중 자원 소유 | 개별 플레이어 물리 변경 |
 | `ServerHost` | Tick 스레드, 연결 등록, 제한된 명령 큐, 최신 Snapshot의 안전한 공유 | 소켓·화면 처리 |
 | `GameRoomManager` / `GameRoom` | 생성 순서에 따른 3인 방 배정·퇴장·빈 방 정리, 방별 월드 소유 | 소켓과 다른 스레드의 직접 접근 |
-| `GameWorld` | 플레이어와 입력 상태, 입력 만료, 물리 단계 호출 | 스레드 생성·소켓 접근 |
-| `PhysicsWorld` | 중력, 지형 접촉, 마찰, 구름 저항과 자세 갱신 | 입력 수신·렌더링 |
+| `GameWorld` | 플레이어·수집 물체·입력·결정론적 seed 상태, 입력 만료와 물리 단계 호출 | 스레드 생성·소켓 접근 |
+| `PhysicsWorld` | 중력, 지형·변형 콜라이더 접촉, 마찰, 구름 저항과 자세 갱신 | 입력 수신·렌더링 |
 | `AsioServer` | 네트워크 실행 객체 소유, 시작·종료와 포트 조회의 공개 진입점 | 개별 세션 처리 |
 | `ServerNetworkRuntime` | 네트워크 스레드, TCP 연결, Hello, 입력 검증·전달, Snapshot 송신 | 게임 월드 직접 변경 |
 | `TcpChannel` | 길이 프레이밍, 부분 송수신, 타임아웃과 전송 큐 | 물리·게임 규칙 |
@@ -91,6 +91,44 @@ sequenceDiagram
 입력에는 임의의 플레이어 ID나 방 ID를 실어 보낼 수 없습니다. 네트워크 세션의 ID를 서버가 부여하며, 유한한 입력값·범위·증가하는 시퀀스를 검증합니다. 입력이 120 Tick 동안 갱신되지 않으면 조작력을 해제하고 관성 운동은 계속 계산합니다.
 
 물리는 고정 `dt=1/60`을 사용합니다. `Common/Physics/Terrain.h`의 평면·원뿔형 뾰족 지형·구형 언덕 정의를 서버 충돌과 클라이언트 렌더링이 함께 사용합니다. 구와 지형의 접촉 법선 및 침투 깊이는 Common에서 계산하며, 서버 Tick만 위치·속도·회전을 보정합니다. 기본 Snapshot 게시 간격은 서버의 3 Tick입니다. 방별 Tick은 독립적이며 빈 방은 물리 계산을 건너뜁니다. TCP 서버는 약 50ms마다 아직 보내지 않은 최신 상태를 전송하므로 실제 도착 간격은 스케줄링과 네트워크에 영향을 받습니다. 클라이언트의 보간은 표시용이며 서버 상태를 변경하지 않습니다.
+
+## 결정론적 수집 물체와 변형 콜라이더 — Issues #53, #54, #57
+
+방 생성 시 seed에 따라 간격을 둔 물체 8개를 만들고, 참가자가 있는 동안 5초마다 Y=8에서
+새 물체를 떨어뜨립니다. 모든 변경은 기존 Tick 스레드에서 일어나며 최대 24개입니다. 자세한
+상수, 난수 변환, 배치 거부, 이중 물리 프록시·로컬 부착, Snapshot과 GLB 정규화 규칙은
+[수집 물체 시스템](COLLECTIBLE_SYSTEM.md)에 정리합니다.
+
+<details><summary>Common/Game/GameWorld.h · DeterministicRandom.h — 소환과 물리</summary>
+
+- `GameWorld(seed)`는 시작 물체를 만들고 같은 seed의 생성 순서를 재현합니다.
+- `SpawnCollectible(falling)`은 종류·고유 크기·방향·XZ 후보를 만들고 최소 간격과 최대 개수를
+  검사합니다.
+- `PlayerCollider()`는 부착물 반지름의 누적 부피 획득 구체와 고정 54방향 굴림 프록시를
+  조립합니다. `Step()`은 굴림 프록시로 플레이어를 먼저 적분합니다.
+- `TryAttach()`는 자유 물체 중심이 매끄러운 획득 구체에 들어왔는지 검사하고, 해당 구체
+  표면에 로컬 위치·회전을 저장합니다. 부착 순간에는 플레이어 `RigidBody`에 충격량을
+  적용하지 않습니다.
+- `UpdateAttached()`는 공의 월드 변환으로 붙은 물체의 위치·회전과 분리용 표면 속도를
+  갱신합니다. `DetachCollectibles()`는 플레이어 퇴장 시 자유 상태로 되돌립니다.
+- `Snapshot()`은 물체 ID·종류·위치·자세·크기와 부착 플레이어 ID를 복사합니다.
+- `DeterministicRandom::Next/Index/Range`는 STL 분포에 기대지 않는 고정 난수 변환입니다.
+
+</details>
+
+<details><summary>Common/Physics/DeformableBallCollider.h · PhysicsWorld.h — 변형 접촉</summary>
+
+- `AddCollectible()`은 부착물 반지름을 누적 부피에 더하고 중심 방향 주변 30도 안쪽의 방사형
+  팔들에 smoothstep으로 돌출을 분산합니다.
+- `PickupRadius()`, `ContainsPickupCenter()`, `PickupSurface()`는 누적 부피로 성장하는 매끄러운
+  획득 구체의 판정과 부착 위치를 제공합니다.
+- `Support()`는 누적 부피 반지름을 굴림의 기본 구체로 사용하고 각 돌출을 현재 반지름의
+  30%보다 작게 soft-cap한 뒤, 월드 방향으로 가장 먼 기본 지지점 또는 54개 팔 끝을 선택합니다.
+- `PhysicsWorld::Step(body, collider, ...)`은 지형 법선 반대 방향의 지지점을 접촉 팔로
+  사용합니다. 정상·마찰 충격의 유효질량과 토크, 구름 저항과 정지 판정도 같은 지형 법선과
+  접촉 팔을 사용하므로 부착 위치·크기와 지형 경사에 따라 실제 플레이어 운동이 달라집니다.
+
+</details>
 
 ## 싱글플레이와 독립 서버
 
@@ -183,7 +221,7 @@ sequenceDiagram
 
 | 함수 | 설명 |
 | --- | --- |
-| `parse_server_options(arguments)` | `--port`, `--public`, `--run-for`, `--max-rooms`(1–256), `--empty-room-seconds`(0–86400), `--help`를 해석합니다. 포트 0은 자동 할당이며 잘못된 옵션·범위를 거부합니다. |
+| `parse_server_options(arguments)` | `--port`, `--public`, `--run-for`, `--max-rooms`(1–256), `--empty-room-seconds`(0–86400), `--world-seed`(uint64), `--help`를 해석합니다. 포트 0은 자동 할당이며 잘못된 옵션·범위를 거부합니다. |
 
 </details>
 
@@ -314,13 +352,13 @@ TCP 연결 한도는 Hello 대기를 포함해 `Capacity() × 2`개(기본 48개
 | `client_hello()` / `server_hello(admission)` | 프로토콜 버전·입장 결과·서버 할당 ID·방 ID가 담긴 Hello를 인코딩합니다. |
 | `read_client_hello(data)` / `read_server_hello(data)` | Hello 버전과 입장 결과·ID 조합을 검증합니다. 서버 Hello 해석은 AdmissionResult를 반환합니다. |
 | `input(command)` / `read_input(data, sessionId)` | 입력을 인코딩하거나 세션 ID를 결합하여 검증된 InputCommand로 해석합니다. |
-| `snapshot(room)` / `read_snapshot(data)` | Tick과 플레이어 상태를 변환하고 인원·ID·필드·수치·회전 유효성을 검사합니다. |
+| `snapshot(room)` / `read_snapshot(data)` | Tick, 플레이어와 최대 24개 수집 물체 상태를 변환하고 개수·ID·종류·필드·수치·회전·크기 및 부착 플레이어 참조를 검사합니다. |
 | `disconnect()` / `is_disconnect(data)` | Disconnect를 만들거나 종류와 Protobuf 본문을 검증합니다. |
 | `frame(payload)` / `frame_size(header)` | 4바이트 big-endian 길이를 붙이거나 읽고 프레임 한도를 검사합니다. |
 | `encode<Message>()` / `decode<Message>()` (cpp 내부) | 메시지 종류와 Protobuf 직렬화/역직렬화, 크기·파서 한도를 공통 처리합니다. |
 | `write_vector()` / `read_vector()` / `write_quaternion()` / `read_quaternion()` (cpp 내부) | 벡터·회전을 Protobuf 필드와 게임 값 타입 사이에서 검증하며 변환합니다. |
 
-`PROTOCOL_VERSION = 6`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. MessageType의 대문자 이름 변경은 wire 바이트 값을 바꾸지 않습니다. `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
+`PROTOCOL_VERSION = 8`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. MessageType의 대문자 이름 변경은 wire 바이트 값을 바꾸지 않습니다. `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
 
 </details>
 
@@ -364,7 +402,7 @@ flowchart LR
 
 TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + Protobuf 본문**입니다. 종류별 필수 값, 입력 범위, ID, 중복 플레이어, quaternion 정규화와 유한한 실수를 변환 시 검증합니다. 플레이어 ID는 클라이언트 입력 메시지에 없으며 접속 세션의 ID를 서버에서 주입합니다.
 
-최대 메시지는 8KiB이며, 코덱의 방어적 상한은 32명입니다. 최대 길이 플레이어·방 ID·Tick과 16자 닉네임을 넣은 Snapshot은 종류 바이트를 포함해 4,887바이트입니다. 실제 게임방은 최대 3명만 허용합니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는 16으로 제한합니다. 프로토콜 버전은 6이며 이전 v1~v5 Hello는 거부합니다. 알 수 없는 Protobuf 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
+최대 메시지는 8KiB이며, 코덱의 방어적 상한은 32명입니다. 최대 길이 플레이어·방 ID·Tick과 16자 닉네임을 넣은 32명 Snapshot은 종류 바이트를 포함해 4,878바이트이며, 여기에 최대 24개 부착 물체를 포함해도 상한 안입니다. 실제 게임방은 최대 3명만 허용합니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는 16으로 제한합니다. 프로토콜 버전은 8이며 이전 버전 Hello는 거부합니다. 알 수 없는 Protobuf 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
 
 ## 시작과 종료
 

@@ -12,7 +12,7 @@ int main(int argc, char** argv)
         const auto options = MoongTangE::parse_server_options(arguments);
         if (options.m_showHelp) {
             std::cout << "DedicatedServer [--port 27015] [--public] [--run-for seconds]\n"
-                         "  [--max-rooms 8] [--empty-room-seconds 30]\n"
+                         "  [--max-rooms 8] [--empty-room-seconds 30] [--world-seed uint64]\n"
                          "  [--matchmaking-url http://host:port --server-id ID]\n"
                          "  [--advertise-host host --require-ticket]\n"
                          "  [--reservation-seconds 30] Key: MOONGTANGE_CONTROL_KEY\n"
