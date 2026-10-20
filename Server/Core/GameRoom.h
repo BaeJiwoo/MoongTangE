@@ -16,6 +16,8 @@ class GameRoom
   public:
     using Clock = std::chrono::steady_clock;
 
+    explicit GameRoom(std::uint64_t seed = simulation::DEFAULT_WORLD_SEED);
+
     bool Join(std::uint32_t playerId);
     bool Reserve(std::uint32_t playerId);
     bool Claim(std::uint32_t playerId);

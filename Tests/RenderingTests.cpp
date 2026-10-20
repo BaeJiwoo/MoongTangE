@@ -100,7 +100,7 @@ int main()
         MOONGTANGE_CHECK(std::filesystem::remove(settingsDirectory));
 
         SnapshotInterpolator view;
-        WorldSnapshot a{3, {{1, {0, 0.5, 0}, {}, {}, {}, "Alice"}}}, b = a;
+        WorldSnapshot a{3, {{1, {0, 0.5, 0}, {}, {}, {}, "Alice"}}, {}}, b = a;
         b.tick = 6;
         b.players[0].position.x = 1;
         b.players[0].orientation = Quaternion::FromRotation({0, 0, -2});

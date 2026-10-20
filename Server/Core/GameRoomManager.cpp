@@ -41,7 +41,8 @@ std::uint64_t GameRoomManager::Allocate(std::uint32_t playerId, Clock::time_poin
         return 0;
     }
     const auto roomId = m_nextRoomId++;
-    auto& room = m_rooms.try_emplace(roomId).first->second;
+    const auto roomSeed = m_options.m_worldSeed + roomId - 1;
+    auto& room = m_rooms.try_emplace(roomId, roomSeed).first->second;
     if (reserve) {
         room.Reserve(playerId);
     } else {

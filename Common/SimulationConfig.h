@@ -22,6 +22,19 @@ inline constexpr std::uint32_t SPAWN_COLUMNS = 8;
 
 inline constexpr double MOVEMENT_FORCE = 10.0;
 
+inline constexpr std::uint64_t DEFAULT_WORLD_SEED = 0x4d6f6f6e6754616eULL;
+inline constexpr std::size_t INITIAL_COLLECTIBLES = 8;
+inline constexpr std::size_t MAX_COLLECTIBLES = 24;
+inline constexpr std::uint64_t COLLECTIBLE_SPAWN_INTERVAL_TICKS = 5 * TICKS_PER_SECOND;
+inline constexpr std::size_t COLLECTIBLE_SPAWN_ATTEMPTS = 256;
+inline constexpr double COLLECTIBLE_AREA_HALF_EXTENT = 12.0;
+inline constexpr double COLLECTIBLE_DROP_HEIGHT = 8.0;
+inline constexpr double COLLECTIBLE_BASE_RADIUS = 0.35;
+inline constexpr double COLLECTIBLE_BASE_MASS = 0.25;
+inline constexpr double COLLECTIBLE_MIN_SCALE = 0.65;
+inline constexpr double COLLECTIBLE_MAX_SCALE = 1.25;
+inline constexpr double COLLECTIBLE_MIN_GAP = 0.75;
+
 // Player IDs are assigned by the server and are nonzero.
 inline constexpr double spawn_x(std::uint32_t playerId)
 {
