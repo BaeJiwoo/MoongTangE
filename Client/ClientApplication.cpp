@@ -79,8 +79,10 @@ void ClientApplication::Run()
             RevertDisplaySettings(window);
         }
 
-        if (IsKeyPressed(KEY_ESCAPE) &&
-            (m_transport || (!m_optionsOpen && m_errorMessage.empty()))) {
+        const bool escapePressed = IsKeyPressed(KEY_ESCAPE);
+        if (m_transport && escapePressed) {
+            m_exitMenuOpen = !m_exitMenuOpen;
+        } else if (!m_transport && escapePressed && !m_optionsOpen && m_errorMessage.empty()) {
             break;
         }
 
@@ -146,7 +148,7 @@ void ClientApplication::Run()
             continue;
         }
 
-        if (!SendInput()) {
+        if (!SendInput(!m_exitMenuOpen)) {
             failure = m_transport->Error();
             ReturnToMenu(failure.empty() ? "Input was rejected by the server" : std::move(failure));
             continue;
@@ -160,9 +162,16 @@ void ClientApplication::Run()
         const auto status = m_transport->Connected()
                                 ? "Room " + std::to_string(m_transport->RoomId())
                                 : std::string("Joining...");
-        renderer.Draw(m_presentation.Sample(), m_transport->PlayerId(),
-                      m_options.remote ? "TCP dedicated server" : "Embedded server",
-                      status.c_str());
+        const auto gameMenuAction =
+            renderer.Draw(m_presentation.Sample(), m_transport->PlayerId(),
+                          m_options.remote ? "TCP dedicated server" : "Embedded server",
+                          status.c_str(), m_exitMenuOpen);
+        if (gameMenuAction == GameMenuAction::RESUME) {
+            m_exitMenuOpen = false;
+        } else if (gameMenuAction == GameMenuAction::EXIT_GAME) {
+            CloseTransport();
+            break;
+        }
     }
 
     if (m_options.smoke) {
@@ -173,9 +182,7 @@ void ClientApplication::Run()
         ValidateSmokeProgress();
     }
 
-    if (m_transport) {
-        m_transport->Close();
-    }
+    CloseTransport();
 }
 
 void ClientApplication::ConfirmDisplaySettings()
@@ -211,8 +218,7 @@ void ClientApplication::StartGame(MainMenuAction action)
 
 void ClientApplication::ReturnToMenu(std::string errorMessage)
 {
-    m_transport->Close();
-    m_transport.reset();
+    CloseTransport();
     m_presentation.Reset();
     m_authoritativeState = {};
     m_roomId = 0;
@@ -220,14 +226,28 @@ void ClientApplication::ReturnToMenu(std::string errorMessage)
     m_errorMessage = std::move(errorMessage);
 }
 
-bool ClientApplication::SendInput()
+void ClientApplication::CloseTransport()
+{
+    if (!m_transport) {
+        return;
+    }
+
+    m_transport->Close();
+    m_transport.reset();
+    m_exitMenuOpen = false;
+}
+
+bool ClientApplication::SendInput(bool movementEnabled)
 {
     if (!m_transport->Connected()) {
         return true;
     }
 
     auto input = keyboard_input(m_transport->PlayerId(), ++m_sequence);
-    if (m_options.smoke) {
+    if (!movementEnabled) {
+        input.x = 0;
+        input.z = 0;
+    } else if (m_options.smoke) {
         input.x = m_sequence < SMOKE_PUSH_FRAMES ? 1 : 0;
         input.z = 0;
     }

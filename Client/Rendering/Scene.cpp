@@ -26,6 +26,8 @@ constexpr float INPUT_WIDTH = 360;
 constexpr float INPUT_HEIGHT = 52;
 constexpr float OPTIONS_DIALOG_WIDTH = 680;
 constexpr float OPTIONS_DIALOG_HEIGHT = 640;
+constexpr float EXIT_DIALOG_WIDTH = 520;
+constexpr float EXIT_DIALOG_HEIGHT = 260;
 
 struct UiCanvas
 {
@@ -275,6 +277,33 @@ MainMenuAction draw_display_confirmation(float screenWidth, float screenHeight,
     return MainMenuAction::NONE;
 }
 
+GameMenuAction draw_exit_dialog(float screenWidth, float screenHeight)
+{
+    const Rectangle shade{0, 0, screenWidth, screenHeight};
+    DrawRectangleRec(shade, Color{0, 0, 0, 175});
+
+    const Rectangle dialog{(screenWidth - EXIT_DIALOG_WIDTH) * 0.5f,
+                           (screenHeight - EXIT_DIALOG_HEIGHT) * 0.5f, EXIT_DIALOG_WIDTH,
+                           EXIT_DIALOG_HEIGHT};
+    DrawRectangleRounded(dialog, 0.08f, 8, Color{30, 37, 52, 255});
+    DrawText("EXIT GAME?", static_cast<int>(dialog.x) + 30, static_cast<int>(dialog.y) + 28, 28,
+             Color{255, 151, 48, 255});
+    DrawText("The current session will be disconnected safely.", static_cast<int>(dialog.x) + 30,
+             static_cast<int>(dialog.y) + 82, 18, RAYWHITE);
+    DrawText("Press ESC to keep playing.", static_cast<int>(dialog.x) + 30,
+             static_cast<int>(dialog.y) + 112, 16, LIGHTGRAY);
+
+    const Rectangle resumeButton{dialog.x + 45, dialog.y + 170, 195, 54};
+    const Rectangle exitButton{dialog.x + 280, dialog.y + 170, 195, 54};
+    if (draw_menu_button(resumeButton, "RESUME", true)) {
+        return GameMenuAction::RESUME;
+    }
+    if (draw_menu_button(exitButton, "EXIT GAME", true)) {
+        return GameMenuAction::EXIT_GAME;
+    }
+    return GameMenuAction::NONE;
+}
+
 ::Vector3 render_vector(Vector3 value)
 {
     return {static_cast<float>(value.x), static_cast<float>(value.y), static_cast<float>(value.z)};
@@ -307,7 +336,7 @@ void draw_overlay(std::uint64_t tick, std::uint32_t playerId, const char* mode, 
              28, 62, 18, SKYBLUE);
 
     DrawText("WASD push  |  Release to coast  |  Opposite key to brake", 28, 90, 16, LIGHTGRAY);
-    DrawText("ESC quit  |  Server physics 60 Hz", 28, 114, 16, LIGHTGRAY);
+    DrawText("ESC menu  |  Server physics 60 Hz", 28, 114, 16, LIGHTGRAY);
 
     DrawText(status, 28, 140, 16, LIGHTGRAY);
 
@@ -601,8 +630,8 @@ void SceneRenderer::DrawCollectible(const CollectibleState& collectible) const
                 WHITE);
 }
 
-void SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
-                         const char* status) const
+GameMenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId,
+                                   const char* mode, const char* status, bool exitMenuOpen) const
 {
     const auto uiCanvas = make_ui_canvas();
     const auto target = camera_target(state, playerId);
@@ -633,8 +662,12 @@ void SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId, con
     }
 
     draw_overlay(state.tick, playerId, mode, status);
+    const auto gameMenuAction =
+        exitMenuOpen ? draw_exit_dialog(REFERENCE_WINDOW_WIDTH, REFERENCE_WINDOW_HEIGHT)
+                     : GameMenuAction::NONE;
     end_ui();
     EndDrawing();
+    return gameMenuAction;
 }
 
 } // namespace MoongTangE

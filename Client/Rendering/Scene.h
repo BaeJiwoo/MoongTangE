@@ -34,6 +34,13 @@ enum class MainMenuAction
     DISMISS_ERROR
 };
 
+enum class GameMenuAction
+{
+    NONE,
+    RESUME,
+    EXIT_GAME
+};
+
 class SceneRenderer
 {
   public:
@@ -48,8 +55,8 @@ class SceneRenderer
                                 const DisplaySettingsState& selectedSettings, bool confirmationOpen,
                                 int confirmationSeconds, std::string& nickname,
                                 const std::string& errorMessage) const;
-    void Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
-              const char* status) const;
+    GameMenuAction Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
+                        const char* status, bool exitMenuOpen) const;
 
   private:
     struct BallTriangle
