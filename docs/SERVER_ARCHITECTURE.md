@@ -118,11 +118,12 @@ sequenceDiagram
 
 <details><summary>Common/Physics/DeformableBallCollider.h · PhysicsWorld.h — 변형 접촉</summary>
 
-- `AddCollectible()`은 부착물 반지름을 누적 부피에 더하고 중심 방향에 가장 가까운 방사형
-  팔 하나를 `중심 거리 + 반지름`까지 늘립니다.
+- `AddCollectible()`은 부착물 반지름을 누적 부피에 더하고 중심 방향 주변 30도 안쪽의 방사형
+  팔들에 smoothstep으로 돌출을 분산합니다.
 - `PickupRadius()`, `ContainsPickupCenter()`, `PickupSurface()`는 누적 부피로 성장하는 매끄러운
   획득 구체의 판정과 부착 위치를 제공합니다.
-- `Support()`는 월드 방향으로 가장 먼 기본 구체 지지점 또는 54개 방사형 팔 끝을 선택합니다.
+- `Support()`는 누적 부피 반지름을 굴림의 기본 구체로 사용하고 각 돌출을 현재 반지름의
+  30%보다 작게 soft-cap한 뒤, 월드 방향으로 가장 먼 기본 지지점 또는 54개 팔 끝을 선택합니다.
 - `PhysicsWorld::Step(body, collider, ...)`은 아래쪽 지지점을 plane 접촉 팔로 사용합니다.
   정상·마찰 충격의 유효질량과 토크, 구름 저항과 정지 판정도 같은 접촉 팔을 사용하므로
   부착 위치와 크기에 따라 실제 플레이어 운동이 달라집니다.
