@@ -21,7 +21,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            preset: windows-release
+          - os: ubuntu-latest
+            preset: linux-release
+          - os: macos-latest
+            preset: macos-release
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -32,11 +38,11 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake --preset ${{ matrix.preset }}
       - name: Build
-        run: cmake --build build --config Release --parallel 2
+        run: cmake --build --preset ${{ matrix.preset }}
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: ctest --preset ${{ matrix.preset }}
       - name: Configure without graphics and networking dependencies
         run: cmake -S . -B build-core -DCMAKE_BUILD_TYPE=Release -DMOONGTANGE_BUILD_CLIENT=OFF -DMOONGTANGE_BUILD_NETWORK=OFF
       - name: Build core

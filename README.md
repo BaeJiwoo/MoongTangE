@@ -27,7 +27,7 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 | 언어 | C++20 |
 | 매칭 API | ASP.NET Core 8 |
 | 빌드 | CMake |
-| 네트워크 | Standalone Asio 1.38.2, TCP |
+| 네트워크 | Standalone Asio 1.38.2, TCP (IOCP / epoll / kqueue) |
 | 직렬화 | Protobuf 36.2 (C++ 런타임 7.36.2), 프로토콜 v8 |
 | 렌더링 | raylib 6.0 |
 | 테스트 | CTest |
@@ -37,17 +37,28 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 
 CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 분리형 매칭 API와 통합 테스트에는 .NET 8 SDK와 Python 3도 필요합니다. 첫 구성 시 고정된 외부 소스를 다운로드하므로 인터넷 연결이 필요합니다. 다운로드는 SHA-256으로 검증합니다.
 
-기존 빌드 폴더도 아래의 현재 옵션 이름으로 다시 구성하세요. 전체 빌드는 `MOONGTANGE_BUILD_CLIENT=ON`, `MOONGTANGE_BUILD_NETWORK=ON`이 기본값이고, 코어 전용 구성은 두 옵션을 명시적으로 `OFF`로 지정합니다.
+기존 빌드 폴더도 아래의 현재 옵션 이름으로 다시 구성하세요. 전체 빌드는 `MOONGTANGE_BUILD_CLIENT=ON`, `MOONGTANGE_BUILD_NETWORK=ON`이 기본값이고, 코어 전용 구성은 두 옵션을 명시적으로 `OFF`로 지정합니다. 네트워크를 켜면 `MOONGTANGE_ASIO_BACKEND=AUTO`가 대상 운영체제에 맞춰 Windows의 IOCP, Linux의 epoll, macOS의 kqueue를 기대하며 실제 Asio 설정을 컴파일할 때 검증합니다.
 
 네트워크 구성에서는 고정된 Protobuf와 Abseil 소스, 동일 릴리스의 `protoc`도 빌드합니다. 첫 전체 빌드는 이 의존성 컴파일 때문에 더 오래 걸립니다. 별도 Protobuf 설치는 필요하지 않으며 `.proto`로 생성한 파일은 빌드 폴더에만 저장됩니다.
+
+저장소를 받은 뒤 운영체제에 맞는 Release 프리셋을 선택합니다. 프리셋은 빌드와 테스트까지 같은 설정을 사용하며 지원하지 않는 운영체제의 프리셋은 목록에서 숨깁니다.
+
+| 운영체제 | 프리셋 | 검증하는 Asio 백엔드 | 빌드 폴더 |
+| --- | --- | --- | --- |
+| Windows | `windows-release` | IOCP | `build/windows-release` |
+| Linux | `linux-release` | epoll | `build/linux-release` |
+| macOS | `macos-release` | kqueue | `build/macos-release` |
 
 ```sh
 git clone https://github.com/BaeJiwoo/MoongTangE.git
 cd MoongTangE
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release --parallel 2
-ctest --test-dir build -C Release --output-on-failure
+cmake --list-presets
+cmake --preset linux-release
+cmake --build --preset linux-release
+ctest --preset linux-release
 ```
+
+위 예시의 `linux-release`를 현재 운영체제의 프리셋 이름으로 바꾸세요. 사용자 지정 빌드 폴더가 필요하면 기존 `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release` 방식도 유지되며, 이때 백엔드는 기본 `AUTO`가 선택합니다. `MOONGTANGE_ASIO_BACKEND`를 명시하면 대상 운영체제와 다른 값은 구성 단계에서 거부됩니다.
 
 Windows에서는 Visual Studio의 Desktop development with C++ 워크로드를 설치하세요. Linux의 그래픽 빌드 의존성:
 
@@ -77,23 +88,23 @@ Windows / Visual Studio 빌드:
 
 ```powershell
 # 싱글플레이: 클라이언트 내부 서버 사용
-.\build\Release\Client.exe --single
+.\build\windows-release\Release\Client.exe --single
 
 # 멀티플레이: 첫 번째 터미널에서 서버 실행
-.\build\Release\DedicatedServer.exe --port 27015
+.\build\windows-release\Release\DedicatedServer.exe --port 27015
 
 # 별도 터미널에서 클라이언트 실행. 여러 개를 실행할 수 있습니다.
-.\build\Release\Client.exe --connect 127.0.0.1:27015
+.\build\windows-release\Release\Client.exe --connect 127.0.0.1:27015
 ```
 
-Linux / macOS의 일반 단일 구성 빌드에서는 실행 파일이 `build/Client`, `build/DedicatedServer`에 있습니다. 명령행 옵션은 같습니다.
+Linux / macOS 프리셋의 실행 파일은 각각 `build/linux-release`, `build/macos-release`에 있습니다. 아래는 Linux 예시이며 macOS에서는 경로의 `linux-release`를 `macos-release`로 바꿉니다. 명령행 옵션은 같습니다.
 
 ```sh
-./build/Client --single
-./build/Client --single --world-seed 42
-./build/DedicatedServer --port 27015
-./build/DedicatedServer --port 27015 --world-seed 42
-./build/Client --connect 127.0.0.1:27015
+./build/linux-release/Client --single
+./build/linux-release/Client --single --world-seed 42
+./build/linux-release/DedicatedServer --port 27015
+./build/linux-release/DedicatedServer --port 27015 --world-seed 42
+./build/linux-release/Client --connect 127.0.0.1:27015
 ```
 
 클라이언트는 메인 화면으로 열립니다. `SINGLE PLAYER`를 선택하면 내장 서버를 시작하고,

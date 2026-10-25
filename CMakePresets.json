@@ -7,6 +7,15 @@
   },
   "configurePresets": [
     {
+      "name": "release-base",
+      "hidden": true,
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "MOONGTANGE_BUILD_CLIENT": "ON",
+        "MOONGTANGE_BUILD_NETWORK": "ON"
+      }
+    },
+    {
       "name": "browse",
       "displayName": "MoongTangE",
       "description": "Provide project and dependency headers for C++ code navigation.",
@@ -15,6 +24,138 @@
         "BUILD_TESTING": "ON",
         "MOONGTANGE_BUILD_CLIENT": "ON",
         "MOONGTANGE_BUILD_NETWORK": "ON"
+      }
+    },
+    {
+      "name": "windows-release",
+      "inherits": "release-base",
+      "displayName": "Windows Release (Asio IOCP)",
+      "description": "Build and test MoongTangE with Visual Studio and Asio's IOCP backend.",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/windows-release",
+      "cacheVariables": {
+        "MOONGTANGE_ASIO_BACKEND": "IOCP"
+      }
+    },
+    {
+      "name": "linux-release",
+      "inherits": "release-base",
+      "displayName": "Linux Release (Asio epoll)",
+      "description": "Build and test MoongTangE with Makefiles and Asio's epoll backend.",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MOONGTANGE_ASIO_BACKEND": "EPOLL"
+      }
+    },
+    {
+      "name": "macos-release",
+      "inherits": "release-base",
+      "displayName": "macOS Release (Asio kqueue)",
+      "description": "Build and test MoongTangE with Makefiles and Asio's kqueue backend.",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/macos-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MOONGTANGE_ASIO_BACKEND": "KQUEUE"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release",
+      "jobs": 2,
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "jobs": 2,
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release",
+      "jobs": 2,
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
       }
     }
   ]
