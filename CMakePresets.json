@@ -30,14 +30,12 @@
       "name": "windows-release",
       "inherits": "release-base",
       "displayName": "Windows Release (Asio IOCP)",
-      "description": "Build and test MoongTangE with Visual Studio and Asio's IOCP backend.",
+      "description": "Build and test MoongTangE with the available Visual Studio generator and Asio's IOCP backend.",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
       },
-      "generator": "Visual Studio 17 2022",
-      "architecture": "x64",
       "binaryDir": "${sourceDir}/build/windows-release",
       "cacheVariables": {
         "MOONGTANGE_ASIO_BACKEND": "IOCP"
