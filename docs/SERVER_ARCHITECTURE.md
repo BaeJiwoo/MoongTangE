@@ -136,9 +136,11 @@ sequenceDiagram
 
 `Common`과 `ServerCore`는 raylib·Asio에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication`과 outbound 전용 `MatchmakingControlClient`를 제공하고, `TcpTransport`·`ServerOptions` 및 비공개 HTTP 의존성 `MatchmakingHttp`를 연결합니다. ASP.NET `MatchmakingApi`는 CMake 대상과 주소 공간을 공유하지 않는 별도 프로젝트입니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며, Asio를 직접 포함하는 `ServerNetworkRuntime.h`의 독립 컴파일도 생략합니다.
 
+네트워크 구성의 `MOONGTANGE_ASIO_BACKEND`는 기본 `AUTO`이며 대상 운영체제에 따라 Windows의 IOCP, Linux의 epoll, macOS의 kqueue를 기대합니다. 운영체제별 CMake configure/build/test 프리셋은 이 값을 명시하고 `AsioBackend.cpp`가 Asio의 실제 기능 매크로와 일치하는지 컴파일할 때 검증합니다. 프리셋을 사용하지 않는 기존 CMake 명령도 `AUTO`로 같은 검증을 수행하며, 대상 운영체제와 다른 명시적 값은 구성 단계에서 거부합니다. 이 검증은 Asio의 백엔드를 강제로 정의하거나 네트워크 런타임 동작을 변경하지 않습니다.
+
 ## 명명과 헤더·구현 분리
 
-모든 프로젝트 C++ 코드는 `MoongTangE` 최상위 네임스페이스를 사용합니다. 공통 상수는 `MoongTangE::simulation`, 전송 코덱은 `MoongTangE::wire`, `package MoongTangE.proto`에서 생성되는 메시지는 `MoongTangE::proto`, 테스트 보조 함수는 `MoongTangE::test`에 속합니다. Client·Common·Network·Server·Tests의 선언과 호출부를 같은 이름으로 맞춥니다. CMake 옵션·컴파일 매크로·화면 캡처 환경변수는 각각 `MOONGTANGE_BUILD_CLIENT`, `MOONGTANGE_BUILD_NETWORK`, `MOONGTANGE_HAS_NETWORK`, `MOONGTANGE_SMOKE_CAPTURE`를 사용하며, 테스트 검증 매크로는 `MOONGTANGE_CHECK`입니다. CMake 내부 도우미와 변수는 `moongtange_` 접두사를 사용합니다.
+모든 프로젝트 C++ 코드는 `MoongTangE` 최상위 네임스페이스를 사용합니다. 공통 상수는 `MoongTangE::simulation`, 전송 코덱은 `MoongTangE::wire`, `package MoongTangE.proto`에서 생성되는 메시지는 `MoongTangE::proto`, 테스트 보조 함수는 `MoongTangE::test`에 속합니다. Client·Common·Network·Server·Tests의 선언과 호출부를 같은 이름으로 맞춥니다. CMake 옵션·컴파일 매크로·화면 캡처 환경변수는 각각 `MOONGTANGE_BUILD_CLIENT`, `MOONGTANGE_BUILD_NETWORK`, `MOONGTANGE_ASIO_BACKEND`, `MOONGTANGE_HAS_NETWORK`, `MOONGTANGE_SMOKE_CAPTURE`를 사용하며, 테스트 검증 매크로는 `MOONGTANGE_CHECK`입니다. CMake 내부 도우미와 변수는 `moongtange_` 접두사를 사용합니다.
 
 전체 프로젝트의 멤버 함수는 `Run()`처럼 PascalCase, 일반 함수는 `parse_server_options()`처럼 snake_case를 사용합니다. 비공개 데이터 멤버는 `m_` 접두사(`m_networkThread`), 고정 상수·열거 값은 `UPPER_SNAKE_CASE`(`MAX_PENDING_COMMANDS`)입니다. `ServerOptions`의 기존 필드 `m_port`, `m_runDuration`, `m_publicBind`, `m_showHelp`와 내부 명령의 `m_` 필드는 유지합니다. 매개변수·런타임 지역 변수는 lowerCamelCase이며, `const` 지역 Snapshot 복사도 이 규칙을 따릅니다. 수학·프로토콜의 단순 값 타입은 `x`, `playerId` 같은 데이터 이름을 유지합니다. 참고 저장소와 구체적인 서식 규칙은 [현재 코드 스타일](../CPP_REVIEW.md#현재-전체-코드-스타일--issue-33)에 정리했습니다.
 
@@ -148,11 +150,18 @@ sequenceDiagram
 | --- | --- | --- |
 | `ServerCore` | `ServerHost.cpp`, `TickScheduler.cpp`, `GameRoom.cpp`, `GameRoomManager.cpp`, `GameRoomOptions.cpp` | Common, Threads |
 | `ServerOptions` | `ServerOptions.cpp` | Common |
-| `TcpTransport` | `AsioServer.cpp`, `ServerNetworkRuntime.cpp`, `TcpChannel.cpp`, `TcpClientTransport.cpp` | ServerCore, AsioStandalone, NetworkProtocol |
+| `TcpTransport` | `AsioBackend.cpp`, `AsioServer.cpp`, `ServerNetworkRuntime.cpp`, `TcpChannel.cpp`, `TcpClientTransport.cpp` | ServerCore, AsioStandalone, NetworkProtocol |
 | `ServerRuntime` | `ServerApplication.cpp`, `MatchmakingControlClient.cpp` | TcpTransport, ServerOptions, 비공개 MatchmakingHttp |
 | `NetworkProtocol` | `Codec.cpp` | Common, ProtocolMessages |
 
 ## 파일별 함수 안내
+
+<details>
+<summary>Network/AsioBackend.cpp — 운영체제 백엔드 검증</summary>
+
+Windows의 IOCP, Linux의 epoll, macOS의 kqueue 중 CMake가 기대한 백엔드 기능 매크로를 Asio가 제공하는지 컴파일할 때 확인합니다. 실행 코드나 공개 함수는 없으며 Asio의 백엔드 선택을 강제로 변경하지 않습니다.
+
+</details>
 
 ### 3인 방 모델 추가 — Issue #35
 

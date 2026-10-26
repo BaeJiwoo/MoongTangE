@@ -31,11 +31,13 @@ add_library(ServerOptions Server/ServerOptions.cpp)
 target_link_libraries(ServerOptions PUBLIC Common)
 include(cmake/Dependencies.cmake)
 if(MOONGTANGE_BUILD_NETWORK)
+  include(cmake/AsioBackend.cmake)
   include(cmake/Protobuf.cmake)
-  add_library(TcpTransport Server/Network/AsioServer.cpp
+  add_library(TcpTransport Network/AsioBackend.cpp Server/Network/AsioServer.cpp
     Server/Network/ServerNetworkRuntime.cpp Network/TcpChannel.cpp
     Client/Transport/TcpClientTransport.cpp)
   target_link_libraries(TcpTransport PUBLIC ServerCore AsioStandalone NetworkProtocol)
+  moongtange_configure_asio_backend(TcpTransport)
   add_library(ServerRuntime Server/ServerApplication.cpp
     Server/Api/MatchmakingControlClient.cpp)
   target_link_libraries(ServerRuntime PUBLIC TcpTransport ServerOptions PRIVATE MatchmakingHttp)
