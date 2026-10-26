@@ -1,81 +1,47 @@
 #include "Client/Transport/TcpClientTransport.h"
-#if defined(MOONGTANGE_NETWORK_BACKEND_ASIO)
-#include "Network/TcpChannel.h"
-#endif
 #include "Network/Protocol/Codec.h"
 #include "Server/Network/NetworkServer.h"
+#include "TcpTestSocket.h"
 #include "TestSupport.h"
 
 #include <algorithm>
 #include <array>
-#include <asio.hpp>
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace {
 
 using namespace MoongTangE;
 
-MoongTangE::wire::Bytes read_frame(asio::ip::tcp::socket& socket)
+MoongTangE::wire::Bytes read_frame(MoongTangE::test::TcpTestSocket& socket)
 {
     std::array<std::uint8_t, wire::FRAME_HEADER_BYTES> header{};
-    asio::read(socket, asio::buffer(header));
+    socket.ReadExact(header);
 
     MoongTangE::wire::Bytes data(MoongTangE::wire::frame_size(header));
-    asio::read(socket, asio::buffer(data));
+    socket.ReadExact(data);
     return data;
 }
 
-bool closed(asio::ip::tcp::socket& socket)
+bool closed(const MoongTangE::test::TcpTestSocket& socket)
 {
-    socket.non_blocking(true);
     return MoongTangE::test::wait_for([&] {
-        std::array<char, 4096> bytes{};
-        asio::error_code error;
-        socket.read_some(asio::buffer(bytes), error);
-        return error && error != asio::error::would_block && error != asio::error::try_again;
+        return socket.Closed();
     });
-}
-
-void channel_starts_once_and_closes_once()
-{
-#if defined(MOONGTANGE_NETWORK_BACKEND_ASIO)
-    {
-        asio::io_context channelIo;
-        auto channel = std::make_shared<TcpChannel>(asio::ip::tcp::socket(channelIo));
-        unsigned closeCalls = 0;
-        auto onMessage = [](const wire::Bytes&) {};
-        auto onClose = [&](std::string) {
-            ++closeCalls;
-        };
-
-        channel->Start(onMessage, onClose);
-        MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
-            channel->Start(onMessage, onClose);
-        }));
-
-        channel->Close();
-        channel->Close();
-        channelIo.run();
-        MOONGTANGE_CHECK(closeCalls == 1);
-    }
-#endif
 }
 
 void consumed_snapshots_cannot_rewind()
 {
-    asio::io_context io;
-    asio::ip::tcp::acceptor listener(io, {asio::ip::make_address("127.0.0.1"), 0});
-    TcpClientTransport client("127.0.0.1", listener.local_endpoint().port());
-    auto peer = listener.accept();
+    test::TcpTestListener listener;
+    TcpClientTransport client("127.0.0.1", listener.Port());
+    auto peer = listener.Accept();
 
     wire::read_client_hello(read_frame(peer));
     auto send = [&](const wire::Bytes& payload) {
         const auto bytes = wire::frame(payload);
-        asio::write(peer, asio::buffer(bytes));
+        peer.Write(bytes);
     };
 
     send(wire::server_hello({AdmissionStatus::ACCEPTED, 1, 7}));
@@ -100,14 +66,13 @@ void consumed_snapshots_cannot_rewind()
 
 void client_close_sends_disconnect_before_socket_shutdown()
 {
-    asio::io_context io;
-    asio::ip::tcp::acceptor listener(io, {asio::ip::make_address("127.0.0.1"), 0});
-    TcpClientTransport client("127.0.0.1", listener.local_endpoint().port());
-    auto peer = listener.accept();
+    test::TcpTestListener listener;
+    TcpClientTransport client("127.0.0.1", listener.Port());
+    auto peer = listener.Accept();
 
     wire::read_client_hello(read_frame(peer));
     const auto greeting = wire::frame(wire::server_hello({AdmissionStatus::ACCEPTED, 1, 7}));
-    asio::write(peer, asio::buffer(greeting));
+    peer.Write(greeting);
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
         return client.Connected();
     }));
@@ -117,33 +82,6 @@ void client_close_sends_disconnect_before_socket_shutdown()
     MOONGTANGE_CHECK(wire::is_disconnect(read_frame(peer)));
     MOONGTANGE_CHECK(closed(peer));
     MOONGTANGE_CHECK(!client.Connected() && client.Error().empty());
-}
-
-void slow_peer_queue_is_bounded_before_io_progress()
-{
-#if defined(MOONGTANGE_NETWORK_BACKEND_ASIO)
-    asio::io_context io;
-    asio::ip::tcp::acceptor listener(io, {asio::ip::make_address("127.0.0.1"), 0});
-    asio::ip::tcp::socket peer(io);
-    peer.connect(listener.local_endpoint());
-    auto channel = std::make_shared<TcpChannel>(listener.accept());
-    unsigned closes = 0;
-    std::string reason;
-    channel->Start([](const wire::Bytes&) {},
-                   [&](std::string failure) {
-                       ++closes;
-                       reason = std::move(failure);
-                   });
-    // Hold the executor so no write completion can free a queue slot.
-    for (int index = 0; index < 32; ++index) {
-        channel->Send(wire::client_hello());
-    }
-    MOONGTANGE_CHECK(closes == 0);
-    channel->Send(wire::client_hello());
-    MOONGTANGE_CHECK(closes == 1 && reason == "Slow peer: send queue full");
-    io.run();
-    MOONGTANGE_CHECK(closes == 1);
-#endif
 }
 
 void clients_receive_authoritative_rolling(const NetworkServer& server, ServerHost& core)
@@ -187,11 +125,9 @@ void clients_receive_authoritative_rolling(const NetworkServer& server, ServerHo
 
 void invalid_nickname_is_rejected(const NetworkServer& server)
 {
-    asio::io_context io;
-    asio::ip::tcp::socket client(io);
-    client.connect({asio::ip::make_address("127.0.0.1"), server.Port()});
+    auto client = test::TcpTestSocket::Connect("127.0.0.1", server.Port());
     const auto greeting = wire::frame(wire::client_hello({}, ""));
-    asio::write(client, asio::buffer(greeting));
+    client.Write(greeting);
 
     const auto admission = wire::read_server_hello(read_frame(client));
     MOONGTANGE_CHECK(admission.status == AdmissionStatus::INVALID_NICKNAME);
@@ -207,22 +143,21 @@ void invalid_nickname_is_rejected(const NetworkServer& server)
 void clients_reject_foreign_rooms_and_report_full()
 {
     for (const bool full : {false, true}) {
-        asio::io_context io;
-        asio::ip::tcp::acceptor listener(io, {asio::ip::make_address("127.0.0.1"), 0});
-        TcpClientTransport client("127.0.0.1", listener.local_endpoint().port());
-        auto peer = listener.accept();
+        test::TcpTestListener listener;
+        TcpClientTransport client("127.0.0.1", listener.Port());
+        auto peer = listener.Accept();
         wire::read_client_hello(read_frame(peer));
         const auto greeting = wire::frame(
             wire::server_hello(full ? AdmissionResult{AdmissionStatus::FULL, 0, 0}
                                     : AdmissionResult{AdmissionStatus::ACCEPTED, 1, 7}));
-        asio::write(peer, asio::buffer(greeting));
+        peer.Write(greeting);
         if (!full) {
             MOONGTANGE_CHECK(test::wait_for([&] {
                 return client.RoomId() == 7;
             }));
             const auto foreign =
                 wire::frame(wire::snapshot({8, {42, {{1, {}, {}, {}, {}, {}}}, {}}}));
-            asio::write(peer, asio::buffer(foreign));
+            peer.Write(foreign);
         }
         MOONGTANGE_CHECK(test::wait_for([&] {
             return !client.Error().empty();
@@ -236,22 +171,19 @@ void clients_reject_foreign_rooms_and_report_full()
 
 void fragmented_frames_and_disconnect(const NetworkServer& server)
 {
-    asio::io_context io;
-    const asio::ip::tcp::endpoint endpoint(asio::ip::make_address("127.0.0.1"), server.Port());
     {
-        asio::ip::tcp::socket raw(io);
-        raw.connect(endpoint);
+        auto raw = test::TcpTestSocket::Connect("127.0.0.1", server.Port());
 
         const auto greeting = wire::frame(wire::client_hello({}, "RawPlayer"));
         for (const auto byte : greeting) {
-            asio::write(raw, asio::buffer(&byte, 1));
+            raw.WriteByte(byte);
         }
         const auto id = wire::read_server_hello(read_frame(raw)).playerId;
         MOONGTANGE_CHECK(id);
 
         const auto command = wire::frame(wire::input({id, 1, 1, 0}));
         for (const auto byte : command) {
-            asio::write(raw, asio::buffer(&byte, 1));
+            raw.WriteByte(byte);
         }
 
         bool moved = false;
@@ -266,37 +198,33 @@ void fragmented_frames_and_disconnect(const NetworkServer& server)
         MOONGTANGE_CHECK(moved);
 
         const auto goodbye = wire::frame(wire::disconnect());
-        asio::write(raw, asio::buffer(goodbye));
+        raw.Write(goodbye);
         MOONGTANGE_CHECK(closed(raw));
     }
 }
 
 void malformed_frames_are_rejected(const NetworkServer& server)
 {
-    asio::io_context io;
-    const asio::ip::tcp::endpoint endpoint(asio::ip::make_address("127.0.0.1"), server.Port());
     for (const auto& bad : std::vector<wire::Bytes>{{0, 0, 32, 1},
                                                     {0, 0, 0, 0},
                                                     wire::frame(wire::Bytes{1, 0, 1}),
                                                     wire::frame(wire::input({1, 1, 0, 0}))}) {
-        asio::ip::tcp::socket raw(io);
-        raw.connect(endpoint);
-        asio::write(raw, asio::buffer(bad));
+        auto raw = test::TcpTestSocket::Connect("127.0.0.1", server.Port());
+        raw.Write(bad);
         MOONGTANGE_CHECK(closed(raw));
     }
 }
 
 void connection_failure_and_early_close(const NetworkServer& server)
 {
-    asio::io_context io;
     {
         TcpClientTransport abandoned("127.0.0.1", server.Port());
         abandoned.Close();
     }
 
-    asio::ip::tcp::acceptor reserve(io, {asio::ip::make_address("127.0.0.1"), 0});
-    const auto unused = reserve.local_endpoint().port();
-    reserve.close();
+    test::TcpTestListener reserve;
+    const auto unused = reserve.Port();
+    reserve.Close();
 
     TcpClientTransport refused("127.0.0.1", unused);
     MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
@@ -327,8 +255,6 @@ void shutdown_with_active_clients(const std::shared_ptr<ServerHost>& core)
 int main()
 {
     return MoongTangE::test::run([] {
-        channel_starts_once_and_closes_once();
-        slow_peer_queue_is_bounded_before_io_progress();
         consumed_snapshots_cannot_rewind();
         client_close_sends_disconnect_before_socket_shutdown();
         clients_reject_foreign_rooms_and_report_full();

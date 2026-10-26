@@ -27,7 +27,7 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 | 언어 | C++20 |
 | 매칭 API | ASP.NET Core 8 |
 | 빌드 | CMake |
-| 네트워크 | TCP, Windows IOCP / Linux epoll 네이티브 구현 또는 Standalone Asio 1.38.2 |
+| 네트워크 | TCP, Windows IOCP / Linux epoll 네이티브 구현 |
 | 직렬화 | Protobuf 36.2 (C++ 런타임 7.36.2), 프로토콜 v8 |
 | 렌더링 | raylib 6.0 |
 | 테스트 | CTest |
@@ -37,7 +37,9 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 
 CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 분리형 매칭 API와 통합 테스트에는 .NET 8 SDK와 Python 3도 필요합니다. 첫 구성 시 고정된 외부 소스를 다운로드하므로 인터넷 연결이 필요합니다. 다운로드는 SHA-256으로 검증합니다.
 
-기존 빌드 폴더도 아래의 현재 옵션 이름으로 다시 구성하세요. 전체 빌드는 `MOONGTANGE_BUILD_CLIENT=ON`, `MOONGTANGE_BUILD_NETWORK=ON`이 기본값이고, 코어 전용 구성은 두 옵션을 명시적으로 `OFF`로 지정합니다. 네트워크 구현은 `MOONGTANGE_NETWORK_BACKEND=AUTO|ASIO|IOCP|EPOLL`로 선택합니다. `AUTO`는 Windows에서 직접 구현한 IOCP, Linux에서 직접 구현한 epoll을 선택합니다. 기존 Asio 구현은 `ASIO`로 계속 빌드할 수 있으며 그때 Asio가 운영체제의 IOCP 또는 epoll을 사용하는지도 컴파일 시 검증합니다. macOS 구성은 CMake 단계에서 거부합니다.
+기존 빌드 폴더도 아래의 현재 옵션 이름으로 다시 구성하세요. 전체 빌드는 `MOONGTANGE_BUILD_CLIENT=ON`, `MOONGTANGE_BUILD_NETWORK=ON`이 기본값이고, 코어 전용 구성은 두 옵션을 명시적으로 `OFF`로 지정합니다. 네트워크 구현은 `MOONGTANGE_NETWORK_BACKEND=AUTO|IOCP|EPOLL`로 선택합니다. `AUTO`는 Windows에서 직접 구현한 IOCP, Linux에서 직접 구현한 epoll을 선택합니다. Windows의 `EPOLL`, Linux의 `IOCP`, 모든 macOS 구성은 CMake 단계에서 거부합니다.
+
+이 브랜치 계열에는 네이티브 구현만 포함합니다. 이전 Standalone Asio 구현은 별도의 `61-NETWORKBACKEND` 브랜치 계열에서 보존하며, 이 빌드의 선택 가능한 백엔드로 섞지 않습니다.
 
 네트워크 구성에서는 고정된 Protobuf와 Abseil 소스, 동일 릴리스의 `protoc`도 빌드합니다. 첫 전체 빌드는 이 의존성 컴파일 때문에 더 오래 걸립니다. 별도 Protobuf 설치는 필요하지 않으며 `.proto`로 생성한 파일은 빌드 폴더에만 저장됩니다.
 
@@ -46,9 +48,7 @@ CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 분리형 매�
 | 운영체제 | 네트워크 구현 | 프리셋 | 빌드 폴더 |
 | --- | --- | --- | --- |
 | Windows | 네이티브 IOCP | `windows-release` | `build/windows-release` |
-| Windows | 보존된 Asio | `windows-asio-release` | `build/windows-asio-release` |
 | Linux | 네이티브 epoll | `linux-release` | `build/linux-release` |
-| Linux | 보존된 Asio | `linux-asio-release` | `build/linux-asio-release` |
 
 ```sh
 git clone https://github.com/BaeJiwoo/MoongTangE.git
@@ -160,16 +160,16 @@ HTTP 상태 조회·입장 예약 API와 일회용 입장권을 지원합니다.
 
 서버 구성 요소, 스레드와 소유권, 입력 처리 및 종료 순서는 [서버 구조 문서](docs/SERVER_ARCHITECTURE.md)에 설명되어 있습니다. 같은 문서의 [파일별 함수 안내](docs/SERVER_ARCHITECTURE.md#파일별-함수-안내)는 파일 이름을 눌러 펼칠 수 있습니다.
 
-서버와 공유 TCP 채널은 `.h`에 선언, 같은 이름의 `.cpp`에 구현을 둡니다. 멤버는 `m_` 접두사, 고정 상수는 `UPPER_SNAKE_CASE`를 사용합니다. `NetworkServer` 별칭은 선택된 `AsioServer` 또는 `NativeServer` 공개 진입점을 가리키며, 각 runtime이 연결·세션·네트워크 스레드를 관리합니다.
+서버와 공유 TCP 채널은 `.h`에 선언, 같은 이름의 `.cpp`에 구현을 둡니다. 멤버는 `m_` 접두사, 고정 상수는 `UPPER_SNAKE_CASE`를 사용합니다. `NetworkServer` 별칭은 `NativeServer` 공개 진입점을 가리키며, runtime이 연결·세션·네트워크 스레드를 관리합니다.
 
 ```text
 Common/       수학, 자체 물리, GameWorld, 입력·Snapshot 자료형, 전송 인터페이스
 Server/       실행 진입점, ServerOptions.h/.cpp, ServerApplication.h/.cpp
 Server/Core/  ServerHost, GameRoomManager, GameRoom, GameRoomOptions, TickScheduler
-Server/Network/ NetworkServer.h, AsioServer/ServerNetworkRuntime, NativeServer/NativeServerNetworkRuntime
+Server/Network/ NetworkServer.h, NativeServer/NativeServerNetworkRuntime
 Client/       raylib 화면과 키보드, LocalTransport/TcpClientTransport
 Assets/       Kenney Food Kit CC0 GLB와 원본 라이선스 고지
-Network/      Asio TcpChannel, Native/ 이벤트 루프·채널, Protobuf 스키마와 Codec
+Network/      Native/ 이벤트 루프·채널, Protobuf 스키마와 Codec
 Tests/        단위 테스트, 루프백, 프로세스 통합 테스트
 cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 ```
@@ -180,7 +180,7 @@ cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 
 - CTest: 벡터/quaternion, 낙하/충돌/구름/관성, 게임 월드, 서버 수명/큐, ServerApplication 실행·종료, 로컬 전송, Protobuf 프로토콜, 화면 보간, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속. 전체 18개, 외부 의존성 없는 구성 10개입니다. Protobuf 프로토콜 테스트는 네트워크 구성에 포함됩니다.
 - 동일 Tick 입력 일정의 로컬 계산과 직렬화 경로는 매 Tick 비교합니다. 실제 비동기 전송은 입력 도착 시점이 다르므로 이동 속도·방향·바닥 정지 등 물리 조건을 비교합니다.
-- CI: Windows/MSVC의 네이티브 IOCP·Asio와 Linux/GCC의 네이티브 epoll·Asio에서 전체 빌드와 테스트, 외부 의존성 없는 코어 구성을 검증합니다. GUI 실행은 CI 필수 항목이 아니며 실제 결과는 [Actions](https://github.com/BaeJiwoo/MoongTangE/actions)에서 확인하세요.
+- CI: Windows/MSVC의 네이티브 IOCP와 Linux/GCC의 네이티브 epoll에서 전체 빌드와 테스트, 외부 의존성 없는 코어 구성을 검증합니다. GUI 실행은 CI 필수 항목이 아니며 실제 결과는 [Actions](https://github.com/BaeJiwoo/MoongTangE/actions)에서 확인하세요.
 - 공과 평면의 충돌만 구현합니다. 공끼리의 충돌, 경사면, 클라이언트 예측, UDP, 물리 롤백 및 사용자 인증은 후속 범위입니다.
 - 방마다 최대 3명, 기본 최대 8개 방(24명), 입력 만료 120 Tick, 고정 dt=1/60이며 플랫폼 간 비트 단위의 결정성을 보장하지 않습니다.
 - 비공개 저장소 브랜치 보호 설정은 현재 계정 요금제에서 HTTP 403으로 거부됐습니다. 저장소 공개 범위는 변경하지 않았습니다.

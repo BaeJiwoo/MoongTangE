@@ -23,7 +23,6 @@ if(MOONGTANGE_BUILD_CLIENT)
   target_link_libraries(HeaderChecks PRIVATE raylib)
 endif()
 if(MOONGTANGE_BUILD_NETWORK)
-  target_link_libraries(HeaderChecks PRIVATE AsioStandalone)
   target_compile_definitions(HeaderChecks PRIVATE
     "MOONGTANGE_NETWORK_BACKEND_${MOONGTANGE_RESOLVED_NETWORK_BACKEND}")
 endif()

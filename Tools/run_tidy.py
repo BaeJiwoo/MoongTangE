@@ -18,22 +18,20 @@ def main():
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build")
     options = parser.parse_args()
     dependencies = options.build_dir.resolve() / "_deps"
-    includes = (dependencies / "asio-src/include", dependencies / "raylib-src/src",
-                dependencies / "httplib-src",
+    includes = (dependencies / "raylib-src/src", dependencies / "httplib-src",
                 dependencies / "protobuf-src/src", dependencies / "absl-src",
                 dependencies / "protobuf-src/third_party/utf8_range",
                 options.build_dir.resolve() / "generated")
     if not all(path.is_dir() for path in includes):
         parser.error("Build the full project, including generated Protobuf headers, before analysis.")
-    flags = ["-std=c++20", "-I" + str(ROOT), "-DASIO_STANDALONE", "-DMOONGTANGE_HAS_NETWORK"]
+    flags = ["-std=c++20", "-I" + str(ROOT), "-DMOONGTANGE_HAS_NETWORK"]
     for path in includes:
         flags.extend(("-isystem", str(path)))
     if os.name == "nt":
         flags.extend(("-D_WIN32_WINNT=0x0A00", "-D_CRT_SECURE_NO_WARNINGS",
-                      "-DMOONGTANGE_EXPECT_ASIO_IOCP", "-DMOONGTANGE_NETWORK_BACKEND_IOCP"))
+                      "-DMOONGTANGE_NETWORK_BACKEND_IOCP"))
     elif sys.platform.startswith("linux"):
-        flags.extend(("-pthread", "-DMOONGTANGE_EXPECT_ASIO_EPOLL",
-                      "-DMOONGTANGE_NETWORK_BACKEND_EPOLL"))
+        flags.extend(("-pthread", "-DMOONGTANGE_NETWORK_BACKEND_EPOLL"))
     else:
         parser.error(f"Unsupported network platform for analysis: {sys.platform}")
     sources = sorted(path for directory in ("Client", "Network", "Server", "Tests")

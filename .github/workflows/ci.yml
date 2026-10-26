@@ -24,12 +24,8 @@ jobs:
         include:
           - os: windows-latest
             preset: windows-release
-          - os: windows-latest
-            preset: windows-asio-release
           - os: ubuntu-latest
             preset: linux-release
-          - os: ubuntu-latest
-            preset: linux-asio-release
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
