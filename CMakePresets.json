@@ -23,14 +23,15 @@
       "cacheVariables": {
         "BUILD_TESTING": "ON",
         "MOONGTANGE_BUILD_CLIENT": "ON",
-        "MOONGTANGE_BUILD_NETWORK": "ON"
+        "MOONGTANGE_BUILD_NETWORK": "ON",
+        "MOONGTANGE_NETWORK_BACKEND": "AUTO"
       }
     },
     {
       "name": "windows-release",
       "inherits": "release-base",
-      "displayName": "Windows Release (Asio IOCP)",
-      "description": "Build and test MoongTangE with the available Visual Studio generator and Asio's IOCP backend.",
+      "displayName": "Windows Release (native IOCP)",
+      "description": "Build and test MoongTangE with the native Windows IOCP transport.",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -38,14 +39,29 @@
       },
       "binaryDir": "${sourceDir}/build/windows-release",
       "cacheVariables": {
-        "MOONGTANGE_ASIO_BACKEND": "IOCP"
+        "MOONGTANGE_NETWORK_BACKEND": "IOCP"
+      }
+    },
+    {
+      "name": "windows-asio-release",
+      "inherits": "release-base",
+      "displayName": "Windows Release (Asio)",
+      "description": "Build and test MoongTangE with the preserved Asio transport.",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "binaryDir": "${sourceDir}/build/windows-asio-release",
+      "cacheVariables": {
+        "MOONGTANGE_NETWORK_BACKEND": "ASIO"
       }
     },
     {
       "name": "linux-release",
       "inherits": "release-base",
-      "displayName": "Linux Release (Asio epoll)",
-      "description": "Build and test MoongTangE with Makefiles and Asio's epoll backend.",
+      "displayName": "Linux Release (native epoll)",
+      "description": "Build and test MoongTangE with the native Linux epoll transport.",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -55,24 +71,24 @@
       "binaryDir": "${sourceDir}/build/linux-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "MOONGTANGE_ASIO_BACKEND": "EPOLL"
+        "MOONGTANGE_NETWORK_BACKEND": "EPOLL"
       }
     },
     {
-      "name": "macos-release",
+      "name": "linux-asio-release",
       "inherits": "release-base",
-      "displayName": "macOS Release (Asio kqueue)",
-      "description": "Build and test MoongTangE with Makefiles and Asio's kqueue backend.",
+      "displayName": "Linux Release (Asio)",
+      "description": "Build and test MoongTangE with the preserved Asio transport.",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
-        "rhs": "Darwin"
+        "rhs": "Linux"
       },
       "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build/macos-release",
+      "binaryDir": "${sourceDir}/build/linux-asio-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "MOONGTANGE_ASIO_BACKEND": "KQUEUE"
+        "MOONGTANGE_NETWORK_BACKEND": "ASIO"
       }
     }
   ],
@@ -89,37 +105,10 @@
       }
     },
     {
-      "name": "linux-release",
-      "configurePreset": "linux-release",
-      "jobs": 2,
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      }
-    },
-    {
-      "name": "macos-release",
-      "configurePreset": "macos-release",
-      "jobs": 2,
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Darwin"
-      }
-    }
-  ],
-  "testPresets": [
-    {
-      "name": "windows-release",
-      "configurePreset": "windows-release",
+      "name": "windows-asio-release",
+      "configurePreset": "windows-asio-release",
       "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      },
+      "jobs": 2,
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -129,12 +118,7 @@
     {
       "name": "linux-release",
       "configurePreset": "linux-release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      },
+      "jobs": 2,
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -142,18 +126,61 @@
       }
     },
     {
-      "name": "macos-release",
-      "configurePreset": "macos-release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      },
+      "name": "linux-asio-release",
+      "configurePreset": "linux-asio-release",
+      "jobs": 2,
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
-        "rhs": "Darwin"
+        "rhs": "Linux"
+      }
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "windows-asio-release",
+      "configurePreset": "windows-asio-release",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "linux-asio-release",
+      "configurePreset": "linux-asio-release",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
       }
     }
   ]

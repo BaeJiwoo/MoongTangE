@@ -172,13 +172,7 @@ std::filesystem::path DisplaySettingsStore::DefaultPath()
         }
         base = userProfile / "AppData" / "Roaming";
     }
-#elif defined(__APPLE__)
-    const auto home = environment_path("HOME");
-    if (home.empty()) {
-        return {};
-    }
-    auto base = home / "Library" / "Application Support";
-#else
+#elif defined(__linux__)
     auto base = environment_path("XDG_CONFIG_HOME");
     if (base.empty()) {
         const auto home = environment_path("HOME");
@@ -187,6 +181,8 @@ std::filesystem::path DisplaySettingsStore::DefaultPath()
         }
         base = home / ".config";
     }
+#else
+    return {};
 #endif
     return base / "MoongTangE" / "display.cfg";
 }

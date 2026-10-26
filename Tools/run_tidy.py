@@ -30,15 +30,18 @@ def main():
         flags.extend(("-isystem", str(path)))
     if os.name == "nt":
         flags.extend(("-D_WIN32_WINNT=0x0A00", "-D_CRT_SECURE_NO_WARNINGS",
-                      "-DMOONGTANGE_EXPECT_ASIO_IOCP"))
+                      "-DMOONGTANGE_EXPECT_ASIO_IOCP", "-DMOONGTANGE_NETWORK_BACKEND_IOCP"))
     elif sys.platform.startswith("linux"):
-        flags.extend(("-pthread", "-DMOONGTANGE_EXPECT_ASIO_EPOLL"))
-    elif sys.platform == "darwin":
-        flags.extend(("-pthread", "-DMOONGTANGE_EXPECT_ASIO_KQUEUE"))
+        flags.extend(("-pthread", "-DMOONGTANGE_EXPECT_ASIO_EPOLL",
+                      "-DMOONGTANGE_NETWORK_BACKEND_EPOLL"))
     else:
-        parser.error(f"Unsupported platform for Asio backend analysis: {sys.platform}")
+        parser.error(f"Unsupported network platform for analysis: {sys.platform}")
     sources = sorted(path for directory in ("Client", "Network", "Server", "Tests")
                      for path in (ROOT / directory).rglob("*.cpp"))
+    if os.name == "nt":
+        sources = [path for path in sources if path.name != "NativeEventLoopEpoll.cpp"]
+    else:
+        sources = [path for path in sources if path.name != "NativeEventLoopIocp.cpp"]
     subprocess.run([options.clang_tidy, *map(str, sources), "--", *flags], cwd=ROOT, check=True)
     print(f"Analyzed {len(sources)} translation units with .clang-tidy checks.")
 
