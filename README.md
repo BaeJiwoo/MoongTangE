@@ -2,13 +2,13 @@
 
 매칭 계층은 ASP.NET Core API와 C++ 게임 소켓 서버를 서로 다른 프로세스·호스트로 배포할 수 있게 분리되어 있습니다. [API 계약과 실행 방법](docs/MATCHMAKING_API.md), [연동 예제](Tools/matchmaking_client.py)를 참고하세요. C++ 서버는 HTTP를 수신하지 않고 외부 API로 등록·heartbeat를 보내며, 최종 예약과 일회용 입장권 소비는 서버 Tick이 처리합니다.
 
-MoongTangE는 C++20 기반의 크로스플랫폼 3D 물리 시뮬레이션 서비스입니다.
+MoongTangE는 C++20 기반의 Windows/Linux 3D 물리 시뮬레이션 서비스입니다. macOS는 지원 대상에서 제외합니다.
 
 C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키지는 `MoongTangE.proto`입니다. 빌드 옵션·매크로·환경변수도 `MOONGTANGE_` 접두사로 통일합니다.
 
 ## 목표
 
-- Windows, Linux, macOS에서 빌드 가능한 CMake 모노레포
+- Windows와 Linux에서 빌드 가능한 CMake 모노레포
 - `Common`: 외부 라이브러리에 의존하지 않는 수학, 자체 물리와 게임 자료형
 - `Server`: 싱글플레이와 멀티플레이가 공유하는 서버 코어 및 독립 실행 서버
 - `Client`: raylib 3D 렌더링, WASD 입력, 로컬 및 TCP 전송
@@ -29,7 +29,7 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 | 언어 | C++20 |
 | 매칭 API | ASP.NET Core 8 |
 | 빌드 | CMake |
-| 네트워크 | Standalone Asio 1.38.2, TCP (IOCP / epoll / kqueue) |
+| 네트워크 | TCP, Windows IOCP / Linux epoll 네이티브 구현 또는 Standalone Asio 1.38.2 |
 | 직렬화 | Protobuf 36.2 (C++ 런타임 7.36.2), 프로토콜 v8 |
 | 렌더링 | raylib 6.0 |
 | 테스트 | CTest |
@@ -39,17 +39,18 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 
 CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 분리형 매칭 API와 통합 테스트에는 .NET 8 SDK와 Python 3도 필요합니다. 첫 구성 시 고정된 외부 소스를 다운로드하므로 인터넷 연결이 필요합니다. 다운로드는 SHA-256으로 검증합니다.
 
-기존 빌드 폴더도 아래의 현재 옵션 이름으로 다시 구성하세요. 전체 빌드는 `MOONGTANGE_BUILD_CLIENT=ON`, `MOONGTANGE_BUILD_NETWORK=ON`이 기본값이고, 코어 전용 구성은 두 옵션을 명시적으로 `OFF`로 지정합니다. 네트워크를 켜면 `MOONGTANGE_ASIO_BACKEND=AUTO`가 대상 운영체제에 맞춰 Windows의 IOCP, Linux의 epoll, macOS의 kqueue를 기대하며 실제 Asio 설정을 컴파일할 때 검증합니다.
+기존 빌드 폴더도 아래의 현재 옵션 이름으로 다시 구성하세요. 전체 빌드는 `MOONGTANGE_BUILD_CLIENT=ON`, `MOONGTANGE_BUILD_NETWORK=ON`이 기본값이고, 코어 전용 구성은 두 옵션을 명시적으로 `OFF`로 지정합니다. 네트워크 구현은 `MOONGTANGE_NETWORK_BACKEND=AUTO|ASIO|IOCP|EPOLL`로 선택합니다. `AUTO`는 Windows에서 직접 구현한 IOCP, Linux에서 직접 구현한 epoll을 선택합니다. 기존 Asio 구현은 `ASIO`로 계속 빌드할 수 있으며 그때 Asio가 운영체제의 IOCP 또는 epoll을 사용하는지도 컴파일 시 검증합니다. macOS 구성은 CMake 단계에서 거부합니다.
 
 네트워크 구성에서는 고정된 Protobuf와 Abseil 소스, 동일 릴리스의 `protoc`도 빌드합니다. 첫 전체 빌드는 이 의존성 컴파일 때문에 더 오래 걸립니다. 별도 Protobuf 설치는 필요하지 않으며 `.proto`로 생성한 파일은 빌드 폴더에만 저장됩니다.
 
 저장소를 받은 뒤 운영체제에 맞는 Release 프리셋을 선택합니다. 프리셋은 빌드와 테스트까지 같은 설정을 사용하며 지원하지 않는 운영체제의 프리셋은 목록에서 숨깁니다.
 
-| 운영체제 | 프리셋 | 검증하는 Asio 백엔드 | 빌드 폴더 |
+| 운영체제 | 네트워크 구현 | 프리셋 | 빌드 폴더 |
 | --- | --- | --- | --- |
-| Windows | `windows-release` | IOCP | `build/windows-release` |
-| Linux | `linux-release` | epoll | `build/linux-release` |
-| macOS | `macos-release` | kqueue | `build/macos-release` |
+| Windows | 네이티브 IOCP | `windows-release` | `build/windows-release` |
+| Windows | 보존된 Asio | `windows-asio-release` | `build/windows-asio-release` |
+| Linux | 네이티브 epoll | `linux-release` | `build/linux-release` |
+| Linux | 보존된 Asio | `linux-asio-release` | `build/linux-asio-release` |
 
 ```sh
 git clone https://github.com/BaeJiwoo/MoongTangE.git
@@ -60,15 +61,13 @@ cmake --build --preset linux-release
 ctest --preset linux-release
 ```
 
-위 예시의 `linux-release`를 현재 운영체제의 프리셋 이름으로 바꾸세요. 사용자 지정 빌드 폴더가 필요하면 기존 `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release` 방식도 유지되며, 이때 백엔드는 기본 `AUTO`가 선택합니다. `MOONGTANGE_ASIO_BACKEND`를 명시하면 대상 운영체제와 다른 값은 구성 단계에서 거부됩니다.
+위 예시의 `linux-release`를 원하는 운영체제·백엔드 프리셋 이름으로 바꾸세요. 사용자 지정 빌드 폴더가 필요하면 기존 `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release` 방식도 유지되며, 이때 백엔드는 기본 `AUTO`가 선택합니다. Windows에서 `EPOLL`, Linux에서 `IOCP`를 고르면 구성 단계에서 거부됩니다.
 
 Windows에서는 Visual Studio의 Desktop development with C++ 워크로드를 설치하세요. Linux의 그래픽 빌드 의존성:
 
 ```sh
 sudo apt-get install libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev
 ```
-
-macOS에서는 Xcode Command Line Tools와 CMake를 사용합니다.
 
 서버만 빌드하려면 `-DMOONGTANGE_BUILD_CLIENT=OFF`를 추가하세요. 외부 라이브러리 없이 코어와 테스트만 빌드하려면 아래 구성을 사용합니다.
 
@@ -99,7 +98,7 @@ Windows / Visual Studio 빌드:
 .\build\windows-release\Release\Client.exe --connect 127.0.0.1:27015
 ```
 
-Linux / macOS 프리셋의 실행 파일은 각각 `build/linux-release`, `build/macos-release`에 있습니다. 아래는 Linux 예시이며 macOS에서는 경로의 `linux-release`를 `macos-release`로 바꿉니다. 명령행 옵션은 같습니다.
+Linux 프리셋의 실행 파일은 `build/linux-release`에 있습니다.
 
 ```sh
 ./build/linux-release/Client --single
@@ -127,8 +126,7 @@ UI 캔버스에서 화면 비율을 유지하며 현재 해상도에 맞게 함�
 `APPLY`는 변경을 즉시 시험하고 15초 확인 창을 엽니다. `KEEP` 또는 Enter를 누른 설정만
 저장하며, `REVERT`, Escape 또는 제한 시간 만료 시 직전에 확인한 설정으로 복구합니다.
 일반 설정 화면의 `CANCEL`도 아직 적용하지 않은 선택을 버립니다. 확인한 설정은 Windows의
-`%APPDATA%\MoongTangE\display.cfg`, macOS의
-`~/Library/Application Support/MoongTangE/display.cfg`, Linux의
+`%APPDATA%\MoongTangE\display.cfg`, Linux의
 `$XDG_CONFIG_HOME/MoongTangE/display.cfg`(미지정 시 `~/.config`)에 저장되어 다음 실행에
 적용됩니다.
 
@@ -164,16 +162,16 @@ HTTP 상태 조회·입장 예약 API와 일회용 입장권을 지원합니다.
 
 서버 구성 요소, 스레드와 소유권, 입력 처리 및 종료 순서는 [서버 구조 문서](docs/SERVER_ARCHITECTURE.md)에 설명되어 있습니다. 같은 문서의 [파일별 함수 안내](docs/SERVER_ARCHITECTURE.md#파일별-함수-안내)는 파일 이름을 눌러 펼칠 수 있습니다.
 
-서버와 공유 TCP 채널은 `.h`에 선언, 같은 이름의 `.cpp`에 구현을 둡니다. 멤버는 `m_` 접두사, 고정 상수는 `UPPER_SNAKE_CASE`를 사용합니다. `AsioServer`는 공개 진입점을 제공하며 `ServerNetworkRuntime`이 연결·세션·네트워크 스레드를 관리합니다.
+서버와 공유 TCP 채널은 `.h`에 선언, 같은 이름의 `.cpp`에 구현을 둡니다. 멤버는 `m_` 접두사, 고정 상수는 `UPPER_SNAKE_CASE`를 사용합니다. `NetworkServer` 별칭은 선택된 `AsioServer` 또는 `NativeServer` 공개 진입점을 가리키며, 각 runtime이 연결·세션·네트워크 스레드를 관리합니다.
 
 ```text
 Common/       수학, 자체 물리, GameWorld, 입력·Snapshot 자료형, 전송 인터페이스
 Server/       실행 진입점, ServerOptions.h/.cpp, ServerApplication.h/.cpp
 Server/Core/  ServerHost, GameRoomManager, GameRoom, GameRoomOptions, TickScheduler
-Server/Network/ AsioServer.h/.cpp, ServerNetworkRuntime.h/.cpp
+Server/Network/ NetworkServer.h, AsioServer/ServerNetworkRuntime, NativeServer/NativeServerNetworkRuntime
 Client/       raylib 화면과 키보드, LocalTransport/TcpClientTransport
 Assets/       Kenney Food Kit CC0 GLB와 원본 라이선스 고지
-Network/      TcpChannel.h/.cpp, Protobuf 스키마와 Codec.h/.cpp
+Network/      Asio TcpChannel, Native/ 이벤트 루프·채널, Protobuf 스키마와 Codec
 Tests/        단위 테스트, 루프백, 프로세스 통합 테스트
 cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 ```
@@ -182,9 +180,9 @@ cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 
 ## 테스트와 제한
 
-- CTest: 벡터/quaternion, 낙하/충돌/구름/관성, 게임 월드, 서버 수명/큐, ServerApplication 실행·종료, 로컬 전송, Protobuf 프로토콜, 화면 보간, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속. 전체 17개, 외부 의존성 없는 구성 10개입니다. Protobuf 프로토콜 테스트는 네트워크 구성에 포함됩니다.
+- CTest: 벡터/quaternion, 낙하/충돌/구름/관성, 게임 월드, 서버 수명/큐, ServerApplication 실행·종료, 로컬 전송, Protobuf 프로토콜, 화면 보간, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속. 전체 18개, 외부 의존성 없는 구성 10개입니다. Protobuf 프로토콜 테스트는 네트워크 구성에 포함됩니다.
 - 동일 Tick 입력 일정의 로컬 계산과 직렬화 경로는 매 Tick 비교합니다. 실제 비동기 전송은 입력 도착 시점이 다르므로 이동 속도·방향·바닥 정지 등 물리 조건을 비교합니다.
-- CI: Windows/MSVC, Linux/GCC, macOS/Clang에서 전체 빌드와 테스트, 외부 의존성 없는 코어 구성을 검증합니다. GUI 실행은 CI 필수 항목이 아니며 실제 결과는 [Actions](https://github.com/BaeJiwoo/MoongTangE/actions)에서 확인하세요.
+- CI: Windows/MSVC의 네이티브 IOCP·Asio와 Linux/GCC의 네이티브 epoll·Asio에서 전체 빌드와 테스트, 외부 의존성 없는 코어 구성을 검증합니다. GUI 실행은 CI 필수 항목이 아니며 실제 결과는 [Actions](https://github.com/BaeJiwoo/MoongTangE/actions)에서 확인하세요.
 - 공과 평면의 충돌만 구현합니다. 공끼리의 충돌, 경사면, 클라이언트 예측, UDP, 물리 롤백 및 사용자 인증은 후속 범위입니다.
 - 방마다 최대 3명, 기본 최대 8개 방(24명), 입력 만료 120 Tick, 고정 dt=1/60이며 플랫폼 간 비트 단위의 결정성을 보장하지 않습니다.
 - 비공개 저장소 브랜치 보호 설정은 현재 계정 요금제에서 HTTP 403으로 거부됐습니다. 저장소 공개 범위는 변경하지 않았습니다.

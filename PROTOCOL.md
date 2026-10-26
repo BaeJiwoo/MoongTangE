@@ -4,11 +4,11 @@ The source of truth for message fields is [game.proto](Network/Protocol/game.pro
 
 The package is `MoongTangE.proto`, producing C++ types under `MoongTangE::proto`; handwritten codecs use `MoongTangE::wire`. Protocol v8 adds collectible attachment ownership; v7 added deterministic collectible states, v6 added server-validated player nicknames and v5 added a single-use admission ticket. Existing field numbers and type discriminator bytes are preserved. This protocol sends ordinary messages directly, without Any type URLs or RPC service names.
 
-The C++ codec names are `wire::MessageType`, `PROTOCOL_VERSION`, `MAX_FRAME_BYTES` and `FRAME_HEADER_BYTES`. Enum values use uppercase names such as `CLIENT_HELLO` and `SNAPSHOT`; their on-wire numbers are unchanged. [TcpChannel.h](Network/TcpChannel.h) declares framing operations and [TcpChannel.cpp](Network/TcpChannel.cpp) implements them. The server's [ServerNetworkRuntime](Server/Network/ServerNetworkRuntime.h) owns sessions and passes decoded inputs to ServerHost. See the [file/function guide](docs/SERVER_ARCHITECTURE.md#파일별-함수-안내).
+The C++ codec names are `wire::MessageType`, `PROTOCOL_VERSION`, `MAX_FRAME_BYTES` and `FRAME_HEADER_BYTES`. Enum values use uppercase names such as `CLIENT_HELLO` and `SNAPSHOT`; their on-wire numbers are unchanged. The selectable Asio [TcpChannel](Network/TcpChannel.h) and native [NativeTcpChannel](Network/Native/NativeTcpChannel.h) implement the same framing contract. Their server runtimes own sessions and pass decoded inputs to ServerHost. See the [file/function guide](docs/SERVER_ARCHITECTURE.md#파일별-함수-안내).
 
 ## Frame and message encoding
 
-Each TCP frame contains a **4-byte unsigned big-endian payload length**, followed by a **1-byte message type** and a **Protobuf body**. Valid payload lengths are 1–8192 bytes, including the type byte. Asio composed reads/writes handle partial transfers. The length prefix is transport framing; Protobuf does not delimit multiple messages in a stream by itself.
+Each TCP frame contains a **4-byte unsigned big-endian payload length**, followed by a **1-byte message type** and a **Protobuf body**. Valid payload lengths are 1–8192 bytes, including the type byte. Both the Asio and native IOCP/epoll channels complete partial reads and writes before advancing a frame. The length prefix is transport framing; Protobuf does not delimit multiple messages in a stream by itself.
 
 | Type byte | Protobuf message | Main fields |
 | --- | --- | --- |

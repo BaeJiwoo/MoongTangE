@@ -110,7 +110,7 @@ classDiagram
 - clang-tidy 22.1.3과 `.clang-tidy`에 명시한 버그·초기화·특수 멤버·소멸자·override·중괄호 규칙으로 18개 번역 단위를 분석합니다. 정적 분석은 모든 Core Guidelines를 자동 인증하는 도구가 아니며 수동 설계 리뷰를 함께 수행했습니다.
 - 기존 `21-ROLL`과 같은 MSVC Release 환경에서 32명·2,400 Tick의 동일 입력을 실행했습니다. 생성된 물리 Snapshot/프로토콜 바이트의 SHA-256이 모두 `920c0f09e38988f2bec7042df6b844bd54b3ecd254320c55ea4c3a4fd08f68cc`로 일치했습니다. 이는 플랫폼 간 결정성 보장은 아닙니다.
 - 전체 CTest 11개, 외부 의존성 없는 구성 8개와 헤더 컴파일 검사를 유지합니다. 실행 환경별 최종 결과는 이 작업 PR의 검증 항목과 CI에서 확인합니다.
-- Linux/macOS GUI 실행과 ThreadSanitizer는 이번 로컬 검증에 포함하지 않습니다. CI는 3개 플랫폼 빌드/테스트를 수행하고, 실제 GUI 실행은 Windows에서 검사합니다.
+- Linux GUI 실행과 ThreadSanitizer는 이번 로컬 검증에 포함하지 않습니다. macOS는 지원 대상에서 제외하며, CI는 Windows/Linux의 네이티브·Asio 백엔드 빌드/테스트를 수행하고 실제 GUI 실행은 Windows에서 검사합니다.
 
 ## 병합 전 재검토 (2026-10-17)
 

@@ -2,9 +2,8 @@
 
 #include "Server/Api/MatchmakingControlClient.h"
 #include "Server/Core/ServerHost.h"
-#include "Server/Network/AsioServer.h"
+#include "Server/Network/NetworkServer.h"
 
-#include <asio.hpp>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
@@ -12,10 +11,46 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 
 namespace MoongTangE {
 namespace {
+
+volatile std::sig_atomic_t shutdownRequested = 0;
+
+void request_shutdown(int)
+{
+    shutdownRequested = 1;
+}
+
+class SignalRegistration
+{
+  public:
+    SignalRegistration()
+    {
+        shutdownRequested = 0;
+        m_previousInterrupt = std::signal(SIGINT, request_shutdown);
+        m_previousTerminate = std::signal(SIGTERM, request_shutdown);
+    }
+
+    ~SignalRegistration()
+    {
+        std::signal(SIGINT, m_previousInterrupt);
+        std::signal(SIGTERM, m_previousTerminate);
+    }
+
+    SignalRegistration(const SignalRegistration&) = delete;
+    SignalRegistration& operator=(const SignalRegistration&) = delete;
+    SignalRegistration(SignalRegistration&&) = delete;
+    SignalRegistration& operator=(SignalRegistration&&) = delete;
+
+  private:
+    using Handler = void (*)(int);
+
+    Handler m_previousInterrupt{};
+    Handler m_previousTerminate{};
+};
 
 std::shared_ptr<ServerHost> start_server_core(const ServerOptions& options)
 {
@@ -50,7 +85,7 @@ void ServerApplication::Run()
     // Declaration order closes networking before releasing the final server core owner.
     const auto serverCore = start_server_core(m_options);
     const std::string bindAddress = m_options.m_publicBind ? "0.0.0.0" : "127.0.0.1";
-    AsioServer networkServer(serverCore, bindAddress, m_options.m_port);
+    NetworkServer networkServer(serverCore, bindAddress, m_options.m_port);
     std::unique_ptr<MatchmakingControlClient> matchmakingControl;
     if (m_options.m_matchmakingUrl) {
         const auto controlKey = std::getenv("MOONGTANGE_CONTROL_KEY");
@@ -63,25 +98,10 @@ void ServerApplication::Run()
                                                   m_options.m_reservationLifetime, controlKey});
     }
 
-    // Asio delivers signal callbacks on the control thread, outside the native signal handler.
-    asio::io_context controlContext;
-    asio::signal_set shutdownSignals(controlContext, SIGINT, SIGTERM);
-    asio::steady_timer shutdownDeadline(controlContext);
-
-    shutdownSignals.async_wait([this](asio::error_code error, int) {
-        if (!error) {
-            RequestStop();
-        }
-    });
-
-    if (m_options.m_runDuration > std::chrono::seconds::zero()) {
-        shutdownDeadline.expires_after(m_options.m_runDuration);
-        shutdownDeadline.async_wait([this](asio::error_code error) {
-            if (!error) {
-                RequestStop();
-            }
-        });
-    }
+    SignalRegistration shutdownSignals;
+    const auto shutdownDeadline = m_options.m_runDuration > std::chrono::seconds::zero()
+                                      ? std::chrono::steady_clock::now() + m_options.m_runDuration
+                                      : std::chrono::steady_clock::time_point::max();
 
     std::cout << "Listening " << bindAddress << ':' << networkServer.Port() << std::endl;
     if (matchmakingControl) {
@@ -96,7 +116,11 @@ void ServerApplication::Run()
 
     constexpr auto STOP_POLL_INTERVAL = std::chrono::milliseconds(50);
     while (!m_stopRequested) {
-        controlContext.run_for(STOP_POLL_INTERVAL);
+        if (shutdownRequested || std::chrono::steady_clock::now() >= shutdownDeadline) {
+            RequestStop();
+            break;
+        }
+        std::this_thread::sleep_for(STOP_POLL_INTERVAL);
     }
 
     // Control services release their callbacks before networking and the server core shut down.
