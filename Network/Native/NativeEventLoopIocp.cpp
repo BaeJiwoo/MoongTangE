@@ -3,22 +3,30 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+// Windows socket headers require winsock2.h before windows.h and mswsock.h.
+// clang-format off
+#include <winsock2.h>
+#include <windows.h>
+#include <mswsock.h>
+#include <ws2tcpip.h>
+// clang-format on
+
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <deque>
 #include <limits>
 #include <map>
-#include <mswsock.h>
 #include <mutex>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
 
 namespace MoongTangE {
 namespace {
