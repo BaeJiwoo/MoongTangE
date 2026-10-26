@@ -1,6 +1,9 @@
 #include "Client/Transport/TcpClientTransport.h"
+#if defined(MOONGTANGE_NETWORK_BACKEND_ASIO)
 #include "Network/TcpChannel.h"
-#include "Server/Network/AsioServer.h"
+#endif
+#include "Network/Protocol/Codec.h"
+#include "Server/Network/NetworkServer.h"
 #include "TestSupport.h"
 
 #include <algorithm>
@@ -39,6 +42,7 @@ bool closed(asio::ip::tcp::socket& socket)
 
 void channel_starts_once_and_closes_once()
 {
+#if defined(MOONGTANGE_NETWORK_BACKEND_ASIO)
     {
         asio::io_context channelIo;
         auto channel = std::make_shared<TcpChannel>(asio::ip::tcp::socket(channelIo));
@@ -58,6 +62,7 @@ void channel_starts_once_and_closes_once()
         channelIo.run();
         MOONGTANGE_CHECK(closeCalls == 1);
     }
+#endif
 }
 
 void consumed_snapshots_cannot_rewind()
@@ -116,6 +121,7 @@ void client_close_sends_disconnect_before_socket_shutdown()
 
 void slow_peer_queue_is_bounded_before_io_progress()
 {
+#if defined(MOONGTANGE_NETWORK_BACKEND_ASIO)
     asio::io_context io;
     asio::ip::tcp::acceptor listener(io, {asio::ip::make_address("127.0.0.1"), 0});
     asio::ip::tcp::socket peer(io);
@@ -137,9 +143,10 @@ void slow_peer_queue_is_bounded_before_io_progress()
     MOONGTANGE_CHECK(closes == 1 && reason == "Slow peer: send queue full");
     io.run();
     MOONGTANGE_CHECK(closes == 1);
+#endif
 }
 
-void clients_receive_authoritative_rolling(const AsioServer& server, ServerHost& core)
+void clients_receive_authoritative_rolling(const NetworkServer& server, ServerHost& core)
 {
     TcpClientTransport first("127.0.0.1", server.Port(), {}, "Alice"),
         second("127.0.0.1", server.Port(), {}, "Bob");
@@ -178,7 +185,7 @@ void clients_receive_authoritative_rolling(const AsioServer& server, ServerHost&
     }));
 }
 
-void invalid_nickname_is_rejected(const AsioServer& server)
+void invalid_nickname_is_rejected(const NetworkServer& server)
 {
     asio::io_context io;
     asio::ip::tcp::socket client(io);
@@ -227,7 +234,7 @@ void clients_reject_foreign_rooms_and_report_full()
     }
 }
 
-void fragmented_frames_and_disconnect(const AsioServer& server)
+void fragmented_frames_and_disconnect(const NetworkServer& server)
 {
     asio::io_context io;
     const asio::ip::tcp::endpoint endpoint(asio::ip::make_address("127.0.0.1"), server.Port());
@@ -264,7 +271,7 @@ void fragmented_frames_and_disconnect(const AsioServer& server)
     }
 }
 
-void malformed_frames_are_rejected(const AsioServer& server)
+void malformed_frames_are_rejected(const NetworkServer& server)
 {
     asio::io_context io;
     const asio::ip::tcp::endpoint endpoint(asio::ip::make_address("127.0.0.1"), server.Port());
@@ -279,7 +286,7 @@ void malformed_frames_are_rejected(const AsioServer& server)
     }
 }
 
-void connection_failure_and_early_close(const AsioServer& server)
+void connection_failure_and_early_close(const NetworkServer& server)
 {
     asio::io_context io;
     {
@@ -301,7 +308,7 @@ void connection_failure_and_early_close(const AsioServer& server)
 void shutdown_with_active_clients(const std::shared_ptr<ServerHost>& core)
 {
     for (int i = 0; i < 5; ++i) {
-        auto shutting = std::make_unique<AsioServer>(core, "127.0.0.1", 0);
+        auto shutting = std::make_unique<NetworkServer>(core, "127.0.0.1", 0);
         TcpClientTransport first("127.0.0.1", shutting->Port()),
             second("127.0.0.1", shutting->Port());
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
@@ -328,7 +335,7 @@ int main()
 
         auto core = std::make_shared<MoongTangE::ServerHost>();
         core->Start();
-        MoongTangE::AsioServer server(core, "127.0.0.1", 0);
+        MoongTangE::NetworkServer server(core, "127.0.0.1", 0);
 
         clients_receive_authoritative_rolling(server, *core);
         invalid_nickname_is_rejected(server);

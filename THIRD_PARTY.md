@@ -5,7 +5,7 @@ No external physics engine is used. Common and ServerCore do not link raylib, As
 | Library | Pinned release / commit | License | Purpose |
 | --- | --- | --- | --- |
 | [raylib](https://github.com/raysan5/raylib/releases/tag/6.0) | 6.0 / `dbc56a87da87d973a9c5baa4e7438a9d20121d28` | zlib/libpng | Client rendering and input |
-| [Standalone Asio](https://github.com/chriskohlhoff/asio/releases/tag/asio-1-38-2) | 1.38.2 / `8806a6803cde7054c3049d3666d3ec36786568c5` | Boost Software License 1.0 | TCP transport |
+| [Standalone Asio](https://github.com/chriskohlhoff/asio/releases/tag/asio-1-38-2) | 1.38.2 / `8806a6803cde7054c3049d3666d3ec36786568c5` | Boost Software License 1.0 | Selectable Asio TCP transport and network test peers |
 | [Protobuf](https://github.com/protocolbuffers/protobuf/releases/tag/v36.2) | protoc 36.2 / C++ 7.36.2 / `2c74169b34066ceb8ddb6b882fcb3fb32d737a55` | BSD-3-Clause | Network message generation and serialization |
 | [Abseil](https://github.com/abseil/abseil-cpp/releases/tag/20250512.1) | 20250512.1 / `76bb24329e8bf5f39704eb10d21b9a80befa7c81` | Apache-2.0 | Protobuf's pinned C++ dependency |
 | utf8_range | Included in the pinned Protobuf archive | MIT | Protobuf UTF-8 support |
@@ -20,6 +20,8 @@ The four committed Food Kit GLB files and their SHA-256 hashes are listed in
 `Assets/License.txt`; the downloaded archive itself is not committed.
 
 cpp-httplib is fetched only in network builds through the private `MatchmakingHttp` dependency of `ServerRuntime`. Its optional TLS/compression libraries and examples/tests are not enabled. Preserve its [LICENSE](https://github.com/yhirose/cpp-httplib/blob/c419c904da4ed0d057f169c225c58cc795c07e4d/LICENSE) when redistributing. Common and ServerCore remain independent of HTTP and OS libraries.
+
+Standalone Asio is fetched when `MOONGTANGE_NETWORK_BACKEND=ASIO` or network tests are enabled. A native IOCP/epoll production build with `BUILD_TESTING=OFF` does not fetch or link Asio. Preserve Asio's Boost Software License notice when selecting that backend or redistributing test tooling that includes it.
 
 `cmake/Protobuf.cmake` builds protoc and the runtime from exactly the same pinned source. Abseil uses the version selected by that Protobuf release. System Protobuf/Abseil installations are not substituted. Protobuf's bundled upb and utf8_range sources need no separate download. Preserve `protobuf/LICENSE`, `protobuf/third_party/utf8_range/LICENSE`, and `absl/LICENSE` with redistribution. zlib, conformance tests and dependency examples are disabled. Generated game messages stay in the build directory and are regenerated from the repository's `.proto` schema.
 

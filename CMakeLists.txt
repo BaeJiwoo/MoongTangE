@@ -1,4 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  message(FATAL_ERROR "MoongTangE does not support macOS; use Windows or Linux.")
+endif()
 project(MoongTangE VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,8 +10,11 @@ if(MSVC)
   add_compile_options(/utf-8)
 endif()
 option(MOONGTANGE_BUILD_CLIENT "Build raylib GUI client" ON)
-option(MOONGTANGE_BUILD_NETWORK "Build Asio TCP transport and server" ON)
+option(MOONGTANGE_BUILD_NETWORK "Build TCP transport and dedicated server" ON)
 include(CTest)
+if(MOONGTANGE_BUILD_NETWORK)
+  include(cmake/NetworkBackend.cmake)
+endif()
 find_package(Threads REQUIRED)
 add_library(Common INTERFACE)
 target_include_directories(Common INTERFACE "${PROJECT_SOURCE_DIR}")
@@ -31,13 +37,32 @@ add_library(ServerOptions Server/ServerOptions.cpp)
 target_link_libraries(ServerOptions PUBLIC Common)
 include(cmake/Dependencies.cmake)
 if(MOONGTANGE_BUILD_NETWORK)
-  include(cmake/AsioBackend.cmake)
   include(cmake/Protobuf.cmake)
-  add_library(TcpTransport Network/AsioBackend.cpp Server/Network/AsioServer.cpp
-    Server/Network/ServerNetworkRuntime.cpp Network/TcpChannel.cpp
-    Client/Transport/TcpClientTransport.cpp)
-  target_link_libraries(TcpTransport PUBLIC ServerCore AsioStandalone NetworkProtocol)
-  moongtange_configure_asio_backend(TcpTransport)
+  if(MOONGTANGE_RESOLVED_NETWORK_BACKEND STREQUAL "ASIO")
+    set(moongtange_transport_sources
+      Network/AsioBackend.cpp
+      Network/TcpChannel.cpp
+      Server/Network/AsioServer.cpp
+      Server/Network/ServerNetworkRuntime.cpp
+      Client/Transport/TcpClientTransport.cpp)
+  else()
+    set(moongtange_transport_sources
+      Network/Native/NativeTcpChannel.cpp
+      Server/Network/NativeServer.cpp
+      Server/Network/NativeServerNetworkRuntime.cpp
+      Client/Transport/NativeTcpClientTransport.cpp)
+    if(MOONGTANGE_RESOLVED_NETWORK_BACKEND STREQUAL "IOCP")
+      list(APPEND moongtange_transport_sources Network/Native/NativeEventLoopIocp.cpp)
+    else()
+      list(APPEND moongtange_transport_sources Network/Native/NativeEventLoopEpoll.cpp)
+    endif()
+  endif()
+  add_library(TcpTransport ${moongtange_transport_sources})
+  target_link_libraries(TcpTransport PUBLIC ServerCore NetworkProtocol)
+  if(MOONGTANGE_RESOLVED_NETWORK_BACKEND STREQUAL "ASIO")
+    target_link_libraries(TcpTransport PUBLIC AsioStandalone)
+  endif()
+  moongtange_configure_network_backend(TcpTransport)
   add_library(ServerRuntime Server/ServerApplication.cpp
     Server/Api/MatchmakingControlClient.cpp)
   target_link_libraries(ServerRuntime PUBLIC TcpTransport ServerOptions PRIVATE MatchmakingHttp)
