@@ -1,6 +1,6 @@
 # External dependencies
 
-No external physics engine is used. Common and ServerCore do not link raylib, Asio or Protobuf.
+No external physics engine is used. Common and ServerCore do not link raylib, Standalone Asio or Protobuf.
 
 | Library | Pinned release / commit | License | Purpose |
 | --- | --- | --- | --- |

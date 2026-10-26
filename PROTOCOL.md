@@ -8,7 +8,7 @@ The C++ codec names are `wire::MessageType`, `PROTOCOL_VERSION`, `MAX_FRAME_BYTE
 
 ## Frame and message encoding
 
-Each TCP frame contains a **4-byte unsigned big-endian payload length**, followed by a **1-byte message type** and a **Protobuf body**. Valid payload lengths are 1–8192 bytes, including the type byte. Asio composed reads/writes handle partial transfers. The length prefix is transport framing; Protobuf does not delimit multiple messages in a stream by itself.
+Each TCP frame contains a **4-byte unsigned big-endian payload length**, followed by a **1-byte message type** and a **Protobuf body**. Valid payload lengths are 1–8192 bytes, including the type byte. Standalone Asio composed reads/writes handle partial transfers. The length prefix is transport framing; Protobuf does not delimit multiple messages in a stream by itself.
 
 | Type byte | Protobuf message | Main fields |
 | --- | --- | --- |

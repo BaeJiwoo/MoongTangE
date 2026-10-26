@@ -2,7 +2,7 @@
 
 #include "Server/Api/MatchmakingControlClient.h"
 #include "Server/Core/ServerHost.h"
-#include "Server/Network/AsioServer.h"
+#include "Server/Network/StandaloneAsioServer.h"
 
 #include <asio.hpp>
 #include <chrono>
@@ -50,7 +50,7 @@ void ServerApplication::Run()
     // Declaration order closes networking before releasing the final server core owner.
     const auto serverCore = start_server_core(m_options);
     const std::string bindAddress = m_options.m_publicBind ? "0.0.0.0" : "127.0.0.1";
-    AsioServer networkServer(serverCore, bindAddress, m_options.m_port);
+    StandaloneAsioServer networkServer(serverCore, bindAddress, m_options.m_port);
     std::unique_ptr<MatchmakingControlClient> matchmakingControl;
     if (m_options.m_matchmakingUrl) {
         const auto controlKey = std::getenv("MOONGTANGE_CONTROL_KEY");
@@ -63,7 +63,7 @@ void ServerApplication::Run()
                                                   m_options.m_reservationLifetime, controlKey});
     }
 
-    // Asio delivers signal callbacks on the control thread, outside the native signal handler.
+    // Standalone Asio delivers callbacks on the control thread, outside the signal handler.
     asio::io_context controlContext;
     asio::signal_set shutdownSignals(controlContext, SIGINT, SIGTERM);
     asio::steady_timer shutdownDeadline(controlContext);

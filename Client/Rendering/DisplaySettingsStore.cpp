@@ -172,12 +172,6 @@ std::filesystem::path DisplaySettingsStore::DefaultPath()
         }
         base = userProfile / "AppData" / "Roaming";
     }
-#elif defined(__APPLE__)
-    const auto home = environment_path("HOME");
-    if (home.empty()) {
-        return {};
-    }
-    auto base = home / "Library" / "Application Support";
 #else
     auto base = environment_path("XDG_CONFIG_HOME");
     if (base.empty()) {
