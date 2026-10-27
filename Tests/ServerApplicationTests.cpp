@@ -1,8 +1,8 @@
 #include "Client/Transport/TcpClientTransport.h"
 #include "Server/ServerApplication.h"
+#include "TcpTestSocket.h"
 #include "TestSupport.h"
 
-#include <asio.hpp>
 #include <chrono>
 #include <exception>
 #include <future>
@@ -85,15 +85,14 @@ void deadline_stops_application()
 
 void startup_failure_and_prior_cancellation()
 {
-    asio::io_context io;
-    asio::ip::tcp::acceptor reserved(io, {asio::ip::make_address("127.0.0.1"), 0});
-    MoongTangE::ServerApplication unavailable({.m_port = reserved.local_endpoint().port()});
+    MoongTangE::test::TcpTestListener reserved;
+    MoongTangE::ServerApplication unavailable({.m_port = reserved.Port()});
     MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
         unavailable.Run();
     }));
     MOONGTANGE_CHECK(unavailable.Port() == 0);
 
-    MoongTangE::ServerApplication cancelled({.m_port = reserved.local_endpoint().port()});
+    MoongTangE::ServerApplication cancelled({.m_port = reserved.Port()});
     cancelled.RequestStop();
     cancelled.Run();
     MOONGTANGE_CHECK(cancelled.Port() == 0);

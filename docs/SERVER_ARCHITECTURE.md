@@ -36,9 +36,9 @@
 | `GameRoomManager` / `GameRoom` | 생성 순서에 따른 3인 방 배정·퇴장·빈 방 정리, 방별 월드 소유 | 소켓과 다른 스레드의 직접 접근 |
 | `GameWorld` | 플레이어·수집 물체·입력·결정론적 seed 상태, 입력 만료와 플레이어 충돌 호출 | 스레드 생성·소켓 접근 |
 | `PhysicsWorld` | 중력, 지형·변형 콜라이더 접촉, 마찰, 구름 저항과 자세 갱신 | 입력 수신·렌더링 |
-| `NetworkServer` (`AsioServer` / `NativeServer`) | 선택된 네트워크 실행 객체 소유, 시작·종료와 포트 조회의 공개 진입점 | 개별 세션 처리 |
-| `ServerNetworkRuntime` / `NativeServerNetworkRuntime` | 네트워크 스레드, TCP 연결, Hello, 입력 검증·전달, Snapshot 송신 | 게임 월드 직접 변경 |
-| `TcpChannel` / `NativeTcpChannel` | 길이 프레이밍, 부분 송수신, 타임아웃과 전송 큐 | 물리·게임 규칙 |
+| `NetworkServer` (`NativeServer`) | 운영체제별 네트워크 실행 객체 소유, 시작·종료와 포트 조회의 공개 진입점 | 개별 세션 처리 |
+| `NativeServerNetworkRuntime` | 네트워크 스레드, TCP 연결, Hello, 입력 검증·전달, Snapshot 송신 | 게임 월드 직접 변경 |
+| `NativeTcpChannel` | 길이 프레이밍, 부분 송수신, 타임아웃과 전송 큐 | 물리·게임 규칙 |
 | `NativeEventLoop` | Windows IOCP 또는 Linux epoll 소켓·타이머·작업 실행 | 프로토콜·게임 규칙 |
 | `NetworkProtocol` | Protobuf 메시지와 게임 자료형 변환, 메시지 값·크기 검증 | 물리 상태 소유·소켓 I/O |
 | `LocalTransport` / `TcpClientTransport` | 동일한 클라이언트 전송 인터페이스 구현 | 클라이언트에서 권위 물리 계산 |
@@ -63,7 +63,7 @@ flowchart TD
 
 독립 서버에는 실행을 제어하는 호출 스레드, 물리 Tick 스레드, 네트워크 스레드가 있습니다. `ServerApplication::Run()`은 호출 스레드에서 실행됩니다. 다른 스레드에서는 `RequestStop()`과 `Port()`만 호출할 수 있습니다. 두 메서드는 atomic 상태를 사용합니다. 애플리케이션 객체를 파괴하기 전에 `Run()`이 반환해야 하며, 실행은 객체당 한 번만 허용합니다.
 
-`Run()`의 지역 자원은 애플리케이션의 실행 수명을 따릅니다. `ServerHost`를 시작한 뒤 CMake가 선택한 `NetworkServer`를 생성합니다. Asio 또는 native facade의 `m_networkRuntime`이 대응 runtime을 단독 소유하고, runtime의 `m_serverHost`가 코어의 공유 소유권을 유지합니다. 생성의 역순으로 파괴되어 네트워크 작업을 종료한 뒤 마지막 코어 소유자가 해제됩니다. 바인딩 실패나 출력·이벤트 루프 예외도 같은 RAII 정리 경로를 거칩니다.
+`Run()`의 지역 자원은 애플리케이션의 실행 수명을 따릅니다. `ServerHost`를 시작한 뒤 CMake가 선택한 `NetworkServer`를 생성합니다. `NativeServer`의 `m_networkRuntime`이 운영체제별 runtime을 단독 소유하고, runtime의 `m_serverHost`가 코어의 공유 소유권을 유지합니다. 생성의 역순으로 파괴되어 네트워크 작업을 종료한 뒤 마지막 코어 소유자가 해제됩니다. 바인딩 실패나 출력·이벤트 루프 예외도 같은 RAII 정리 경로를 거칩니다.
 
 `ServerHost::Run()` 내부의 `GameRoomManager`와 모든 `GameWorld`는 Tick 스레드만 접근합니다. `m_dataMutex`는 `m_pendingCommands`·`m_pendingInputs`·`m_clients`·`m_latestSnapshots`·`m_nextPlayerId`·`m_reservations`·`m_matchmakingState`를 보호하고, `m_lifecycleMutex`는 코어의 시작과 종료를 직렬화합니다. `WorldCommand`는 `WorldCommandType::JOIN/LEAVE/RESERVE/CLAIM/CANCEL`와 요청 ID를 묶는 값 타입입니다. 이동 입력은 별도의 `m_pendingInputs`에 유저마다 최신 값 한 개만 보관합니다. 네트워크 콜백은 `Connect`, `Submit`, `Disconnect`를 호출할 뿐 월드를 직접 변경하지 않습니다.
 
@@ -135,9 +135,9 @@ sequenceDiagram
 
 싱글플레이의 `ClientApplication`은 메인 화면에서 닉네임을 입력하고 `SINGLE PLAYER`를 선택한 뒤 `ServerHost`를 시작하여 `LocalTransport`로 입력과 Snapshot을 교환합니다. 서버 배정 정보가 있으면 `MULTIPLAYER` 입력이 활성화되고, 선택 시 닉네임을 포함한 Hello로 `TcpClientTransport`가 접속합니다. 서버의 구조화된 입장 오류와 전송 오류는 클라이언트를 종료하지 않고 메뉴 모달에 표시합니다. 게임 중 ESC는 `RESUME GAME`, `OPTIONS`, `EXIT GAME`을 포함한 통합 메뉴를 열고 이동 입력을 중립으로 유지합니다. 옵션은 메인 화면과 동일한 해상도·화면 모드·모니터·VSync·FPS 설정 및 적용 확인 절차를 사용합니다. `RESUME GAME` 또는 옵션 밖에서 ESC를 누르면 게임으로 돌아가며 `EXIT GAME`과 창 닫기는 전송 계층을 먼저 닫은 뒤 그래픽 창을 해제합니다. 자동화용 `--smoke`만 메인 화면을 건너뛰고 실행 옵션에 맞는 전송 계층을 즉시 만듭니다. 소켓과 `ServerApplication`은 로컬 모드에 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
 
-`Common`과 `ServerCore`는 raylib·Asio·운영체제 API에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication`과 outbound 전용 `MatchmakingControlClient`를 제공하고, `TcpTransport`·`ServerOptions` 및 비공개 HTTP 의존성 `MatchmakingHttp`를 연결합니다. ASP.NET `MatchmakingApi`는 CMake 대상과 주소 공간을 공유하지 않는 별도 프로젝트입니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며 네트워크 헤더의 독립 컴파일도 생략합니다.
+`Common`과 `ServerCore`는 raylib·운영체제 API에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication`과 outbound 전용 `MatchmakingControlClient`를 제공하고, `TcpTransport`·`ServerOptions` 및 비공개 HTTP 의존성 `MatchmakingHttp`를 연결합니다. ASP.NET `MatchmakingApi`는 CMake 대상과 주소 공간을 공유하지 않는 별도 프로젝트입니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며 네트워크 헤더의 독립 컴파일도 생략합니다.
 
-네트워크 구성의 `MOONGTANGE_NETWORK_BACKEND`는 `AUTO`, `ASIO`, `IOCP`, `EPOLL` 중 하나이며 기본 `AUTO`는 Windows에서 직접 구현한 IOCP, Linux에서 직접 구현한 epoll을 선택합니다. `ASIO`는 기존 구현을 그대로 보존한 선택지이며 `AsioBackend.cpp`가 Windows IOCP 또는 Linux epoll 기능 매크로를 확인합니다. 운영체제별 CMake configure/build/test 프리셋은 네이티브와 Asio 경로를 각각 제공하고 CI가 네 가지 조합을 모두 검사합니다. Windows의 `EPOLL`, Linux의 `IOCP` 및 모든 macOS 구성은 CMake 단계에서 거부합니다.
+네트워크 구성의 `MOONGTANGE_NETWORK_BACKEND`는 `AUTO`, `IOCP`, `EPOLL` 중 하나이며 기본 `AUTO`는 Windows에서 직접 구현한 IOCP, Linux에서 직접 구현한 epoll을 선택합니다. 운영체제별 CMake configure/build/test 프리셋과 CI는 각 운영체제의 네이티브 경로를 검사합니다. Windows의 `EPOLL`, Linux의 `IOCP` 및 모든 macOS 구성은 CMake 단계에서 거부합니다. 이전 Standalone Asio 구현은 별도 `61-NETWORKBACKEND` 브랜치 계열에만 보존하며 이 구성의 선택지에는 포함하지 않습니다.
 
 ## 명명과 헤더·구현 분리
 
@@ -151,19 +151,11 @@ sequenceDiagram
 | --- | --- | --- |
 | `ServerCore` | `ServerHost.cpp`, `TickScheduler.cpp`, `GameRoom.cpp`, `GameRoomManager.cpp`, `GameRoomOptions.cpp` | Common, Threads |
 | `ServerOptions` | `ServerOptions.cpp` | Common |
-| `TcpTransport` (Asio) | `AsioBackend.cpp`, `AsioServer.cpp`, `ServerNetworkRuntime.cpp`, `TcpChannel.cpp`, `TcpClientTransport.cpp` | ServerCore, AsioStandalone, NetworkProtocol |
-| `TcpTransport` (native) | `NativeEventLoopIocp.cpp` 또는 `NativeEventLoopEpoll.cpp`, `NativeTcpChannel.cpp`, `NativeServer.cpp`, `NativeServerNetworkRuntime.cpp`, `NativeTcpClientTransport.cpp` | ServerCore, NetworkProtocol, Windows 소켓 라이브러리(IOCP만) |
+| `TcpTransport` | `NativeEventLoopIocp.cpp` 또는 `NativeEventLoopEpoll.cpp`, `NativeTcpChannel.cpp`, `NativeServer.cpp`, `NativeServerNetworkRuntime.cpp`, `NativeTcpClientTransport.cpp` | ServerCore, NetworkProtocol, Windows 소켓 라이브러리(IOCP만) |
 | `ServerRuntime` | `ServerApplication.cpp`, `MatchmakingControlClient.cpp` | TcpTransport, ServerOptions, 비공개 MatchmakingHttp |
 | `NetworkProtocol` | `Codec.cpp` | Common, ProtocolMessages |
 
 ## 파일별 함수 안내
-
-<details>
-<summary>Network/AsioBackend.cpp — 운영체제 백엔드 검증</summary>
-
-Windows의 IOCP 또는 Linux의 epoll 중 CMake가 기대한 기능 매크로를 보존된 Asio 구현이 제공하는지 컴파일할 때 확인합니다. 실행 코드나 공개 함수는 없으며 Asio의 백엔드 선택을 강제로 변경하지 않습니다.
-
-</details>
 
 ### 3인 방 모델 추가 — Issue #35
 
@@ -297,7 +289,7 @@ Windows의 IOCP 또는 Linux의 epoll 중 CMake가 기대한 기능 매크로를
 
 [선언](../Server/Network/NetworkServer.h)
 
-`MOONGTANGE_NETWORK_BACKEND_ASIO`이면 `NetworkServer`를 `AsioServer`로, IOCP 또는 epoll이면 `NativeServer`로 별칭 지정합니다. `ServerApplication`과 통합 테스트는 이 헤더만 사용하므로 상위 서버 수명·게임 로직은 선택된 소켓 구현을 알지 않습니다. 알 수 없는 백엔드 매크로는 컴파일 오류로 거부합니다.
+IOCP 또는 epoll 구성이면 `NetworkServer`를 `NativeServer`로 별칭 지정합니다. `ServerApplication`과 통합 테스트는 이 헤더만 사용하므로 상위 서버 수명·게임 로직은 선택된 운영체제 이벤트 루프를 알지 않습니다. 알 수 없는 백엔드 매크로는 컴파일 오류로 거부합니다.
 
 </details>
 
@@ -320,51 +312,11 @@ Linux 구현은 non-blocking socket, `epoll`, `eventfd`를 사용합니다. Wind
 </details>
 
 <details>
-<summary>Server/Network/AsioServer.h · AsioServer.cpp — Asio TCP 서버 공개 진입점</summary>
-
-[선언](../Server/Network/AsioServer.h) · [구현](../Server/Network/AsioServer.cpp)
-
-| 함수 | 설명 |
-| --- | --- |
-| `AsioServer(host, address, port)` | ServerNetworkRuntime을 만들고 `m_networkRuntime`으로 단독 소유합니다. 기본 주소는 루프백입니다. |
-| `~AsioServer()` | 소유한 runtime을 파괴해 네트워크 종료를 수행합니다. 불완전 타입의 unique_ptr이므로 cpp에서 정의합니다. |
-| `Port()` | runtime이 실제 바인딩한 포트를 반환합니다. |
-
-헤더에는 runtime의 전방 선언만 둬 Asio 구현 세부 사항을 공개 진입점에서 숨깁니다.
-
-</details>
-
-<details>
-<summary>Server/Network/ServerNetworkRuntime.h · ServerNetworkRuntime.cpp — 연결·세션·전송 루프</summary>
-
-[선언](../Server/Network/ServerNetworkRuntime.h) · [구현](../Server/Network/ServerNetworkRuntime.cpp)
-
-기존 `Impl`의 책임을 명시한 클래스입니다. 아래의 연결/세션 함수와 콜백은 네트워크 스레드에서 실행됩니다. 생성자는 스레드 시작 전에 초기 대기를 등록합니다.
-
-| 함수 | 설명 |
-| --- | --- |
-| `ServerNetworkRuntime(host, address, port)` | 실행 중인 코어를 확인하고 TCP를 바인딩합니다. 연결 수락·Snapshot 타이머를 등록한 뒤 네트워크 스레드를 시작합니다. |
-| `~ServerNetworkRuntime()` | 종료 처리를 io_context에 게시하고 네트워크 스레드를 join합니다. |
-| `Port()` | 생성 시 확정된 포트를 조회합니다. |
-| `CloseAllSessions()` | 수락·타이머를 중단하고 세션 목록의 복사본을 순회하며 연결을 닫습니다. |
-| `AcceptNextConnection()` | 다음 연결을 비동기로 수락합니다. 연결 한도 이내면 세션을 만들고 수락을 다시 등록합니다. |
-| `AddSession(socket)` | TcpChannel과 Hello 이전 세션을 만들고 수신/종료 콜백을 설치합니다. weak_ptr로 소유권 순환을 피합니다. |
-| `RemoveSession(channel)` | 코어에 퇴장을 요청하고 세션을 제거합니다. |
-| `HandleMessage(channel, data)` | 첫 Hello를 검증하고 입장 요청을 등록합니다. 입장 성공 후 입력은 코어 큐에 전달하며 Disconnect·잘못된 메시지는 연결을 종료합니다. |
-| `CompleteAdmission(channel)` | Tick에서 확정한 결과를 보냅니다. 실패 응답은 송신 후 연결을 닫고, 대기 중에는 성공 응답을 보내지 않습니다. |
-| `BroadcastLatestSnapshot()` | 입장 결과를 확인하고 방마다 한 번 직렬화한 최신 상태를 해당 방의 세션에만 전송합니다. 세션별 마지막 Tick으로 중복 전송을 막습니다. |
-| `ScheduleSnapshotBroadcast()` | `SNAPSHOT_INTERVAL`마다 전송 콜백을 실행하고 다음 타이머를 등록합니다. |
-
-TCP 연결 한도는 Hello 대기를 포함해 `Capacity() × 2`개(기본 48개)입니다. `m_sessions`와 전송 상태는 네트워크 스레드가 관리하며 GameWorld는 직접 변경하지 않습니다.
-
-</details>
-
-<details>
 <summary>Server/Network/NativeServer.h · NativeServer.cpp — 네이티브 TCP 서버 공개 진입점</summary>
 
 [선언](../Server/Network/NativeServer.h) · [구현](../Server/Network/NativeServer.cpp)
 
-`NativeServer`는 `NativeServerNetworkRuntime`을 단독 소유하고 생성자에서 주소·포트를 전달합니다. 소멸자는 runtime 정리를 수행하며 `Port()`는 IOCP 또는 epoll listener가 실제 바인딩한 포트를 반환합니다. 공개 형태는 `AsioServer`와 같아 `NetworkServer` 별칭 뒤에서 교체됩니다.
+`NativeServer`는 `NativeServerNetworkRuntime`을 단독 소유하고 생성자에서 주소·포트를 전달합니다. 소멸자는 runtime 정리를 수행하며 `Port()`는 IOCP 또는 epoll listener가 실제 바인딩한 포트를 반환합니다. 상위 코드는 `NetworkServer` 별칭을 통해 이 공개 진입점을 사용합니다.
 
 </details>
 
@@ -373,27 +325,7 @@ TCP 연결 한도는 Hello 대기를 포함해 `Capacity() × 2`개(기본 48개
 
 [선언](../Server/Network/NativeServerNetworkRuntime.h) · [구현](../Server/Network/NativeServerNetworkRuntime.cpp)
 
-`NativeServerNetworkRuntime`은 `NativeEventLoop`와 네트워크 스레드를 소유합니다. `AddSession`, `RemoveSession`, `HandleMessage`, `CompleteAdmission`, `BroadcastLatestSnapshot`, `ScheduleSnapshotBroadcast`는 Asio runtime과 같은 입장·방 격리·입력 검증·20Hz 전송 규칙을 native channel 위에서 수행합니다. 소멸 시 event loop에 전체 세션 종료와 `Stop()`을 게시한 뒤 스레드를 join합니다. 세션·소켓 콜백은 네트워크 스레드에 한정되고 GameWorld 변경은 `ServerHost`의 제한된 큐에만 제출합니다.
-
-</details>
-
-<details>
-<summary>Network/TcpChannel.h · TcpChannel.cpp — 서버·클라이언트 공용 TCP 프레임</summary>
-
-[선언](../Network/TcpChannel.h) · [구현](../Network/TcpChannel.cpp)
-
-| 함수 | 설명 |
-| --- | --- |
-| `TcpChannel(socket)` | 소켓 소유권을 받고 같은 실행 환경의 읽기 제한 타이머를 만듭니다. |
-| `Start(onMessage, onClose)` | 콜백·공유 소유권·단일 시작 조건을 검증하고 TCP_NODELAY 설정 후 수신을 시작합니다. |
-| `Send(payload)` | 길이 헤더를 붙여 송신 큐에 넣습니다. 큐가 비어 있었다면 쓰기를 시작하며 한도를 넘으면 연결을 닫습니다. |
-| `SendAndClose(payload, reason)` | 마지막 응답의 송신 완료 후 닫습니다. 추가 수신 처리를 멈추며 기존 10초 읽기 기한이 정리 상한을 유지합니다. |
-| `Close(reason)` | 중복 호출을 무시하고 타이머·소켓·송신 큐를 정리한 뒤 종료 콜백을 호출합니다. |
-| `ReadFrameHeader()` | 읽기 제한 시간을 설정하고 4바이트 길이를 읽어 본문 크기를 검증합니다. |
-| `ReadFrameBody()` | 지정 길이만큼 읽은 뒤 메시지 콜백을 호출하고 다음 프레임 헤더 수신을 시작합니다. |
-| `WriteNextFrame()` | 큐의 첫 프레임을 전송하고 완료 후 다음 프레임을 처리합니다. 콜백이 연결과 버퍼의 공유 소유권을 유지합니다. |
-
-`MAX_QUEUED_FRAMES = 32`, `READ_TIMEOUT = 10초`입니다. 모든 호출은 해당 io_context 스레드에서 직렬로 수행해야 합니다.
+`NativeServerNetworkRuntime`은 `NativeEventLoop`와 네트워크 스레드를 소유합니다. `AddSession`, `RemoveSession`, `HandleMessage`, `CompleteAdmission`, `BroadcastLatestSnapshot`, `ScheduleSnapshotBroadcast`는 입장·방 격리·입력 검증·20Hz 전송 규칙을 native channel 위에서 수행합니다. 소멸 시 event loop에 전체 세션 종료와 `Stop()`을 게시한 뒤 스레드를 join합니다. 세션·소켓 콜백은 네트워크 스레드에 한정되고 GameWorld 변경은 `ServerHost`의 제한된 큐에만 제출합니다.
 
 </details>
 
@@ -402,7 +334,7 @@ TCP 연결 한도는 Hello 대기를 포함해 `Capacity() × 2`개(기본 48개
 
 [선언](../Network/Native/NativeTcpChannel.h) · [구현](../Network/Native/NativeTcpChannel.cpp)
 
-`NativeTcpChannel`은 `NativeEventLoop::ConnectionId`를 소유하고 Asio `TcpChannel`과 동일한 `Start`, `Send`, `SendAndClose`, `Close` 프레이밍 계약을 제공합니다. 4바이트 헤더와 본문은 native event loop의 exact read/write로 처리하고, 읽기마다 10초 타이머를 갱신하며, 송신 큐는 32프레임으로 제한합니다. 콜백과 송신 버퍼는 비동기 완료까지 공유 소유권을 유지합니다.
+`NativeTcpChannel`은 `NativeEventLoop::ConnectionId`를 소유하고 `Start`, `Send`, `SendAndClose`, `Close` 프레이밍 계약을 제공합니다. 4바이트 헤더와 본문은 native event loop의 exact read/write로 처리하고, 읽기마다 10초 타이머를 갱신하며, 송신 큐는 32프레임으로 제한합니다. 콜백과 송신 버퍼는 비동기 완료까지 공유 소유권을 유지합니다.
 
 </details>
 
@@ -428,11 +360,11 @@ TCP 연결 한도는 Hello 대기를 포함해 `Capacity() × 2`개(기본 48개
 </details>
 
 <details>
-<summary>Client/Transport/TcpClientTransport.h · TcpClientTransport.cpp · NativeTcpClientTransport.cpp — 클라이언트 TCP 연결</summary>
+<summary>Client/Transport/TcpClientTransport.h · NativeTcpClientTransport.cpp — 클라이언트 TCP 연결</summary>
 
-[선언](../Client/Transport/TcpClientTransport.h) · [Asio 구현](../Client/Transport/TcpClientTransport.cpp) · [native 구현](../Client/Transport/NativeTcpClientTransport.cpp)
+[선언](../Client/Transport/TcpClientTransport.h) · [구현](../Client/Transport/NativeTcpClientTransport.cpp)
 
-공개 `TcpClientTransport`는 `IClientTransport`를 구현하며, 선택된 소스 파일의 비공개 `ClientNetworkRuntime`을 `m_networkRuntime`으로 소유합니다. 두 구현은 같은 공개 함수와 큐·시간 제한·입장 검증을 유지하며 Asio 소켓 또는 `NativeEventLoop`에 위임합니다. 소멸 시 콜백을 정리하고 네트워크 스레드를 join합니다.
+공개 `TcpClientTransport`는 `IClientTransport`를 구현하며, 비공개 `ClientNetworkRuntime`을 `m_networkRuntime`으로 소유합니다. 구현은 `NativeEventLoop`에 위임하며 공개 함수와 큐·시간 제한·입장 검증을 유지합니다. 소멸 시 콜백을 정리하고 네트워크 스레드를 join합니다.
 
 | 함수 | 설명 |
 | --- | --- |

@@ -38,30 +38,18 @@ target_link_libraries(ServerOptions PUBLIC Common)
 include(cmake/Dependencies.cmake)
 if(MOONGTANGE_BUILD_NETWORK)
   include(cmake/Protobuf.cmake)
-  if(MOONGTANGE_RESOLVED_NETWORK_BACKEND STREQUAL "ASIO")
-    set(moongtange_transport_sources
-      Network/AsioBackend.cpp
-      Network/TcpChannel.cpp
-      Server/Network/AsioServer.cpp
-      Server/Network/ServerNetworkRuntime.cpp
-      Client/Transport/TcpClientTransport.cpp)
+  set(moongtange_transport_sources
+    Network/Native/NativeTcpChannel.cpp
+    Server/Network/NativeServer.cpp
+    Server/Network/NativeServerNetworkRuntime.cpp
+    Client/Transport/NativeTcpClientTransport.cpp)
+  if(MOONGTANGE_RESOLVED_NETWORK_BACKEND STREQUAL "IOCP")
+    list(APPEND moongtange_transport_sources Network/Native/NativeEventLoopIocp.cpp)
   else()
-    set(moongtange_transport_sources
-      Network/Native/NativeTcpChannel.cpp
-      Server/Network/NativeServer.cpp
-      Server/Network/NativeServerNetworkRuntime.cpp
-      Client/Transport/NativeTcpClientTransport.cpp)
-    if(MOONGTANGE_RESOLVED_NETWORK_BACKEND STREQUAL "IOCP")
-      list(APPEND moongtange_transport_sources Network/Native/NativeEventLoopIocp.cpp)
-    else()
-      list(APPEND moongtange_transport_sources Network/Native/NativeEventLoopEpoll.cpp)
-    endif()
+    list(APPEND moongtange_transport_sources Network/Native/NativeEventLoopEpoll.cpp)
   endif()
   add_library(TcpTransport ${moongtange_transport_sources})
   target_link_libraries(TcpTransport PUBLIC ServerCore NetworkProtocol)
-  if(MOONGTANGE_RESOLVED_NETWORK_BACKEND STREQUAL "ASIO")
-    target_link_libraries(TcpTransport PUBLIC AsioStandalone)
-  endif()
   moongtange_configure_network_backend(TcpTransport)
   add_library(ServerRuntime Server/ServerApplication.cpp
     Server/Api/MatchmakingControlClient.cpp)

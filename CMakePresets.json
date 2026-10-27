@@ -43,21 +43,6 @@
       }
     },
     {
-      "name": "windows-asio-release",
-      "inherits": "release-base",
-      "displayName": "Windows Release (Asio)",
-      "description": "Build and test MoongTangE with the preserved Asio transport.",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      },
-      "binaryDir": "${sourceDir}/build/windows-asio-release",
-      "cacheVariables": {
-        "MOONGTANGE_NETWORK_BACKEND": "ASIO"
-      }
-    },
-    {
       "name": "linux-release",
       "inherits": "release-base",
       "displayName": "Linux Release (native epoll)",
@@ -72,23 +57,6 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "MOONGTANGE_NETWORK_BACKEND": "EPOLL"
-      }
-    },
-    {
-      "name": "linux-asio-release",
-      "inherits": "release-base",
-      "displayName": "Linux Release (Asio)",
-      "description": "Build and test MoongTangE with the preserved Asio transport.",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      },
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build/linux-asio-release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "MOONGTANGE_NETWORK_BACKEND": "ASIO"
       }
     }
   ],
@@ -105,29 +73,8 @@
       }
     },
     {
-      "name": "windows-asio-release",
-      "configurePreset": "windows-asio-release",
-      "configuration": "Release",
-      "jobs": 2,
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      }
-    },
-    {
       "name": "linux-release",
       "configurePreset": "linux-release",
-      "jobs": 2,
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      }
-    },
-    {
-      "name": "linux-asio-release",
-      "configurePreset": "linux-asio-release",
       "jobs": 2,
       "condition": {
         "type": "equals",
@@ -150,31 +97,8 @@
       }
     },
     {
-      "name": "windows-asio-release",
-      "configurePreset": "windows-asio-release",
-      "configuration": "Release",
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error" },
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      }
-    },
-    {
       "name": "linux-release",
       "configurePreset": "linux-release",
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error" },
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      }
-    },
-    {
-      "name": "linux-asio-release",
-      "configurePreset": "linux-asio-release",
       "output": { "outputOnFailure": true },
       "execution": { "noTestsAction": "error" },
       "condition": {
