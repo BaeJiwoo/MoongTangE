@@ -67,6 +67,27 @@ class CompoundBallCollider
         return m_spheres;
     }
 
+    static Vector3 EmbeddedOrigin(const LocalSphereProxy& surfaceSphere, Vector3 outwardNormal,
+                                  Quaternion objectOrientation,
+                                  const LocalSphereProxy& objectSphere, double embedDepth)
+    {
+        const double normalLength = outwardNormal.Length();
+        if (!surfaceSphere.center.Finite() || !std::isfinite(surfaceSphere.radius) ||
+            surfaceSphere.radius <= 0 || !outwardNormal.Finite() || !std::isfinite(normalLength) ||
+            normalLength <= MIN_DIRECTION_LENGTH || !objectOrientation.Unit() ||
+            !objectSphere.center.Finite() || !std::isfinite(objectSphere.radius) ||
+            objectSphere.radius <= 0 || !std::isfinite(embedDepth) || embedDepth < 0 ||
+            embedDepth > objectSphere.radius) {
+            throw std::invalid_argument("Invalid embedded sphere placement");
+        }
+
+        const Vector3 normal = outwardNormal * (1.0 / normalLength);
+        const Vector3 targetSphereCenter =
+            surfaceSphere.center +
+            normal * (surfaceSphere.radius + objectSphere.radius - embedDepth);
+        return targetSphereCenter - objectOrientation.Rotate(objectSphere.center);
+    }
+
     Vector3 Support(const Quaternion& orientation, Vector3 worldDirection) const
     {
         const double directionLength = worldDirection.Length();

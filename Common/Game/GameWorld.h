@@ -300,6 +300,7 @@ class GameWorld
             std::uint32_t playerId{};
             double fraction{1};
             std::size_t colliderSphere{};
+            std::size_t collectibleSphere{};
             Vector3 normal{};
         };
 
@@ -329,7 +330,8 @@ class GameWorld
                     (found && contact.fraction >= bestHit.fraction)) {
                     continue;
                 }
-                bestHit = {playerId, contact.fraction, contact.colliderSphere, contact.normal};
+                bestHit = {playerId, contact.fraction, contact.colliderSphere, sphereIndex,
+                           contact.normal};
                 found = true;
             }
         }
@@ -352,17 +354,19 @@ class GameWorld
 
         const auto collider = PlayerCollider(bestHit.playerId, player);
         const auto& surfaceSphere = collider.Spheres()[bestHit.colliderSphere];
+        const auto& proxySphere = shape.spheres[bestHit.collectibleSphere];
         collectible.attachedPlayerId = bestHit.playerId;
         collectible.initialLocalPosition =
             localStart * (1 - bestHit.fraction) + localEnd * bestHit.fraction;
-        collectible.targetLocalPosition =
-            surfaceSphere.center +
-            bestHit.normal * (surfaceSphere.radius +
-                              collectible.body.radius * (1 - simulation::COLLECTIBLE_EMBED_RATIO));
         collectible.initialLocalOrientation =
             interpolate(previousLocalOrientation, currentLocalOrientation, bestHit.fraction);
         collectible.targetLocalOrientation =
             AlignUp(collectible.initialLocalOrientation, bestHit.normal);
+        const LocalSphereProxy objectSphere{proxySphere.center * collectible.body.radius,
+                                            proxySphere.radius * collectible.body.radius};
+        collectible.targetLocalPosition = CompoundBallCollider::EmbeddedOrigin(
+            surfaceSphere, bestHit.normal, collectible.targetLocalOrientation, objectSphere,
+            collectible.body.radius * simulation::COLLECTIBLE_EMBED_RATIO);
         collectible.localPosition = collectible.initialLocalPosition;
         collectible.localOrientation = collectible.initialLocalOrientation;
         collectible.attachmentTicks = 0;

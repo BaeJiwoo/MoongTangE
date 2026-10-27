@@ -257,6 +257,28 @@ void compound_collider_uses_shape_proxies_and_surface_sweep()
     MOONGTANGE_CHECK(!collider.SweepSphere({-5, 3, 0}, {5, 3, 0}, 0.2, contact));
 }
 
+void compound_collider_embeds_the_contacting_proxy_sphere()
+{
+    const LocalSphereProxy surfaceSphere{{1, 0, 0}, 0.5};
+    const LocalSphereProxy objectSphere{{0.2, 0, 0}, 0.3};
+    const auto objectOrigin =
+        CompoundBallCollider::EmbeddedOrigin(surfaceSphere, {2, 0, 0}, {}, objectSphere, 0.1);
+    const auto objectCenter = objectOrigin + objectSphere.center;
+
+    MOONGTANGE_CHECK(MoongTangE::test::approx(objectOrigin.x, 1.5));
+    MOONGTANGE_CHECK(MoongTangE::test::approx(surfaceSphere.radius + objectSphere.radius -
+                                                  (objectCenter - surfaceSphere.center).Length(),
+                                              0.1));
+
+    const auto rotated = Quaternion::FromRotation({0, 0, std::numbers::pi / 2});
+    const auto rotatedOrigin =
+        CompoundBallCollider::EmbeddedOrigin(surfaceSphere, {1, 0, 0}, rotated, objectSphere, 0.1);
+    const auto rotatedCenter = rotatedOrigin + rotated.Rotate(objectSphere.center);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(surfaceSphere.radius + objectSphere.radius -
+                                                  (rotatedCenter - surfaceSphere.center).Length(),
+                                              0.1));
+}
+
 void compound_collider_resolves_deep_multi_contact_deterministically()
 {
     const PhysicsWorld physics;
@@ -332,6 +354,7 @@ int main()
         invalid_state_is_rejected();
         sphere_overlap_detects_contact();
         compound_collider_uses_shape_proxies_and_surface_sweep();
+        compound_collider_embeds_the_contacting_proxy_sphere();
         compound_collider_resolves_deep_multi_contact_deterministically();
         compound_mass_properties_include_parallel_axis_inertia();
         invalid_compound_collider_is_rejected();
