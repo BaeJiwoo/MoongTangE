@@ -186,10 +186,43 @@ int main()
         const auto inversePlayerOrientation = attachmentPlayer.orientation.Conjugate();
         const auto localPosition =
             inversePlayerOrientation.Rotate(attached.position - attachmentPlayer.position);
-        const auto localOrientation =
-            (inversePlayerOrientation * attached.orientation).Normalized();
-        MOONGTANGE_CHECK(MoongTangE::test::approx(localPosition.Length(),
-                                                  MoongTangE::simulation::PLAYER_RADIUS));
+        MOONGTANGE_CHECK(localPosition.Length() >= MoongTangE::simulation::PLAYER_RADIUS);
+
+        auto settlingLocalPosition = localPosition;
+        for (std::uint32_t tick = 0; tick < MoongTangE::simulation::ATTACHMENT_SETTLE_TICKS;
+             ++tick) {
+            attachingWorld.Step();
+            attachedSnapshot = attachingWorld.Snapshot();
+            const auto& settlingPlayer = attachedSnapshot.players.front();
+            const auto settlingCollectible = std::find_if(
+                attachedSnapshot.collectibles.begin(), attachedSnapshot.collectibles.end(),
+                [&](const MoongTangE::CollectibleState& collectible) {
+                    return collectible.id == attached.id;
+                });
+            MOONGTANGE_CHECK(settlingCollectible != attachedSnapshot.collectibles.end());
+            settlingLocalPosition = settlingPlayer.orientation.Conjugate().Rotate(
+                settlingCollectible->position - settlingPlayer.position);
+        }
+        MOONGTANGE_CHECK((settlingLocalPosition - localPosition).Length() > 1e-6);
+        const double attachedRadius =
+            MoongTangE::simulation::COLLECTIBLE_BASE_RADIUS * attached.scale;
+        const double expectedAttachmentDistance =
+            MoongTangE::simulation::PLAYER_RADIUS +
+            attachedRadius * (1 - MoongTangE::simulation::COLLECTIBLE_EMBED_RATIO);
+        MOONGTANGE_CHECK(MoongTangE::test::approx(settlingLocalPosition.Length(),
+                                                  expectedAttachmentDistance, 1e-8));
+
+        const auto settledSnapshot = attachingWorld.Snapshot();
+        const auto& settledPlayer = settledSnapshot.players.front();
+        const auto settledCollectible =
+            std::find_if(settledSnapshot.collectibles.begin(), settledSnapshot.collectibles.end(),
+                         [&](const MoongTangE::CollectibleState& collectible) {
+                             return collectible.id == attached.id;
+                         });
+        MOONGTANGE_CHECK(settledCollectible != settledSnapshot.collectibles.end());
+        const auto settledInverseOrientation = settledPlayer.orientation.Conjugate();
+        const auto settledLocalOrientation =
+            (settledInverseOrientation * settledCollectible->orientation).Normalized();
 
         bool colliderChangedMotion = false;
         for (std::uint32_t sequence = 1; sequence <= 90; ++sequence) {
@@ -219,10 +252,10 @@ int main()
                 movingCollectible->position - movingPlayer.position);
             const auto movingLocalOrientation =
                 (inverseMovingOrientation * movingCollectible->orientation).Normalized();
-            MOONGTANGE_CHECK((movingLocalPosition - localPosition).Length() < 1e-9);
-            MOONGTANGE_CHECK(
-                (movingLocalOrientation.Rotate({1, 0, 0}) - localOrientation.Rotate({1, 0, 0}))
-                    .Length() < 1e-9);
+            MOONGTANGE_CHECK((movingLocalPosition - settlingLocalPosition).Length() < 1e-9);
+            MOONGTANGE_CHECK((movingLocalOrientation.Rotate({1, 0, 0}) -
+                              settledLocalOrientation.Rotate({1, 0, 0}))
+                                 .Length() < 1e-9);
         }
         MOONGTANGE_CHECK(colliderChangedMotion);
 

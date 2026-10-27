@@ -2,7 +2,8 @@
 
 #include "Common/Game/PlayerController.h"
 #include "Common/Physics/Collision/SphereSphere.h"
-#include "Common/Physics/DeformableBallCollider.h"
+#include "Common/Physics/CompoundBallCollider.h"
+#include "Common/Physics/CompoundMassProperties.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "Common/Physics/Terrain.h"
 #include "Common/Protocol/InputCommand.h"
@@ -90,10 +91,20 @@ class GameWorld
 
     void Step()
     {
+        std::map<std::uint32_t, BodyTransform> previousPlayers;
         for (auto& [id, player] : m_players) {
+            previousPlayers.emplace(id,
+                                    BodyTransform{player.body.position, player.body.orientation});
+            UpdateMassProperties(id, player);
+
             const bool inputFresh = m_tick - player.inputTick < simulation::INPUT_TIMEOUT_TICKS;
-            const auto force =
-                inputFresh ? movement_force(player.input.x, player.input.z) : Vector3{};
+            const double massRatio = player.body.mass / simulation::PLAYER_MASS;
+            const double forceScale =
+                std::min(simulation::ATTACHED_MOVEMENT_FORCE_LIMIT,
+                         std::pow(massRatio, simulation::ATTACHED_MOVEMENT_MASS_EXPONENT));
+            const auto force = inputFresh
+                                   ? movement_force(player.input.x, player.input.z) * forceScale
+                                   : Vector3{};
             m_physics.Step(player.body, PlayerCollider(id, player), PhysicsWorld::FIXED_DELTA,
                            force);
         }
@@ -102,12 +113,15 @@ class GameWorld
 
         for (auto& collectible : m_collectibles) {
             if (collectible.attachedPlayerId != 0) {
+                AdvanceAttachment(collectible);
                 UpdateAttached(collectible, m_players.at(collectible.attachedPlayerId));
                 continue;
             }
 
+            const BodyTransform previousCollectible{collectible.body.position,
+                                                    collectible.body.orientation};
             m_physics.Step(collectible.body);
-            TryAttach(collectible);
+            TryAttach(collectible, previousCollectible, previousPlayers);
         }
 
         ++m_tick;
@@ -140,6 +154,12 @@ class GameWorld
   private:
     static constexpr int COLLISION_SOLVER_ITERATIONS = 4;
 
+    struct BodyTransform
+    {
+        Vector3 position;
+        Quaternion orientation;
+    };
+
     struct Player
     {
         RigidBody body;
@@ -158,22 +178,42 @@ class GameWorld
         std::uint32_t attachedPlayerId{};
         Vector3 localPosition{};
         Quaternion localOrientation{};
+        Vector3 initialLocalPosition{};
+        Vector3 targetLocalPosition{};
+        Quaternion initialLocalOrientation{};
+        Quaternion targetLocalOrientation{};
+        std::uint32_t attachmentTicks{};
     };
 
-    DeformableBallCollider PlayerCollider(std::uint32_t playerId, const Player& player) const
+    CompoundBallCollider PlayerCollider(std::uint32_t playerId, const Player& player) const
     {
-        DeformableBallCollider collider(player.body.radius);
+        CompoundBallCollider collider(player.body.radius);
         for (const auto& collectible : m_collectibles) {
             if (collectible.attachedPlayerId == playerId) {
-                collider.AddCollectible(collectible.localPosition, collectible.body.radius);
+                collider.AddCollectible(collectible.localPosition, collectible.localOrientation,
+                                        collectible.kind, collectible.body.radius);
             }
         }
         return collider;
     }
 
+    void UpdateMassProperties(std::uint32_t playerId, Player& player) const
+    {
+        CompoundMassProperties properties;
+        properties.AddSphere(simulation::PLAYER_MASS, simulation::PLAYER_RADIUS);
+        for (const auto& collectible : m_collectibles) {
+            if (collectible.attachedPlayerId == playerId) {
+                properties.AddSphere(collectible.body.mass, collectible.body.radius,
+                                     collectible.localPosition);
+            }
+        }
+        player.body.mass = properties.Mass();
+        player.body.rotationalInertia = properties.Inertia();
+    }
+
     void ResolvePlayerCollisions()
     {
-        std::map<std::uint32_t, DeformableBallCollider> colliders;
+        std::map<std::uint32_t, CompoundBallCollider> colliders;
         for (const auto& [id, player] : m_players) {
             colliders.emplace(id, PlayerCollider(id, player));
         }
@@ -213,24 +253,132 @@ class GameWorld
         collectible.body.angularVelocity = player.body.angularVelocity;
     }
 
-    void TryAttach(Collectible& collectible)
+    static void AdvanceAttachment(Collectible& collectible)
     {
-        for (const auto& [playerId, player] : m_players) {
-            const Quaternion inversePlayerOrientation = player.body.orientation.Conjugate();
-            const Vector3 localObjectPosition =
-                inversePlayerOrientation.Rotate(collectible.body.position - player.body.position);
-            const auto collider = PlayerCollider(playerId, player);
-            if (!collider.ContainsPickupCenter(localObjectPosition)) {
-                continue;
-            }
-
-            collectible.attachedPlayerId = playerId;
-            collectible.localPosition = collider.PickupSurface(localObjectPosition);
-            collectible.localOrientation =
-                (inversePlayerOrientation * collectible.body.orientation).Normalized();
-            UpdateAttached(collectible, player);
+        if (collectible.attachmentTicks >= simulation::ATTACHMENT_SETTLE_TICKS) {
             return;
         }
+
+        ++collectible.attachmentTicks;
+        const double progress = static_cast<double>(collectible.attachmentTicks) /
+                                static_cast<double>(simulation::ATTACHMENT_SETTLE_TICKS);
+        constexpr double DAMPING = 5;
+        const double fraction = (1 - std::exp(-DAMPING * progress)) / (1 - std::exp(-DAMPING));
+        collectible.localPosition = collectible.initialLocalPosition * (1 - fraction) +
+                                    collectible.targetLocalPosition * fraction;
+        collectible.localOrientation = interpolate(collectible.initialLocalOrientation,
+                                                   collectible.targetLocalOrientation, fraction);
+    }
+
+    static Quaternion AlignUp(Quaternion orientation, Vector3 targetUp)
+    {
+        constexpr double MIN_AXIS_LENGTH = 1e-12;
+        const Vector3 currentUp = orientation.Rotate({0, 1, 0});
+        Vector3 axis = cross(currentUp, targetUp);
+        const double sine = axis.Length();
+        const double cosine = std::clamp(dot(currentUp, targetUp), -1.0, 1.0);
+        if (sine < MIN_AXIS_LENGTH) {
+            if (cosine > 0) {
+                return orientation;
+            }
+            axis =
+                cross(currentUp, std::abs(currentUp.x) < 0.9 ? Vector3{1, 0, 0} : Vector3{0, 0, 1})
+                    .Normalized();
+        } else {
+            axis = axis * (1.0 / sine);
+        }
+
+        const auto alignment = Quaternion::FromRotation(axis * std::atan2(sine, cosine));
+        return (alignment * orientation).Normalized();
+    }
+
+    void TryAttach(Collectible& collectible, const BodyTransform& previousCollectible,
+                   const std::map<std::uint32_t, BodyTransform>& previousPlayers)
+    {
+        struct AttachmentHit
+        {
+            std::uint32_t playerId{};
+            double fraction{1};
+            std::size_t colliderSphere{};
+            Vector3 normal{};
+        };
+
+        AttachmentHit bestHit;
+        bool found = false;
+        const auto& shape = collectible_proxy_shape(collectible.kind);
+        for (const auto& [playerId, player] : m_players) {
+            const auto& previousPlayer = previousPlayers.at(playerId);
+            const Quaternion inversePreviousPlayer = previousPlayer.orientation.Conjugate();
+            const Quaternion inversePlayer = player.body.orientation.Conjugate();
+            const auto collider = PlayerCollider(playerId, player);
+
+            for (std::size_t sphereIndex = 0; sphereIndex < shape.count; ++sphereIndex) {
+                const auto& sphere = shape.spheres[sphereIndex];
+                const Vector3 previousOffset =
+                    previousCollectible.orientation.Rotate(sphere.center * collectible.body.radius);
+                const Vector3 currentOffset =
+                    collectible.body.orientation.Rotate(sphere.center * collectible.body.radius);
+                const Vector3 localStart = inversePreviousPlayer.Rotate(
+                    previousCollectible.position + previousOffset - previousPlayer.position);
+                const Vector3 localEnd = inversePlayer.Rotate(collectible.body.position +
+                                                              currentOffset - player.body.position);
+
+                SweptSphereContact contact;
+                if (!collider.SweepSphere(localStart, localEnd,
+                                          sphere.radius * collectible.body.radius, contact) ||
+                    (found && contact.fraction >= bestHit.fraction)) {
+                    continue;
+                }
+                bestHit = {playerId, contact.fraction, contact.colliderSphere, contact.normal};
+                found = true;
+            }
+        }
+        if (!found) {
+            return;
+        }
+
+        const auto& player = m_players.at(bestHit.playerId);
+        const auto& previousPlayer = previousPlayers.at(bestHit.playerId);
+        const Quaternion inversePreviousPlayer = previousPlayer.orientation.Conjugate();
+        const Quaternion inversePlayer = player.body.orientation.Conjugate();
+        const Vector3 localStart =
+            inversePreviousPlayer.Rotate(previousCollectible.position - previousPlayer.position);
+        const Vector3 localEnd =
+            inversePlayer.Rotate(collectible.body.position - player.body.position);
+        const Quaternion previousLocalOrientation =
+            (inversePreviousPlayer * previousCollectible.orientation).Normalized();
+        const Quaternion currentLocalOrientation =
+            (inversePlayer * collectible.body.orientation).Normalized();
+
+        const auto collider = PlayerCollider(bestHit.playerId, player);
+        const auto& surfaceSphere = collider.Spheres()[bestHit.colliderSphere];
+        collectible.attachedPlayerId = bestHit.playerId;
+        collectible.initialLocalPosition =
+            localStart * (1 - bestHit.fraction) + localEnd * bestHit.fraction;
+        collectible.targetLocalPosition =
+            surfaceSphere.center +
+            bestHit.normal * (surfaceSphere.radius +
+                              collectible.body.radius * (1 - simulation::COLLECTIBLE_EMBED_RATIO));
+        collectible.initialLocalOrientation =
+            interpolate(previousLocalOrientation, currentLocalOrientation, bestHit.fraction);
+        collectible.targetLocalOrientation =
+            AlignUp(collectible.initialLocalOrientation, bestHit.normal);
+        collectible.localPosition = collectible.initialLocalPosition;
+        collectible.localOrientation = collectible.initialLocalOrientation;
+        collectible.attachmentTicks = 0;
+        UpdateAttached(collectible, player);
+    }
+
+    void ResetAttachment(Collectible& collectible)
+    {
+        collectible.attachedPlayerId = 0;
+        collectible.localPosition = {};
+        collectible.localOrientation = {};
+        collectible.initialLocalPosition = {};
+        collectible.targetLocalPosition = {};
+        collectible.initialLocalOrientation = {};
+        collectible.targetLocalOrientation = {};
+        collectible.attachmentTicks = 0;
     }
 
     void DetachCollectibles(std::uint32_t playerId, const Player& player)
@@ -241,9 +389,7 @@ class GameWorld
             }
 
             UpdateAttached(collectible, player);
-            collectible.attachedPlayerId = 0;
-            collectible.localPosition = {};
-            collectible.localOrientation = {};
+            ResetAttachment(collectible);
         }
     }
 

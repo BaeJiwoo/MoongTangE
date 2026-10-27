@@ -1,12 +1,14 @@
 #pragma once
 
 #include "Common/Physics/Collision/SphereTerrain.h"
-#include "Common/Physics/DeformableBallCollider.h"
+#include "Common/Physics/CompoundBallCollider.h"
 #include "Common/Physics/RigidBody.h"
 #include "Common/SimulationConfig.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <stdexcept>
 
 namespace MoongTangE {
@@ -18,11 +20,28 @@ struct PhysicsMaterial
     double groundDrag{1.8};
 };
 
+struct CompoundTerrainContact
+{
+    TerrainContact terrain;
+    Vector3 arm;
+    Vector3 point;
+    std::size_t sphereIndex{};
+};
+
+struct CompoundTerrainContacts
+{
+    static constexpr std::size_t MAX_CONTACTS = 4;
+
+    std::array<CompoundTerrainContact, MAX_CONTACTS> points{};
+    std::size_t count{};
+};
+
 // Stateless integration of caller-owned bodies; material parameters are validated once.
 class PhysicsWorld
 {
   public:
     static constexpr double FIXED_DELTA = simulation::FIXED_DELTA;
+    static constexpr double CONTACT_TOLERANCE = 1e-9;
 
     explicit PhysicsWorld(PhysicsMaterial material = {}) : m_material(material)
     {
@@ -36,61 +55,85 @@ class PhysicsWorld
 
     void Step(RigidBody& body, double dt = FIXED_DELTA, Vector3 groundForce = {}) const
     {
-        Step(body, DeformableBallCollider(body.radius), dt, groundForce);
+        Step(body, CompoundBallCollider(body.radius), dt, groundForce);
     }
 
-    void Step(RigidBody& body, const DeformableBallCollider& collider, double dt = FIXED_DELTA,
+    void Step(RigidBody& body, const CompoundBallCollider& collider, double dt = FIXED_DELTA,
               Vector3 groundForce = {}) const
     {
         ValidateStep(body, dt, groundForce);
 
         groundForce.y = 0;
-        auto contact = MakeContact(body, collider);
-        ApplyForces(body, contact, dt, groundForce);
+        auto contacts = TerrainContacts(body, collider);
+        ApplyForces(body, contacts, dt, groundForce);
         body.position.y += body.velocity.y * dt;
 
-        contact = MakeContact(body, collider);
-        if (contact.terrain.penetration >= 0) {
-            ResolveContact(body, contact, dt, groundForce);
-        }
+        ResolveContacts(body, collider, dt, groundForce);
 
         body.position.x += body.velocity.x * dt;
         body.position.z += body.velocity.z * dt;
-
-        contact = MakeContact(body, collider);
-        CorrectPenetration(body, contact.terrain);
+        CorrectPenetration(body, collider);
 
         const auto rotation = Quaternion::FromRotation(body.angularVelocity * dt);
         body.orientation = (rotation * body.orientation).Normalized();
-
-        contact = MakeContact(body, collider);
-        CorrectPenetration(body, contact.terrain);
+        CorrectPenetration(body, collider);
     }
 
     void ConstrainToTerrain(RigidBody& body) const
     {
-        ConstrainToTerrain(body, DeformableBallCollider(body.radius));
+        ConstrainToTerrain(body, CompoundBallCollider(body.radius));
     }
 
-    void ConstrainToTerrain(RigidBody& body, const DeformableBallCollider& collider) const
+    void ConstrainToTerrain(RigidBody& body, const CompoundBallCollider& collider) const
     {
-        const auto contact = MakeContact(body, collider);
-        if (contact.terrain.penetration > 0) {
-            CorrectPenetration(body, contact.terrain);
+        CorrectPenetration(body, collider);
+        const auto contacts = TerrainContacts(body, collider);
+        for (std::size_t index = 0; index < contacts.count; ++index) {
+            const auto& contact = contacts.points[index];
+            if (contact.terrain.penetration < -CONTACT_TOLERANCE) {
+                break;
+            }
             ApplyNormalImpulse(body, contact.arm, contact.terrain.normal);
         }
     }
 
-  private:
-    struct ColliderTerrainContact
+    static CompoundTerrainContacts TerrainContacts(const RigidBody& body,
+                                                   const CompoundBallCollider& collider)
     {
-        TerrainContact terrain;
-        Vector3 arm;
-    };
+        CompoundTerrainContacts result;
+        for (std::size_t sphereIndex = 0; sphereIndex < collider.Spheres().size(); ++sphereIndex) {
+            const auto& sphere = collider.Spheres()[sphereIndex];
+            const Vector3 centerOffset = body.orientation.Rotate(sphere.center);
+            const Vector3 center = body.position + centerOffset;
+            const auto sample = terrain_sample(center.x, center.z);
+            const double normalDistance = (center.y - sample.height) * sample.normal.y;
+            const double penetration = sphere.radius - normalDistance;
+            const Vector3 arm = centerOffset - sample.normal * sphere.radius;
+            const CompoundTerrainContact candidate{
+                {sample.normal, penetration}, arm, body.position + arm, sphereIndex};
 
+            std::size_t insertion = 0;
+            while (insertion < result.count &&
+                   result.points[insertion].terrain.penetration >= penetration) {
+                ++insertion;
+            }
+            if (insertion >= CompoundTerrainContacts::MAX_CONTACTS) {
+                continue;
+            }
+
+            result.count = std::min(result.count + 1, CompoundTerrainContacts::MAX_CONTACTS);
+            for (std::size_t move = result.count - 1; move > insertion; --move) {
+                result.points[move] = result.points[move - 1];
+            }
+            result.points[insertion] = candidate;
+        }
+        return result;
+    }
+
+  private:
     static constexpr double MAX_STEP = 0.1;
-    static constexpr double CONTACT_TOLERANCE = 1e-9;
     static constexpr double SLEEP_SPEED = 0.015;
+    static constexpr int POSITION_SOLVER_ITERATIONS = 4;
 
     static void ValidateStep(const RigidBody& body, double dt, Vector3 force)
     {
@@ -103,32 +146,43 @@ class PhysicsWorld
         }
     }
 
-    static ColliderTerrainContact MakeContact(const RigidBody& body,
-                                              const DeformableBallCollider& collider)
+    static void CorrectPenetration(RigidBody& body, const CompoundBallCollider& collider)
     {
-        const auto sample = terrain_sample(body.position.x, body.position.z);
-        const Vector3 contactArm = collider.Support(body.orientation, sample.normal * -1);
-        const double normalDistance = (body.position.y - sample.height) * sample.normal.y;
-        const double supportDistance = -dot(contactArm, sample.normal);
-        return {{sample.normal, supportDistance - normalDistance}, contactArm};
-    }
+        for (int iteration = 0; iteration < POSITION_SOLVER_ITERATIONS; ++iteration) {
+            const auto contacts = TerrainContacts(body, collider);
+            if (contacts.count == 0 || contacts.points[0].terrain.penetration <= 0) {
+                return;
+            }
 
-    static void CorrectPenetration(RigidBody& body, TerrainContact contact)
-    {
-        if (contact.penetration > 0) {
-            body.position = body.position + contact.normal * contact.penetration;
+            std::size_t penetratingContacts = 0;
+            while (penetratingContacts < contacts.count &&
+                   contacts.points[penetratingContacts].terrain.penetration > 0) {
+                ++penetratingContacts;
+            }
+            for (std::size_t index = 0; index < penetratingContacts; ++index) {
+                const auto& contact = contacts.points[index].terrain;
+                const double correction =
+                    contact.penetration / static_cast<double>(penetratingContacts);
+                body.position = body.position + contact.normal * correction;
+            }
         }
     }
 
-    static void ApplyForces(RigidBody& body, const ColliderTerrainContact& contact, double dt,
+    static void ApplyForces(RigidBody& body, const CompoundTerrainContacts& contacts, double dt,
                             Vector3 groundForce)
     {
-        const Vector3 contactVelocity = body.velocity + cross(body.angularVelocity, contact.arm);
-        const bool grounded = contact.terrain.penetration >= -CONTACT_TOLERANCE &&
-                              dot(contactVelocity, contact.terrain.normal) <= CONTACT_TOLERANCE;
+        bool grounded = false;
+        Vector3 groundNormal{0, 1, 0};
+        if (contacts.count > 0) {
+            const auto& contact = contacts.points[0];
+            const Vector3 contactVelocity =
+                body.velocity + cross(body.angularVelocity, contact.arm);
+            grounded = contact.terrain.penetration >= -CONTACT_TOLERANCE &&
+                       dot(contactVelocity, contact.terrain.normal) <= CONTACT_TOLERANCE;
+            groundNormal = contact.terrain.normal;
+        }
         if (grounded) {
-            groundForce =
-                groundForce - contact.terrain.normal * dot(groundForce, contact.terrain.normal);
+            groundForce = groundForce - groundNormal * dot(groundForce, groundNormal);
             body.velocity = body.velocity + groundForce * (dt / body.mass);
         }
 
@@ -142,19 +196,16 @@ class PhysicsWorld
         body.velocity = normalVelocity + (body.velocity - normalVelocity) * damping;
     }
 
-    void ApplyRollingResistance(RigidBody& body, Vector3 contactArm, double dt,
-                                Vector3 normal) const
+    void ApplyRollingResistance(RigidBody& body, Vector3 contactArm, double dt) const
     {
-        const Vector3 rolling = body.angularVelocity - normal * dot(body.angularVelocity, normal);
-        const double speed = rolling.Length();
+        const double speed = body.angularVelocity.Length();
         if (speed == 0) {
             return;
         }
 
-        // Bound the contact torque so resistance alone cannot reverse the spin.
         const double change = m_material.rollingResistance * body.mass * simulation::GRAVITY *
                               contactArm.Length() * dt / body.Inertia();
-        body.angularVelocity = body.angularVelocity - rolling * (std::min(speed, change) / speed);
+        body.angularVelocity = body.angularVelocity * (1 - std::min(speed, change) / speed);
     }
 
     static void ApplyImpulse(RigidBody& body, Vector3 contactArm, Vector3 impulse)
@@ -201,28 +252,62 @@ class PhysicsWorld
         ApplyImpulse(body, contactArm, slipDirection * -impulseMagnitude);
     }
 
-    void SleepIfResting(RigidBody& body, Vector3 contactArm, Vector3 groundForce,
-                        Vector3 normal) const
+    void SleepIfResting(RigidBody& body, const CompoundTerrainContacts& contacts,
+                        Vector3 groundForce) const
     {
-        const Vector3 tangentialVelocity = body.velocity - normal * dot(body.velocity, normal);
-        const Vector3 contactSpin = cross(body.angularVelocity, contactArm);
-        const Vector3 tangentialSpin = contactSpin - normal * dot(contactSpin, normal);
-        if (groundForce.Length() == 0 && m_material.rollingResistance > 0 &&
-            tangentialVelocity.Length() < SLEEP_SPEED && tangentialSpin.Length() < SLEEP_SPEED) {
-            body.velocity = normal * dot(body.velocity, normal);
-            body.angularVelocity = normal * dot(body.angularVelocity, normal);
+        if (groundForce.Length() != 0 || m_material.rollingResistance <= 0) {
+            return;
+        }
+
+        for (std::size_t index = 0; index < contacts.count; ++index) {
+            const auto& contact = contacts.points[index];
+            if (contact.terrain.penetration < -CONTACT_TOLERANCE) {
+                break;
+            }
+            const Vector3 contactVelocity =
+                body.velocity + cross(body.angularVelocity, contact.arm);
+            const Vector3 tangent =
+                contactVelocity -
+                contact.terrain.normal * dot(contactVelocity, contact.terrain.normal);
+            if (tangent.Length() >= SLEEP_SPEED) {
+                return;
+            }
+        }
+
+        if (body.velocity.Length() < SLEEP_SPEED && body.angularVelocity.Length() < SLEEP_SPEED) {
+            body.velocity = {};
+            body.angularVelocity = {};
         }
     }
 
-    void ResolveContact(RigidBody& body, const ColliderTerrainContact& contact, double dt,
-                        Vector3 groundForce) const
+    void ResolveContacts(RigidBody& body, const CompoundBallCollider& collider, double dt,
+                         Vector3 groundForce) const
     {
-        CorrectPenetration(body, contact.terrain);
-        const double normalImpulse = ApplyNormalImpulse(body, contact.arm, contact.terrain.normal);
-        ApplyGroundDrag(body, dt, contact.terrain.normal);
-        ApplyRollingResistance(body, contact.arm, dt, contact.terrain.normal);
-        ApplyContactFriction(body, contact.arm, normalImpulse, contact.terrain.normal);
-        SleepIfResting(body, contact.arm, groundForce, contact.terrain.normal);
+        CorrectPenetration(body, collider);
+        const auto contacts = TerrainContacts(body, collider);
+        if (contacts.count == 0 || contacts.points[0].terrain.penetration < -CONTACT_TOLERANCE) {
+            return;
+        }
+
+        std::array<double, CompoundTerrainContacts::MAX_CONTACTS> normalImpulses{};
+        std::size_t activeContacts = 0;
+        for (std::size_t index = 0; index < contacts.count; ++index) {
+            const auto& contact = contacts.points[index];
+            if (contact.terrain.penetration < -CONTACT_TOLERANCE) {
+                break;
+            }
+            normalImpulses[index] = ApplyNormalImpulse(body, contact.arm, contact.terrain.normal);
+            ++activeContacts;
+        }
+
+        const auto& deepest = contacts.points[0];
+        ApplyGroundDrag(body, dt, deepest.terrain.normal);
+        ApplyRollingResistance(body, deepest.arm, dt);
+        for (std::size_t index = 0; index < activeContacts; ++index) {
+            const auto& contact = contacts.points[index];
+            ApplyContactFriction(body, contact.arm, normalImpulses[index], contact.terrain.normal);
+        }
+        SleepIfResting(body, contacts, groundForce);
     }
 
     PhysicsMaterial m_material;
