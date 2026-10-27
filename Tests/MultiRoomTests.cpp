@@ -1,6 +1,6 @@
 #include "Client/Transport/LocalTransport.h"
 #include "Client/Transport/TcpClientTransport.h"
-#include "Server/Network/AsioServer.h"
+#include "Server/Network/StandaloneAsioServer.h"
 #include "TestSupport.h"
 
 #include <algorithm>
@@ -16,7 +16,7 @@ void rooms_isolate_players_and_reuse_vacancies(bool remote)
 {
     auto host = std::make_shared<ServerHost>(GameRoomOptions{.m_maxRooms = 3});
     host->Start();
-    AsioServer server(host, "127.0.0.1", 0);
+    StandaloneAsioServer server(host, "127.0.0.1", 0);
     auto connect = [&]() -> std::unique_ptr<IClientTransport> {
         std::unique_ptr<IClientTransport> client;
         if (remote) {
@@ -79,7 +79,7 @@ void full_server_reports_rejection()
 {
     auto host = std::make_shared<ServerHost>(GameRoomOptions{.m_maxRooms = 1});
     host->Start();
-    AsioServer server(host, "127.0.0.1", 0);
+    StandaloneAsioServer server(host, "127.0.0.1", 0);
     std::vector<std::unique_ptr<LocalTransport>> admitted;
     for (int index = 0; index < 3; ++index) {
         admitted.push_back(std::make_unique<LocalTransport>(host));

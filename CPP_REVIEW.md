@@ -34,7 +34,7 @@
 
 - 서비스 이름은 `MoongTangE`입니다. CMake 프로젝트명, 클라이언트 창·화면 제목, README와 저장소 링크를 함께 갱신했습니다.
 - Client·Common·Network·Server·Tests 전체의 최상위 네임스페이스도 `MoongTangE`입니다. Protobuf 패키지는 `MoongTangE.proto`, 빌드 옵션·컴파일 매크로·환경변수는 `MOONGTANGE_`, CMake 내부 도우미는 `moongtange_`로 통일했습니다. CI·정적 분석 명령·문서의 사용 예도 함께 변경했습니다. 생성 메시지의 정규화된 타입 이름은 바뀌지만 필드 번호와 전송 바이트는 유지합니다.
-- `AsioServer::Impl`은 `ServerNetworkRuntime`으로 바꾸고 별도 `.h/.cpp`로 분리했습니다. `AsioServer`는 전방 선언과 `unique_ptr`로 구현을 숨기며, 네트워크 스레드·세션·Snapshot 타이머는 runtime이 소유합니다.
+- `StandaloneAsioServer::Impl`은 `ServerNetworkRuntime`으로 바꾸고 별도 `.h/.cpp`로 분리했습니다. `StandaloneAsioServer`는 전방 선언과 `unique_ptr`로 구현을 숨기며, 네트워크 스레드·세션·Snapshot 타이머는 runtime이 소유합니다.
 - 서버 및 공유 `TcpChannel`의 데이터 멤버는 `m_`를 사용합니다. `ServerOptions`와 내부 `WorldCommand`도 값 타입을 유지하면서 멤버 접두사를 적용했습니다. 고정 상수·열거 값은 대문자이며, 런타임의 `const` 지역 변수는 lowerCamelCase입니다.
 - `WorldCommandType`과 `wire::MessageType`은 종류가 무엇인지 이름으로 드러냅니다. 공유 시뮬레이션·프로토콜 상수 이름은 모든 클라이언트·테스트 호출부까지 갱신하며 값과 wire 형식은 유지합니다.
 - `ServerOptions`, `TickScheduler`, `ServerHost`, `TcpChannel`의 비템플릿 함수 본문은 `.cpp`에 둡니다. 기본값·상수·default/delete 선언은 헤더에 유지합니다. `ServerOptions`는 Common만 사용하는 독립 CMake 라이브러리이며 CLI 테스트는 네트워크를 끈 구성에서도 이를 연결합니다.
@@ -98,7 +98,7 @@ classDiagram
 | 클라이언트 실행 | `main.cpp`, `ClientApplication.*`, `ClientOptions.h`, `Keyboard.h` | 옵션·세션·입력·화면 책임 구분, 수명 합성 |
 | 화면 | `Scene.*`, `GraphicsWindow.h`, `SnapshotInterpolator.h` | 헤더와 렌더링 구현 분리, 메시 소유권, RAII, 표시 전용 보간 유지 |
 | 전송 | `IClientTransport.h`, `LocalTransport.h`, `TcpClientTransport.*` | 다형성·소유권·스레드 경계 명시, 단조 증가 Tick 유지 |
-| 네트워크 | `TcpChannel.h`, `AsioServer.*` | 콜백 설치·연결 수명·큐·취소 처리를 검토하고 캡슐화 |
+| 네트워크 | `TcpChannel.h`, `StandaloneAsioServer.*` | 콜백 설치·연결 수명·큐·취소 처리를 검토하고 캡슐화 |
 | 서버 실행 | `Server/main.cpp`, `ServerOptions.h`, `ServerHost.*`, `TickScheduler.h` | 시작/종료 순서, 큐/잠금, 고정 Tick, 시그널 경계 확인 |
 | 공통 유틸리티 | `CommandLine.h` | 이름 있는 Endpoint와 옵션 커서, 파서 경계 검증 |
 | 자동 테스트 | 모든 `*Tests.cpp`, `RemoteProbe.cpp`, `TestSupport.h` | 기존 물리/전송 조건 보존, 시나리오 이름과 진단 개선, 경계 회귀 추가 |
@@ -110,7 +110,7 @@ classDiagram
 - clang-tidy 22.1.3과 `.clang-tidy`에 명시한 버그·초기화·특수 멤버·소멸자·override·중괄호 규칙으로 18개 번역 단위를 분석합니다. 정적 분석은 모든 Core Guidelines를 자동 인증하는 도구가 아니며 수동 설계 리뷰를 함께 수행했습니다.
 - 기존 `21-ROLL`과 같은 MSVC Release 환경에서 32명·2,400 Tick의 동일 입력을 실행했습니다. 생성된 물리 Snapshot/프로토콜 바이트의 SHA-256이 모두 `920c0f09e38988f2bec7042df6b844bd54b3ecd254320c55ea4c3a4fd08f68cc`로 일치했습니다. 이는 플랫폼 간 결정성 보장은 아닙니다.
 - 전체 CTest 11개, 외부 의존성 없는 구성 8개와 헤더 컴파일 검사를 유지합니다. 실행 환경별 최종 결과는 이 작업 PR의 검증 항목과 CI에서 확인합니다.
-- Linux/macOS GUI 실행과 ThreadSanitizer는 이번 로컬 검증에 포함하지 않습니다. CI는 3개 플랫폼 빌드/테스트를 수행하고, 실제 GUI 실행은 Windows에서 검사합니다.
+- Linux GUI 실행과 ThreadSanitizer는 이번 로컬 검증에 포함하지 않습니다. macOS는 지원 대상에서 제외하며 CI는 Windows/Linux 빌드와 테스트를 수행하고, 실제 GUI 실행은 Windows에서 검사합니다.
 
 ## 병합 전 재검토 (2026-10-17)
 

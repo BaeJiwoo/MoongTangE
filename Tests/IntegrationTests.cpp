@@ -2,7 +2,7 @@
 #include "Client/Transport/TcpClientTransport.h"
 #include "Common/Game/GameWorld.h"
 #include "Network/Protocol/Codec.h"
-#include "Server/Network/AsioServer.h"
+#include "Server/Network/StandaloneAsioServer.h"
 #include "TestSupport.h"
 
 #include <algorithm>
@@ -114,7 +114,7 @@ void asynchronous_transport_invariants()
     tcpCore->Start();
 
     LocalTransport local(localCore);
-    AsioServer server(tcpCore, "127.0.0.1", 0);
+    StandaloneAsioServer server(tcpCore, "127.0.0.1", 0);
     TcpClientTransport tcp("127.0.0.1", server.Port());
 
     const auto a = exercise(local), b = exercise(tcp);

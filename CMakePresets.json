@@ -29,8 +29,8 @@
     {
       "name": "windows-release",
       "inherits": "release-base",
-      "displayName": "Windows Release (Asio IOCP)",
-      "description": "Build and test MoongTangE with the available Visual Studio generator and Asio's IOCP backend.",
+      "displayName": "Windows Release (Standalone Asio / IOCP)",
+      "description": "Build and test the preserved Standalone Asio variant on Windows IOCP.",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -38,14 +38,14 @@
       },
       "binaryDir": "${sourceDir}/build/windows-release",
       "cacheVariables": {
-        "MOONGTANGE_ASIO_BACKEND": "IOCP"
+        "MOONGTANGE_STANDALONE_ASIO_BACKEND": "IOCP"
       }
     },
     {
       "name": "linux-release",
       "inherits": "release-base",
-      "displayName": "Linux Release (Asio epoll)",
-      "description": "Build and test MoongTangE with Makefiles and Asio's epoll backend.",
+      "displayName": "Linux Release (Standalone Asio / epoll)",
+      "description": "Build and test the preserved Standalone Asio variant on Linux epoll.",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -55,24 +55,7 @@
       "binaryDir": "${sourceDir}/build/linux-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "MOONGTANGE_ASIO_BACKEND": "EPOLL"
-      }
-    },
-    {
-      "name": "macos-release",
-      "inherits": "release-base",
-      "displayName": "macOS Release (Asio kqueue)",
-      "description": "Build and test MoongTangE with Makefiles and Asio's kqueue backend.",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Darwin"
-      },
-      "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build/macos-release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "MOONGTANGE_ASIO_BACKEND": "KQUEUE"
+        "MOONGTANGE_STANDALONE_ASIO_BACKEND": "EPOLL"
       }
     }
   ],
@@ -96,16 +79,6 @@
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
-      }
-    },
-    {
-      "name": "macos-release",
-      "configurePreset": "macos-release",
-      "jobs": 2,
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Darwin"
       }
     }
   ],
@@ -139,21 +112,6 @@
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
-      }
-    },
-    {
-      "name": "macos-release",
-      "configurePreset": "macos-release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      },
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Darwin"
       }
     }
   ]

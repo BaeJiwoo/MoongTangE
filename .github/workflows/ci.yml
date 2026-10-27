@@ -26,8 +26,6 @@ jobs:
             preset: windows-release
           - os: ubuntu-latest
             preset: linux-release
-          - os: macos-latest
-            preset: macos-release
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
