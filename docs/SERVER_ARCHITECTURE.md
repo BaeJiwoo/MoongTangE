@@ -137,7 +137,9 @@ sequenceDiagram
 
 `Common`과 `ServerCore`는 raylib·운영체제 API에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication`과 outbound 전용 `MatchmakingControlClient`를 제공하고, `TcpTransport`·`ServerOptions` 및 비공개 HTTP 의존성 `MatchmakingHttp`를 연결합니다. ASP.NET `MatchmakingApi`는 CMake 대상과 주소 공간을 공유하지 않는 별도 프로젝트입니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며 네트워크 헤더의 독립 컴파일도 생략합니다.
 
-네트워크 구성의 `MOONGTANGE_NETWORK_BACKEND`는 `AUTO`, `IOCP`, `EPOLL` 중 하나이며 기본 `AUTO`는 Windows에서 직접 구현한 IOCP, Linux에서 직접 구현한 epoll을 선택합니다. 운영체제별 CMake configure/build/test 프리셋과 CI는 각 운영체제의 네이티브 경로를 검사합니다. Windows의 `EPOLL`, Linux의 `IOCP` 및 모든 macOS 구성은 CMake 단계에서 거부합니다. 이전 Standalone Asio 구현은 별도 `61-NETWORKBACKEND` 브랜치 계열에만 보존하며 이 구성의 선택지에는 포함하지 않습니다.
+네트워크 구성의 `MOONGTANGE_NETWORK_BACKEND`는 `AUTO`, `IOCP`, `EPOLL` 중 하나이며 기본 `AUTO`는 Windows에서 직접 구현한 IOCP, Linux에서 직접 구현한 epoll을 선택합니다. 운영체제별 CMake configure/build/test 프리셋과 CI는 각 운영체제의 네이티브 경로를 검사합니다. Windows의 `EPOLL`, Linux의 `IOCP`, `ASIO` 선택 및 모든 macOS 구성은 CMake 단계에서 거부합니다.
+
+`main`에서는 서버·클라이언트의 TCP 전송과 테스트 소켓 모두 Asio 없이 동작합니다. `TcpTransport`는 아래의 네이티브 소스만 빌드하며 `cmake/Dependencies.cmake`에는 Asio 다운로드·연결 대상이 없습니다. 이전 구현은 Git 이력과 별도 보존 브랜치에 있습니다. 과거 빌드 폴더의 Asio 다운로드 캐시는 현재 대상에 포함되지 않으며, 새 빌드 폴더로 구성하면 의존성 구성을 분리해서 확인할 수 있습니다.
 
 ## 명명과 헤더·구현 분리
 
