@@ -2,7 +2,7 @@
 
 > 서비스 이름 갱신 (2026-10-17): 서비스·CMake 프로젝트·게임 창·화면 제목과 모든 C++ 코드의 최상위 네임스페이스는 `MoongTangE`로 통일합니다. Protobuf 패키지는 `MoongTangE.proto`, 빌드 옵션·매크로·환경변수는 `MOONGTANGE_`, CMake 내부 도우미는 `moongtange_`를 사용합니다. Client·Common·Network·Server·Tests와 CI·검사 도구·문서에 모두 적용합니다. GitHub 저장소는 `BaeJiwoo/MoongTangE`입니다.
 
-> 플랫폼·네트워크 지시 갱신 (2026-10-27, Issue #67): 지원 운영체제는 Windows와 Linux로 한정하고 macOS는 개발·빌드·CI 대상에서 제외합니다. 현재 브랜치 계열은 CMake의 `MOONGTANGE_NETWORK_BACKEND=AUTO|IOCP|EPOLL`만 제공하며, 기본 `AUTO`는 Windows의 직접 구현 IOCP 또는 Linux의 직접 구현 epoll을 사용합니다. 이전 Standalone Asio 구현은 별도 `61-NETWORKBACKEND` 브랜치 계열에 보존합니다. 아래 최초 지시서의 macOS 지원 및 네이티브 IOCP/epoll 구현 금지 문구는 원문 기록으로만 유지하며 이 갱신이 우선합니다.
+> 플랫폼·네트워크 지시 갱신 (2026-10-28, Issues #67, #73): 지원 운영체제는 Windows와 Linux입니다. `main`은 직접 구현한 IOCP/epoll만 사용하며 Asio 구현·의존성·테스트 소켓을 포함하지 않습니다. 아래 기술 스택과 개발 지침도 이 구성에 맞춥니다. 이전 Asio 구현과 지침은 Git 이력 및 별도 보존 브랜치에서 확인할 수 있습니다.
 
 > 서버 코드 정리 규칙 (2026-10-17, Issue #29): 서버와 공유 TCP 채널의 모호한 구현체 이름은 역할을 나타내는 이름으로 바꿉니다. 멤버 변수는 `m_`, 고정 상수·열거 값은 `UPPER_SNAKE_CASE`를 사용합니다. 런타임 지역 변수·매개변수는 의미 있는 lowerCamelCase를 사용합니다. `.h`에는 선언을, 대응하는 `.cpp`에는 비템플릿 함수 구현을 둡니다. 상수 정의·멤버 기본값·default/delete 선언은 헤더에 유지합니다. 공유 시뮬레이션·프로토콜 상수 변경은 모든 호출부에 반영합니다. 서버 아키텍처에는 파일별 함수 설명을 `<details><summary>` 토글로 제공합니다.
 
@@ -17,7 +17,7 @@
 ### 최종 목표
 
 - C++20 기반 3D 물리 시뮬레이션 프로젝트 구현
-- Windows, Linux, macOS에서 빌드 가능한 구조
+- Windows와 Linux에서 빌드 가능한 구조
 - Client / Common / Server 모노레포 구성
 - Common에 자체 구현 물리 엔진 배치
 - 싱글플레이에서 내부 서버(Embedded Server) 실행
@@ -75,22 +75,23 @@ GitHub 저장소 생성에는 `gh repo create`를 사용하세요.
 | --- | --- |
 | Language | C++20 |
 | Build System | CMake |
-| Networking | Standalone Asio |
+| Networking | TCP, Windows IOCP / Linux epoll 직접 구현 |
 | Rendering | raylib |
 | Testing | CTest 기반 자동 테스트 |
 | CI | GitHub Actions |
 | Version Control | Git / GitHub CLI |
 
-의존성은 검증된 안정 릴리스에 고정하세요. 초기 기준으로 Standalone Asio 1.38.2 및 raylib 6.0을 검토하고, 실제 적용 가능한 태그와 빌드 방식을 확인하세요.
+외부 의존성은 검증된 안정 릴리스의 커밋과 SHA-256으로 고정하고 [THIRD_PARTY.md](THIRD_PARTY.md)에 버전과 라이선스를 기록하세요. 네이티브 TCP 구현에는 외부 네트워크 이벤트 라이브러리를 추가하지 않습니다.
 
 외부 라이브러리를 사용해도 되지만 물리 계산에는 외부 물리 엔진을 사용하면 안 됩니다.
 
 다음 원칙을 지키세요.
 
-- Windows 전용 IOCP를 직접 구현하지 않습니다.
-- Linux 전용 epoll API를 직접 사용하지 않습니다.
-- 시스템별 소켓 API 대신 Asio를 이용합니다.
-- 플랫폼별 구현은 외부 라이브러리와 빌드 설정 안에 격리합니다.
+- Windows에서는 직접 구현한 IOCP를 사용합니다.
+- Linux에서는 직접 구현한 epoll을 사용합니다.
+- CMake의 `MOONGTANGE_NETWORK_BACKEND=AUTO|IOCP|EPOLL`로 선택하며 `AUTO`는 대상 운영체제의 네이티브 구현을 선택합니다.
+- Asio 구현·의존성·빌드 선택지·테스트 소켓은 `main`에 추가하지 않습니다. 운영체제와 맞지 않는 백엔드 및 macOS 구성은 CMake 단계에서 거부합니다.
+- 플랫폼별 소켓 구현은 `Network/Native`에 격리합니다. 테스트의 직접 소켓 접근은 `Tests/TcpTestSocket.h/.cpp`에서 처리합니다.
 - 코어 코드가 특정 운영체제에 의존하지 않도록 설계합니다.
 - 서버의 물리 시뮬레이션에는 렌더링 의존성을 추가하지 않습니다.
 - 필수 외부 의존성과 라이선스를 문서화합니다.
@@ -127,15 +128,25 @@ MoongTangE/
 │   │   ├── ServerHost.h
 │   │   └── TickScheduler.h
 │   ├── Network/
-│   │   └── AsioServer.h
+│   │   ├── NetworkServer.h
+│   │   ├── NativeServer.h / NativeServer.cpp
+│   │   └── NativeServerNetworkRuntime.h / NativeServerNetworkRuntime.cpp
 │   └── main.cpp
+├── Network/
+│   ├── Native/
+│   │   ├── NativeEventLoop.h
+│   │   ├── NativeEventLoopIocp.cpp
+│   │   ├── NativeEventLoopEpoll.cpp
+│   │   └── NativeTcpChannel.h / NativeTcpChannel.cpp
+│   └── Protocol/
 ├── Client/
 │   ├── main.cpp
 │   ├── Rendering/
 │   ├── Input/
 │   └── Transport/
 │       ├── LocalTransport.h
-│       └── TcpClientTransport.h
+│       ├── TcpClientTransport.h
+│       └── NativeTcpClientTransport.cpp
 └── Tests/
 ```
 
@@ -157,7 +168,7 @@ Common은 순수 C++ 라이브러리입니다.
 - InputCommand와 WorldSnapshot
 - 전송 계층 인터페이스
 
-Common은 raylib이나 Asio에 의존하지 않아야 합니다.
+Common은 렌더링·네트워크 라이브러리 및 운영체제 API에 의존하지 않아야 합니다.
 
 ### Server
 
@@ -202,7 +213,7 @@ Client가 서버 권위 물리 상태를 임의로 수정해서는 안 됩니다
 ### 멀티플레이
 
 1. DedicatedServer가 별도 프로세스로 실행됩니다.
-2. Asio 기반 TCP 서버를 시작합니다.
+2. `NetworkServer`가 가리키는 `NativeServer`를 시작합니다. Windows는 IOCP, Linux는 epoll 이벤트 루프를 사용합니다.
 3. Client가 TCP로 연결합니다.
 4. Client가 입력 명령을 전송합니다.
 5. 서버가 입력을 검증하고 GameWorld에 적용합니다.
@@ -303,7 +314,7 @@ C++ 구조체 메모리를 그대로 네트워크에 전송하지 마세요. 명
 | 5 | ServerCore 및 Fixed Tick 구현 | TICK |
 | 6 | Transport 인터페이스와 LocalTransport 구현 | LOCAL |
 | 7 | raylib 클라이언트 및 Embedded Server 구현 | CLIENT |
-| 8 | Standalone Asio 네트워크 및 프로토콜 구현 | NET |
+| 8 | 네이티브 IOCP/epoll TCP 네트워크 및 프로토콜 구현 | NET |
 | 9 | DedicatedServer 및 원격 Client 연결 | MULTI |
 | 10 | 통합 테스트, CI 및 실행 문서 완성 | QA |
 
@@ -453,9 +464,10 @@ Stacked PR은 각 PR이 해당 이슈의 변경 사항만 보여주도록 구성
 
 GitHub Actions에서 다음 빌드 매트릭스를 구성하세요.
 
-- Windows / MSVC
-- Linux / GCC
-- macOS / Clang
+- Windows / MSVC / IOCP
+- Linux / GCC / epoll
+
+macOS는 지원하지 않으며 CMake 구성 단계에서 거부합니다. Asio 구성은 이 빌드 매트릭스에 포함하지 않습니다.
 
 최소한 Common, ServerCore, DedicatedServer 및 자동 테스트를 모든 대상 플랫폼에서 검증하세요.
 

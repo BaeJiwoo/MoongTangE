@@ -4,6 +4,7 @@
 
 - Follow `CROSS_PLATFORM_3D_PHYSICS_GAME.md` and preserve existing user changes.
 - C++20; Common must have no raylib, Asio, or operating system dependencies.
+- Main uses only project-owned native TCP networking: IOCP on Windows and epoll on Linux. Keep Asio implementations, dependencies, presets and test sockets out of main; macOS is unsupported. Platform APIs stay in Network/Native and platform-specific test helpers.
 - Physics is implemented here; do not add an external physics engine.
 - Only the server tick thread mutates GameWorld. Other threads submit bounded commands.
 - Use actual GitHub issue numbers in `<number>-<INITIAL>` branch names.

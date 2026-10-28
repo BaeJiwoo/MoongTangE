@@ -41,7 +41,9 @@ CMake 3.25 이상, C++20 컴파일러와 Git이 필요합니다. 분리형 매�
 
 기존 빌드 폴더도 아래의 현재 옵션 이름으로 다시 구성하세요. 전체 빌드는 `MOONGTANGE_BUILD_CLIENT=ON`, `MOONGTANGE_BUILD_NETWORK=ON`이 기본값이고, 코어 전용 구성은 두 옵션을 명시적으로 `OFF`로 지정합니다. 네트워크 구현은 `MOONGTANGE_NETWORK_BACKEND=AUTO|IOCP|EPOLL`로 선택합니다. `AUTO`는 Windows에서 직접 구현한 IOCP, Linux에서 직접 구현한 epoll을 선택합니다. Windows의 `EPOLL`, Linux의 `IOCP`, 모든 macOS 구성은 CMake 단계에서 거부합니다.
 
-이 브랜치 계열에는 네이티브 구현만 포함합니다. 이전 Standalone Asio 구현은 별도의 `61-NETWORKBACKEND` 브랜치 계열에서 보존하며, 이 빌드의 선택 가능한 백엔드로 섞지 않습니다.
+`main`의 서버·클라이언트·테스트는 네이티브 TCP 구현을 사용하며 Asio 소스나 의존성을 포함하지 않습니다. Asio 제거는 [Issue #67](https://github.com/BaeJiwoo/MoongTangE/issues/67)과 [PR #69](https://github.com/BaeJiwoo/MoongTangE/pull/69)에 기록되어 있습니다. 이전 Standalone Asio 구현은 Git 이력과 별도 보존 브랜치에 남아 있으며 `main`의 선택 가능한 백엔드에는 포함하지 않습니다.
+
+Asio 파일이 보이면 `git branch --show-current`로 현재 브랜치를 확인하세요. 이전 브랜치의 소스나 기존 `build/_deps/asio-*` 다운로드 캐시는 현재 `main`의 빌드 의존성을 뜻하지 않습니다. 최신 `main` 기반 소스를 새 빌드 폴더에 구성하면 과거 캐시와 구분할 수 있습니다. 예: `cmake -S . -B build-native -DMOONGTANGE_NETWORK_BACKEND=AUTO`. 이 구성은 Asio를 다운로드하거나 연결하지 않습니다.
 
 네트워크 구성에서는 고정된 Protobuf와 Abseil 소스, 동일 릴리스의 `protoc`도 빌드합니다. 첫 전체 빌드는 이 의존성 컴파일 때문에 더 오래 걸립니다. 별도 Protobuf 설치는 필요하지 않으며 `.proto`로 생성한 파일은 빌드 폴더에만 저장됩니다.
 
