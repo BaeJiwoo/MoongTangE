@@ -442,12 +442,59 @@ TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + 
 
 API 계약·예제 실행은 [MATCHMAKING_API.md](MATCHMAKING_API.md)에 정리합니다. ASP.NET Core `MatchmakingApi`와 C++ `DedicatedServer`는 서로 독립적인 프로세스이며 다른 호스트에서 실행할 수 있습니다. C++ 프로세스는 HTTP를 수신하지 않고 별도 제어 스레드에서 API로 heartbeat를 보냅니다. 제어 스레드는 상태를 복사하거나 제한된 코어 명령 큐를 사용할 뿐 `GameWorld`에 접근하지 않습니다. 예약 정원 판단·소비·취소·만료는 Tick에서만 실행합니다.
 
-<details><summary>MatchmakingApi/Program.cs · MatchmakingStore.cs — 독립 ASP.NET API</summary>
+<details><summary>MatchmakingApi/Program.cs — MVC 서비스와 요청 파이프라인</summary>
 
-- `Program`: 공개 키와 제어 키를 분리해 인증하고 공개 상태·예약 경로와 내부 등록·결과 경로를 구성합니다.
-- `MatchmakingStore`: 최근 heartbeat 서버를 후보로 고르고 멱등 예약과 C++로 전달할 reserve/cancel 명령을 보관합니다.
+공개/제어 키를 시작 시 검증하고 `ApiKeyAuthentication`과 `MatchmakingStore`를 singleton으로 등록합니다. `AddControllers()` / `MapControllers()`로 MVC 컨트롤러를 구성하고 1 KiB 본문 제한과 응답의 `Cache-Control: no-store`를 유지합니다. 기존 제어 계약을 보존하기 위해 ProblemDetails 자동 변환과 HTML 폼 값 공급자를 끕니다. JSON/TSV API이므로 Razor View는 필요하지 않습니다.
+
+</details>
+
+<details><summary>MatchmakingApi/Controllers/HealthController.cs — 상태 확인</summary>
+
+`Get()`은 인증 없이 `GET /health`에 `{"status":"ok"}` JSON을 반환합니다.
+
+</details>
+
+<details><summary>MatchmakingApi/Controllers/MatchmakingController.cs — 공개 매칭</summary>
+
+- `GetStatus()`는 공개 키 인증 후 최근 heartbeat 서버 상태를 반환합니다.
+- `GetReservation()` / `Reserve()` / `Cancel()`은 동일한 `/matchmaking/reservations` 경로의 GET/PUT/DELETE 동작입니다.
+- `HandleReservation()`은 입장권 검증, 저장소 호출, 기존 오류와 예약 상태별 HTTP 코드·JSON 응답을 담당합니다.
+
+</details>
+
+<details><summary>MatchmakingApi/Controllers/GameServersController.cs — 게임 서버 제어</summary>
+
+- `Heartbeat()`는 제어 키 인증 후 서버 ID와 헤더를 검증하고 저장소에서 받은 명령을 UTF-8 TSV로 반환합니다.
+- `ReportCommand()` / `ReportReservation()`은 TSV 보고를 검증해 저장소에 전달하고 성공 시 빈 204, 잘못된 보고 시 빈 400을 반환합니다.
+- 컨트롤러는 C++ GameWorld를 소유하거나 변경하지 않습니다.
+
+</details>
+
+<details><summary>MatchmakingApi/Security/ApiKeyAuthentication.cs — API 키 설정과 비교</summary>
+
+`RequiredAuthorization()`은 기존 환경변수의 32~128자 ASCII 키를 검증합니다. `Authorized()`는 `ApiKeyScope`에 맞는 공개/제어 키와 Authorization 헤더를 고정 시간 비교합니다. 비밀값을 응답이나 로그에 기록하지 않습니다.
+
+</details>
+
+<details><summary>MatchmakingApi/Security/ApiKeyAuthorizationAttribute.cs — MVC 인증 필터</summary>
+
+`ApiKeyAuthorizationAttribute`는 컨트롤러의 키 용도를 `ApiKeyAuthorizationFilter`에 전달합니다. `OnAuthorization()`은 모델 바인딩과 액션 실행 전에 인증하고 실패 시 기존 `401 {"error":"unauthorized"}` JSON으로 중단합니다.
+
+</details>
+
+<details><summary>MatchmakingApi/ControlRequestReader.cs — 제어 요청 검증</summary>
+
+`ValidTicket()` / `ValidServerId()`는 기존 문자·길이 제한을 확인합니다. `TryHeartbeat()`는 주소·포트·프로토콜·정원 헤더를 읽으며, `ReadReport()`는 상태·방 ID·남은 시간으로 구성된 원시 TSV를 검증합니다. HTTP 응답과 저장소 변경은 컨트롤러가 담당합니다.
+
+</details>
+
+<details><summary>MatchmakingApi/Models/MatchmakingModels.cs · MatchmakingStore.cs — 모델과 메모리 저장소</summary>
+
+- 모델 파일은 `GameServerHeartbeat`, `ControlCommand`, `ReservationRecord`, `GameServerRecord`를 정의합니다.
+- `Heartbeat()` / `Status()`는 서버 등록과 최근 서버 조회를, `Reserve()` / `Lookup()` / `Cancel()`은 멱등 예약·조회·취소 명령을 담당합니다.
+- `ReportCommand()` / `ReportReservation()`은 C++ Tick 결과를 반영하고, `PublicReservation()`은 공개 응답 데이터를 만듭니다.
 - 공개 예약은 처음에 pending이며 C++ Tick의 결과 보고를 받은 뒤에만 reserved가 됩니다. heartbeat가 3초 이상 끊긴 서버는 후보와 상태 목록에서 제외합니다.
-- 저장소는 현재 프로세스 메모리 구현입니다. API 재시작 시 서버가 다음 heartbeat로 재등록하지만 기존 예약 기록은 복구하지 않습니다.
+- 저장소의 잠금과 크기 한도는 유지합니다. API 재시작 시 서버는 다음 heartbeat로 재등록하지만 기존 예약 기록은 복구하지 않습니다.
 
 </details>
 

@@ -1,6 +1,6 @@
 # MoongTangE
 
-매칭 계층은 ASP.NET Core API와 C++ 게임 소켓 서버를 서로 다른 프로세스·호스트로 배포할 수 있게 분리되어 있습니다. [API 계약과 실행 방법](docs/MATCHMAKING_API.md), [연동 예제](Tools/matchmaking_client.py)를 참고하세요. C++ 서버는 HTTP를 수신하지 않고 외부 API로 등록·heartbeat를 보내며, 최종 예약과 일회용 입장권 소비는 서버 Tick이 처리합니다.
+매칭 계층은 컨트롤러 기반 ASP.NET Core MVC API와 C++ 게임 소켓 서버를 서로 다른 프로세스·호스트로 배포할 수 있게 분리되어 있습니다. [API 계약과 실행 방법](docs/MATCHMAKING_API.md), [연동 예제](Tools/matchmaking_client.py)를 참고하세요. C++ 서버는 HTTP를 수신하지 않고 외부 API로 등록·heartbeat를 보내며, 최종 예약과 일회용 입장권 소비는 서버 Tick이 처리합니다.
 
 MoongTangE는 C++20 기반의 Windows/Linux 3D 물리 시뮬레이션 서비스입니다. macOS는 지원 대상에서 제외합니다.
 
@@ -27,7 +27,7 @@ C++ 코드는 `MoongTangE` 네임스페이스를 사용하며, Protobuf 패키�
 | 영역 | 기술 |
 | --- | --- |
 | 언어 | C++20 |
-| 매칭 API | ASP.NET Core 8 |
+| 매칭 API | ASP.NET Core 8 MVC (컨트롤러 기반 Web API) |
 | 빌드 | CMake |
 | 네트워크 | TCP, Windows IOCP / Linux epoll 네이티브 구현 |
 | 직렬화 | Protobuf 36.2 (C++ 런타임 7.36.2), 프로토콜 v8 |
