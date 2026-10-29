@@ -47,6 +47,11 @@ class SocketRuntime
     {
         WSACleanup();
     }
+
+    SocketRuntime(const SocketRuntime&) = delete;
+    SocketRuntime& operator=(const SocketRuntime&) = delete;
+    SocketRuntime(SocketRuntime&&) = delete;
+    SocketRuntime& operator=(SocketRuntime&&) = delete;
 };
 
 void ensure_socket_runtime()
@@ -106,16 +111,17 @@ std::size_t socket_chunk(std::size_t remaining)
 
 } // namespace
 
-struct TcpTestSocket::Impl
+// Owns one connected OS socket and closes it when the test socket releases this state.
+struct TcpTestSocket::ConnectedSocketState
 {
-    explicit Impl(SocketHandle socket) : m_socket(socket) {}
+    explicit ConnectedSocketState(SocketHandle socket) : m_socket(socket) {}
 
-    Impl(const Impl&) = delete;
-    Impl& operator=(const Impl&) = delete;
-    Impl(Impl&&) = delete;
-    Impl& operator=(Impl&&) = delete;
+    ConnectedSocketState(const ConnectedSocketState&) = delete;
+    ConnectedSocketState& operator=(const ConnectedSocketState&) = delete;
+    ConnectedSocketState(ConnectedSocketState&&) = delete;
+    ConnectedSocketState& operator=(ConnectedSocketState&&) = delete;
 
-    ~Impl()
+    ~ConnectedSocketState()
     {
         close_socket(m_socket);
     }
@@ -123,15 +129,16 @@ struct TcpTestSocket::Impl
     SocketHandle m_socket = INVALID_SOCKET_HANDLE;
 };
 
-struct TcpTestListener::Impl
+// Owns the listening OS socket and its bound port, hidden from the public test helper.
+struct TcpTestListener::ListenerState
 {
-    Impl() = default;
-    Impl(const Impl&) = delete;
-    Impl& operator=(const Impl&) = delete;
-    Impl(Impl&&) = delete;
-    Impl& operator=(Impl&&) = delete;
+    ListenerState() = default;
+    ListenerState(const ListenerState&) = delete;
+    ListenerState& operator=(const ListenerState&) = delete;
+    ListenerState(ListenerState&&) = delete;
+    ListenerState& operator=(ListenerState&&) = delete;
 
-    ~Impl()
+    ~ListenerState()
     {
         close_socket(m_socket);
     }
@@ -140,8 +147,8 @@ struct TcpTestListener::Impl
     std::uint16_t m_port = 0;
 };
 
-TcpTestSocket::TcpTestSocket(std::unique_ptr<Impl> implementation)
-    : m_impl(std::move(implementation))
+TcpTestSocket::TcpTestSocket(std::unique_ptr<ConnectedSocketState> socketState)
+    : m_socketState(std::move(socketState))
 {
 }
 
@@ -167,7 +174,8 @@ TcpTestSocket TcpTestSocket::Connect(std::string_view address, std::uint16_t por
         close_socket(socket);
         throw std::runtime_error("connect failed with socket error " + std::to_string(error));
     }
-    return TcpTestSocket(std::make_unique<Impl>(socket));
+    // Allocate the implementation state and transfer ownership of the connected socket.
+    return TcpTestSocket(std::make_unique<ConnectedSocketState>(socket));
 }
 
 void TcpTestSocket::ReadExact(std::span<std::uint8_t> destination)
@@ -177,10 +185,11 @@ void TcpTestSocket::ReadExact(std::span<std::uint8_t> destination)
         const auto remaining = socket_chunk(destination.size() - offset);
 #if defined(_WIN32)
         const auto received =
-            recv(m_impl->m_socket, reinterpret_cast<char*>(destination.data() + offset),
+            recv(m_socketState->m_socket, reinterpret_cast<char*>(destination.data() + offset),
                  static_cast<int>(remaining), 0);
 #else
-        const auto received = recv(m_impl->m_socket, destination.data() + offset, remaining, 0);
+        const auto received =
+            recv(m_socketState->m_socket, destination.data() + offset, remaining, 0);
 #endif
         if (received <= 0) {
             throw_socket_error("recv");
@@ -196,10 +205,10 @@ void TcpTestSocket::Write(std::span<const std::uint8_t> source)
         const auto remaining = socket_chunk(source.size() - offset);
 #if defined(_WIN32)
         const auto sent =
-            send(m_impl->m_socket, reinterpret_cast<const char*>(source.data() + offset),
+            send(m_socketState->m_socket, reinterpret_cast<const char*>(source.data() + offset),
                  static_cast<int>(remaining), 0);
 #else
-        const auto sent = send(m_impl->m_socket, source.data() + offset, remaining, 0);
+        const auto sent = send(m_socketState->m_socket, source.data() + offset, remaining, 0);
 #endif
         if (sent <= 0) {
             throw_socket_error("send");
@@ -217,12 +226,12 @@ bool TcpTestSocket::Closed() const
 {
     fd_set readable;
     FD_ZERO(&readable);
-    FD_SET(m_impl->m_socket, &readable);
+    FD_SET(m_socketState->m_socket, &readable);
     timeval timeout{};
 #if defined(_WIN32)
     const auto ready = select(0, &readable, nullptr, nullptr, &timeout);
 #else
-    const auto ready = select(m_impl->m_socket + 1, &readable, nullptr, nullptr, &timeout);
+    const auto ready = select(m_socketState->m_socket + 1, &readable, nullptr, nullptr, &timeout);
 #endif
     if (ready < 0) {
         throw_socket_error("select");
@@ -232,24 +241,25 @@ bool TcpTestSocket::Closed() const
     }
 
     std::array<char, 1> data{};
-    const auto received = recv(m_impl->m_socket, data.data(), 1, MSG_PEEK);
+    const auto received = recv(m_socketState->m_socket, data.data(), 1, MSG_PEEK);
     return received <= 0;
 }
 
-TcpTestListener::TcpTestListener() : m_impl(std::make_unique<Impl>())
+// Allocate the listener implementation state before opening its OS socket.
+TcpTestListener::TcpTestListener() : m_listenerState(std::make_unique<ListenerState>())
 {
     ensure_socket_runtime();
-    m_impl->m_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (m_impl->m_socket == INVALID_SOCKET_HANDLE) {
+    m_listenerState->m_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (m_listenerState->m_socket == INVALID_SOCKET_HANDLE) {
         throw_socket_error("socket");
     }
 
     const auto endpoint = loopback_endpoint(0);
-    if (bind(m_impl->m_socket, reinterpret_cast<const sockaddr*>(&endpoint), sizeof(endpoint)) !=
-        0) {
+    if (bind(m_listenerState->m_socket, reinterpret_cast<const sockaddr*>(&endpoint),
+             sizeof(endpoint)) != 0) {
         throw_socket_error("bind");
     }
-    if (listen(m_impl->m_socket, SOMAXCONN) != 0) {
+    if (listen(m_listenerState->m_socket, SOMAXCONN) != 0) {
         throw_socket_error("listen");
     }
 
@@ -259,10 +269,10 @@ TcpTestListener::TcpTestListener() : m_impl(std::make_unique<Impl>())
 #else
     socklen_t size = sizeof(bound);
 #endif
-    if (getsockname(m_impl->m_socket, reinterpret_cast<sockaddr*>(&bound), &size) != 0) {
+    if (getsockname(m_listenerState->m_socket, reinterpret_cast<sockaddr*>(&bound), &size) != 0) {
         throw_socket_error("getsockname");
     }
-    m_impl->m_port = ntohs(bound.sin_port);
+    m_listenerState->m_port = ntohs(bound.sin_port);
 }
 
 TcpTestListener::~TcpTestListener() = default;
@@ -271,21 +281,22 @@ TcpTestListener& TcpTestListener::operator=(TcpTestListener&&) noexcept = defaul
 
 std::uint16_t TcpTestListener::Port() const
 {
-    return m_impl->m_port;
+    return m_listenerState->m_port;
 }
 
 TcpTestSocket TcpTestListener::Accept() const
 {
-    const auto socket = accept(m_impl->m_socket, nullptr, nullptr);
+    const auto socket = accept(m_listenerState->m_socket, nullptr, nullptr);
     if (socket == INVALID_SOCKET_HANDLE) {
         throw_socket_error("accept");
     }
-    return TcpTestSocket(std::make_unique<TcpTestSocket::Impl>(socket));
+    // Allocate the implementation state and transfer ownership of the accepted socket.
+    return TcpTestSocket(std::make_unique<TcpTestSocket::ConnectedSocketState>(socket));
 }
 
 void TcpTestListener::Close()
 {
-    close_socket(std::exchange(m_impl->m_socket, INVALID_SOCKET_HANDLE));
+    close_socket(std::exchange(m_listenerState->m_socket, INVALID_SOCKET_HANDLE));
 }
 
 } // namespace MoongTangE::test

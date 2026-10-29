@@ -300,8 +300,11 @@ IOCP 또는 epoll 구성이면 `NetworkServer`를 `NativeServer`로 별칭 지�
 
 [선언](../Network/Native/NativeEventLoop.h) · [IOCP 구현](../Network/Native/NativeEventLoopIocp.cpp) · [epoll 구현](../Network/Native/NativeEventLoopEpoll.cpp)
 
+`NativeEventLoop`의 실제 운영체제별 구현은 비공개 중첩 클래스 `PlatformEventLoop`에 있습니다. 헤더에는 전방 선언과 소유 포인터 `m_platformLoop`만 두고, 구현 클래스는 선택된 `.cpp`에서 정의합니다. 이전의 `Impl` / `m_impl` 이름을 역할이 드러나도록 변경한 것이며, 구현을 포인터 뒤에 숨기는 Pimpl 구조는 유지합니다.
+
 | 함수 | 설명 |
 | --- | --- |
+| `NativeEventLoop()` / `~NativeEventLoop()` | 선택된 `.cpp`의 생성자 초기화 목록에서 `std::make_unique<PlatformEventLoop>()`로 구현 객체를 할당합니다. `m_platformLoop`가 단독 소유하며 이벤트 루프 소멸 시 구현과 운영체제 자원을 해제합니다. |
 | `Listen()` / `Connect()` | IPv4 TCP 수신 소켓을 열거나 비동기 연결을 시작하고 안정적인 `ConnectionId`를 부여합니다. |
 | `Read()` / `Write()` | 요청한 버퍼 전체가 처리될 때까지 부분 송수신을 이어간 뒤 오류 문자열과 함께 한 번 완료합니다. 연결마다 읽기·쓰기 작업은 각각 하나로 제한합니다. |
 | `Close()` / `Open()` | 소켓과 미완료 작업을 취소하고 연결 상태를 조회합니다. 반복 종료는 무시합니다. |
@@ -320,6 +323,8 @@ Linux 구현은 non-blocking socket, `epoll`, `eventfd`를 사용합니다. Wind
 
 `NativeServer`는 `NativeServerNetworkRuntime`을 단독 소유하고 생성자에서 주소·포트를 전달합니다. 소멸자는 runtime 정리를 수행하며 `Port()`는 IOCP 또는 epoll listener가 실제 바인딩한 포트를 반환합니다. 상위 코드는 `NetworkServer` 별칭을 통해 이 공개 진입점을 사용합니다.
 
+생성 순서는 `NativeServer()` → `std::make_unique<NativeServerNetworkRuntime>()` → runtime의 값 멤버 `m_eventLoop` 생성 → `NativeEventLoop()`의 `std::make_unique<PlatformEventLoop>()`입니다. 운영체제 구현 객체는 runtime 생성자 본문의 `Listen()`과 네트워크 스레드 시작 전에 준비됩니다.
+
 </details>
 
 <details>
@@ -337,6 +342,15 @@ Linux 구현은 non-blocking socket, `epoll`, `eventfd`를 사용합니다. Wind
 [선언](../Network/Native/NativeTcpChannel.h) · [구현](../Network/Native/NativeTcpChannel.cpp)
 
 `NativeTcpChannel`은 `NativeEventLoop::ConnectionId`를 소유하고 `Start`, `Send`, `SendAndClose`, `Close` 프레이밍 계약을 제공합니다. 4바이트 헤더와 본문은 native event loop의 exact read/write로 처리하고, 읽기마다 10초 타이머를 갱신하며, 송신 큐는 32프레임으로 제한합니다. 콜백과 송신 버퍼는 비동기 완료까지 공유 소유권을 유지합니다.
+
+</details>
+
+<details>
+<summary>Tests/TcpTestSocket.h · TcpTestSocket.cpp — 테스트 소켓 구현 상태와 소유권</summary>
+
+[선언](../Tests/TcpTestSocket.h) · [구현](../Tests/TcpTestSocket.cpp)
+
+운영체제 소켓 타입은 `.cpp`의 `ConnectedSocketState`와 `ListenerState`에만 둡니다. `TcpTestSocket::Connect()`와 `TcpTestListener::Accept()`가 `std::make_unique<ConnectedSocketState>()`로 연결 상태를 할당하고, `TcpTestSocket`의 `m_socketState`로 소유권을 전달합니다. `TcpTestListener()`는 초기화 목록에서 `std::make_unique<ListenerState>()`를 호출해 `m_listenerState`를 준비한 뒤 수신 대기 소켓을 엽니다. 두 상태 객체는 소멸 시 소켓을 닫으며, 테스트 헬퍼를 이동하면 `unique_ptr`의 소유권도 함께 이동합니다.
 
 </details>
 

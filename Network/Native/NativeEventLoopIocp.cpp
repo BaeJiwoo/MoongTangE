@@ -53,10 +53,11 @@ std::string windows_error(DWORD error)
 
 } // namespace
 
-class NativeEventLoop::Impl
+// Windows implementation: owns IOCP, sockets, pending I/O, tasks and timers.
+class NativeEventLoop::PlatformEventLoop
 {
   public:
-    Impl()
+    PlatformEventLoop()
     {
         WSADATA data{};
         const int startupError = WSAStartup(MAKEWORD(2, 2), &data);
@@ -72,7 +73,7 @@ class NativeEventLoop::Impl
         }
     }
 
-    ~Impl()
+    ~PlatformEventLoop()
     {
         for (const auto& [connection, state] : m_connections) {
             (void)connection;
@@ -94,10 +95,10 @@ class NativeEventLoop::Impl
         WSACleanup();
     }
 
-    Impl(const Impl&) = delete;
-    Impl& operator=(const Impl&) = delete;
-    Impl(Impl&&) = delete;
-    Impl& operator=(Impl&&) = delete;
+    PlatformEventLoop(const PlatformEventLoop&) = delete;
+    PlatformEventLoop& operator=(const PlatformEventLoop&) = delete;
+    PlatformEventLoop(PlatformEventLoop&&) = delete;
+    PlatformEventLoop& operator=(PlatformEventLoop&&) = delete;
 
     std::uint16_t Listen(const std::string& address, std::uint16_t port, AcceptHandler onAccept)
     {
@@ -662,67 +663,68 @@ class NativeEventLoop::Impl
     std::atomic<bool> m_stopping{false};
 };
 
-NativeEventLoop::NativeEventLoop() : m_impl(std::make_unique<Impl>()) {}
+// Allocate the Windows implementation when the public event-loop object is constructed.
+NativeEventLoop::NativeEventLoop() : m_platformLoop(std::make_unique<PlatformEventLoop>()) {}
 
 NativeEventLoop::~NativeEventLoop() = default;
 
 std::uint16_t NativeEventLoop::Listen(const std::string& address, std::uint16_t port,
                                       AcceptHandler onAccept)
 {
-    return m_impl->Listen(address, port, std::move(onAccept));
+    return m_platformLoop->Listen(address, port, std::move(onAccept));
 }
 
 void NativeEventLoop::Connect(const std::string& host, std::uint16_t port, ConnectHandler onConnect)
 {
-    m_impl->Connect(host, port, std::move(onConnect));
+    m_platformLoop->Connect(host, port, std::move(onConnect));
 }
 
 void NativeEventLoop::Read(ConnectionId connection, std::span<std::uint8_t> bytes,
                            IoHandler onComplete)
 {
-    m_impl->Read(connection, bytes, std::move(onComplete));
+    m_platformLoop->Read(connection, bytes, std::move(onComplete));
 }
 
 void NativeEventLoop::Write(ConnectionId connection, std::span<const std::uint8_t> bytes,
                             IoHandler onComplete)
 {
-    m_impl->Write(connection, bytes, std::move(onComplete));
+    m_platformLoop->Write(connection, bytes, std::move(onComplete));
 }
 
 void NativeEventLoop::Close(ConnectionId connection)
 {
-    m_impl->Close(connection);
+    m_platformLoop->Close(connection);
 }
 
 bool NativeEventLoop::Open(ConnectionId connection) const
 {
-    return m_impl->Open(connection);
+    return m_platformLoop->Open(connection);
 }
 
 void NativeEventLoop::Post(Task task)
 {
-    m_impl->Post(std::move(task));
+    m_platformLoop->Post(std::move(task));
 }
 
 NativeEventLoop::TimerId NativeEventLoop::Schedule(std::chrono::steady_clock::duration delay,
                                                    Task task)
 {
-    return m_impl->Schedule(delay, std::move(task));
+    return m_platformLoop->Schedule(delay, std::move(task));
 }
 
 void NativeEventLoop::Cancel(TimerId timer)
 {
-    m_impl->Cancel(timer);
+    m_platformLoop->Cancel(timer);
 }
 
 void NativeEventLoop::Run()
 {
-    m_impl->Run();
+    m_platformLoop->Run();
 }
 
 void NativeEventLoop::Stop()
 {
-    m_impl->Stop();
+    m_platformLoop->Stop();
 }
 
 } // namespace MoongTangE
