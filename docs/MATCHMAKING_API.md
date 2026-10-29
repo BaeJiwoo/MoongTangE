@@ -4,10 +4,18 @@
 
 | 프로세스 | 구현 | 수신 연결 | 책임 |
 | --- | --- | --- | --- |
-| 매칭 API | ASP.NET Core 8 (MatchmakingApi) | HTTP | 게임 서버 목록, 공개 예약 API, 제어 명령 보관 |
+| 매칭 API | ASP.NET Core 8 MVC (MatchmakingApi) | HTTP | 게임 서버 목록, 공개 예약 API, 제어 명령 보관 |
 | 게임 서버 | C++ (DedicatedServer) | 게임 TCP | 60Hz Tick, 방·물리, 최종 예약 판단과 입장권 소비 |
 
 C++ 서버에는 HTTP 수신 포트가 없습니다. 1초마다 API에 outbound HTTP heartbeat를 보내고 그 응답에서 예약·취소 명령을 가져옵니다. API는 heartbeat가 3초 동안 끊기면 해당 서버를 배정 후보에서 제외합니다. API가 만든 예약은 C++ Tick이 자리를 확보했다고 보고한 뒤에만 reserved가 됩니다. API 장애 중에도 이미 접속한 게임과 Tick은 계속 동작합니다.
+
+## MVC 구성 — Issue #76
+
+`Program.cs`는 서비스 등록, 1 KiB 본문 제한, no-store 미들웨어와 `MapControllers()`만 구성합니다. `Controllers/HealthController.cs`, `MatchmakingController.cs`, `GameServersController.cs`가 각각 상태 확인, 공개 매칭, 내부 제어 경로를 담당합니다. JSON/TSV API이므로 Razor 화면은 제공하지 않습니다.
+
+`Models/MatchmakingModels.cs`는 heartbeat·예약·명령 자료형, `MatchmakingStore.cs`는 기존 메모리 상태와 명령 큐를 보관합니다. `Security/ApiKeyAuthentication.cs`와 `ApiKeyAuthorizationAttribute.cs`는 공개/제어 키의 고정 시간 비교를 MVC 인증 필터에서 수행합니다. `ControlRequestReader.cs`는 입장권·서버 ID·heartbeat 헤더·TSV 보고를 검증합니다.
+
+기존 URL·HTTP 메서드·상태 코드·JSON/TSV 형식과 환경변수는 유지합니다. MVC의 ProblemDetails 자동 변환과 폼 값 공급자는 사용하지 않으므로 빈 400/503 응답 및 Content-Type과 무관하게 읽는 원시 TSV 계약도 유지합니다. `MatchmakingApiHttpTests`는 실제 HTTP 요청으로 경로, 인증, 잘못된 입력, 1 KiB 제한, 명령/예약 상태 전이를 검사합니다. `MatchmakingApiStoreTests`와 C++까지 연결하는 `MatchmakingApiSmoke`도 계속 실행합니다.
 
 ## 요청 흐름
 

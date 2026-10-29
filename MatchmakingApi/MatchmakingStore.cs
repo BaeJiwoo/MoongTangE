@@ -1,40 +1,9 @@
 using System.Globalization;
+using MoongTangE.MatchmakingApi.Models;
 
 namespace MoongTangE.MatchmakingApi;
 
-internal sealed record GameServerHeartbeat(
-    string Host,
-    ushort Port,
-    uint ProtocolVersion,
-    int Capacity,
-    int Players,
-    int Reserved,
-    int Available,
-    int ReservationSeconds);
-
-internal sealed record ControlCommand(long Id, string Action, string Ticket);
-
-internal sealed class ReservationRecord
-{
-    public required string Ticket { get; init; }
-    public required string ServerId { get; init; }
-    public required DateTimeOffset CreatedAt { get; init; }
-    public DateTimeOffset ChangedAt { get; set; }
-    public string Status { get; set; } = "pending";
-    public ulong RoomId { get; set; }
-    public long ExpiresInMs { get; set; }
-}
-
-internal sealed class GameServerRecord
-{
-    public required string Id { get; init; }
-    public required GameServerHeartbeat Heartbeat { get; set; }
-    public required DateTimeOffset LastSeen { get; set; }
-    public List<ControlCommand> Commands { get; } = [];
-    public HashSet<long> CompletedCommands { get; } = [];
-}
-
-internal sealed class MatchmakingStore
+public sealed class MatchmakingStore
 {
     private const int MaxServers = 1024;
     private const int MaxReservations = 4096;
@@ -46,7 +15,7 @@ internal sealed class MatchmakingStore
     private readonly Dictionary<string, ReservationRecord> reservations = [];
     private long nextCommandId = 1;
 
-    public IReadOnlyList<ControlCommand>? Heartbeat(
+    internal IReadOnlyList<ControlCommand>? Heartbeat(
         string serverId,
         GameServerHeartbeat heartbeat,
         DateTimeOffset now)
@@ -81,7 +50,7 @@ internal sealed class MatchmakingStore
         }
     }
 
-    public object Status(DateTimeOffset now)
+    internal object Status(DateTimeOffset now)
     {
         lock (sync)
         {
@@ -108,7 +77,7 @@ internal sealed class MatchmakingStore
         }
     }
 
-    public ReservationRecord? Reserve(string ticket, DateTimeOffset now)
+    internal ReservationRecord? Reserve(string ticket, DateTimeOffset now)
     {
         lock (sync)
         {
@@ -147,7 +116,7 @@ internal sealed class MatchmakingStore
         }
     }
 
-    public ReservationRecord? Lookup(string ticket, DateTimeOffset now)
+    internal ReservationRecord? Lookup(string ticket, DateTimeOffset now)
     {
         lock (sync)
         {
@@ -165,7 +134,7 @@ internal sealed class MatchmakingStore
         }
     }
 
-    public ReservationRecord? Cancel(string ticket, DateTimeOffset now)
+    internal ReservationRecord? Cancel(string ticket, DateTimeOffset now)
     {
         lock (sync)
         {
@@ -190,7 +159,7 @@ internal sealed class MatchmakingStore
         }
     }
 
-    public bool ReportCommand(
+    internal bool ReportCommand(
         string serverId,
         long commandId,
         string status,
@@ -220,7 +189,7 @@ internal sealed class MatchmakingStore
         }
     }
 
-    public bool ReportReservation(
+    internal bool ReportReservation(
         string serverId,
         string ticket,
         string status,
@@ -240,7 +209,7 @@ internal sealed class MatchmakingStore
         }
     }
 
-    public object PublicReservation(ReservationRecord reservation)
+    internal object PublicReservation(ReservationRecord reservation)
     {
         lock (sync)
         {
