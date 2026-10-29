@@ -1,6 +1,8 @@
 #include "Client/Rendering/Scene.h"
 
 #include "Client/Rendering/UiLayout.h"
+#include "Common/Physics/CompoundBallCollider.h"
+#include "Common/Physics/PhysicsWorld.h"
 #include "Common/Physics/Terrain.h"
 #include "Common/Protocol/Nickname.h"
 #include "Common/SimulationConfig.h"
@@ -341,14 +343,14 @@ Vector3 sphere_point(int ring, int sector)
 
 void draw_overlay(std::uint64_t tick, std::uint32_t playerId, const char* mode, const char* status)
 {
-    DrawRectangle(14, 14, 510, 158, Color{12, 18, 30, 220});
+    DrawRectangle(14, 14, 550, 182, Color{12, 18, 30, 220});
     DrawText("MoongTangE", 28, 28, 22, RAYWHITE);
     DrawText(TextFormat("%s | Player %u | Tick %llu", mode, playerId,
                         static_cast<unsigned long long>(tick)),
              28, 62, 18, SKYBLUE);
 
     DrawText("WASD push  |  Release to coast  |  Opposite key to brake", 28, 90, 16, LIGHTGRAY);
-    DrawText("ESC menu  |  Server physics 60 Hz", 28, 114, 16, LIGHTGRAY);
+    DrawText("ESC menu  |  F3 physics debug  |  Server physics 60 Hz", 28, 114, 16, LIGHTGRAY);
 
     DrawText(status, 28, 140, 16, LIGHTGRAY);
 
@@ -657,11 +659,57 @@ void SceneRenderer::DrawCollectible(const CollectibleState& collectible) const
                 WHITE);
 }
 
+void SceneRenderer::DrawPhysicsDebug(const WorldSnapshot& state, const PlayerState& player) const
+{
+    CompoundBallCollider collider(simulation::PLAYER_RADIUS);
+    const Quaternion inversePlayerOrientation = player.orientation.Conjugate();
+    for (const auto& collectible : state.collectibles) {
+        if (collectible.attachedPlayerId != player.id) {
+            continue;
+        }
+
+        const Vector3 localPosition =
+            inversePlayerOrientation.Rotate(collectible.position - player.position);
+        const Quaternion localOrientation =
+            (inversePlayerOrientation * collectible.orientation).Normalized();
+        collider.AddCollectible(localPosition, localOrientation, collectible.kind,
+                                simulation::COLLECTIBLE_BASE_RADIUS * collectible.scale);
+    }
+
+    for (const auto& sphere : collider.Spheres()) {
+        const Vector3 center = player.position + player.orientation.Rotate(sphere.center);
+        DrawSphereWires(render_vector(center), static_cast<float>(sphere.radius), 8, 12,
+                        Color{80, 220, 255, 210});
+    }
+
+    RigidBody body;
+    body.position = player.position;
+    body.velocity = player.velocity;
+    body.orientation = player.orientation;
+    body.angularVelocity = player.angularVelocity;
+    const auto contacts = PhysicsWorld::TerrainContacts(body, collider);
+    for (std::size_t index = 0; index < contacts.count; ++index) {
+        const auto& contact = contacts.points[index];
+        if (contact.terrain.penetration < -PhysicsWorld::CONTACT_TOLERANCE) {
+            break;
+        }
+
+        DrawSphere(render_vector(contact.point), 0.035f, Color{255, 70, 70, 255});
+        DrawLine3D(render_vector(contact.point),
+                   render_vector(contact.point + contact.terrain.normal * 0.45),
+                   Color{255, 230, 80, 255});
+    }
+}
+
 MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
                                const char* status, bool gameMenuOpen, bool optionsOpen,
                                const DisplaySettingsState& selectedSettings, bool confirmationOpen,
                                int confirmationSeconds) const
 {
+    if (IsKeyPressed(KEY_F3)) {
+        m_showPhysicsDebug = !m_showPhysicsDebug;
+    }
+
     const auto uiCanvas = make_ui_canvas();
     const auto target = camera_target(state, playerId);
     const Camera3D camera{{target.x + 4, target.y + 3.5f, target.z + 5.5f},
@@ -681,6 +729,9 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
     }
     for (const auto& player : state.players) {
         DrawBall(player, player.id == playerId);
+        if (m_showPhysicsDebug) {
+            DrawPhysicsDebug(state, player);
+        }
     }
     EndMode3D();
 
@@ -690,6 +741,10 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
     }
 
     draw_overlay(state.tick, playerId, mode, status);
+    if (m_showPhysicsDebug) {
+        DrawText("F3 compound colliders | red contacts | yellow normals", 28, 164, 16,
+                 Color{80, 220, 255, 255});
+    }
     const auto gameMenuAction =
         gameMenuOpen ? draw_game_menu(REFERENCE_WINDOW_WIDTH, REFERENCE_WINDOW_HEIGHT, optionsOpen,
                                       selectedSettings, confirmationOpen, confirmationSeconds)

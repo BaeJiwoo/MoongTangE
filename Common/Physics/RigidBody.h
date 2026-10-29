@@ -12,13 +12,14 @@ struct RigidBody
 
     double radius{simulation::PLAYER_RADIUS};
     double mass{simulation::PLAYER_MASS};
+    double rotationalInertia{};
 
     Vector3 angularVelocity{};
     Quaternion orientation{};
 
     double Inertia() const
     {
-        return 0.4 * mass * radius * radius;
+        return rotationalInertia > 0 ? rotationalInertia : 0.4 * mass * radius * radius;
     }
 };
 

@@ -66,11 +66,13 @@ class SceneRenderer
 
     void DrawBall(const PlayerState& player, bool own) const;
     void DrawCollectible(const CollectibleState& collectible) const;
+    void DrawPhysicsDebug(const WorldSnapshot& state, const PlayerState& player) const;
 
     class CollectibleModels;
 
     std::vector<BallTriangle> m_ballGeometry;
     std::unique_ptr<CollectibleModels> m_collectibleModels;
+    mutable bool m_showPhysicsDebug{};
 };
 
 } // namespace MoongTangE

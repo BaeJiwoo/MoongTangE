@@ -1,5 +1,6 @@
 #include "Common/Physics/Collision/SphereSphere.h"
-#include "Common/Physics/DeformableBallCollider.h"
+#include "Common/Physics/CompoundBallCollider.h"
+#include "Common/Physics/CompoundMassProperties.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "TestSupport.h"
 
@@ -228,104 +229,112 @@ void sphere_overlap_detects_contact()
     MOONGTANGE_CHECK(!spheres_overlap(first, second));
 }
 
-void deformable_collider_separates_pickup_and_rolling_proxies()
+void compound_collider_uses_shape_proxies_and_surface_sweep()
 {
-    DeformableBallCollider collider(simulation::PLAYER_RADIUS);
-    MOONGTANGE_CHECK(MoongTangE::test::approx(collider.PickupRadius(), simulation::PLAYER_RADIUS));
-    MOONGTANGE_CHECK(collider.ContainsPickupCenter({0, simulation::PLAYER_RADIUS, 0}));
-    MOONGTANGE_CHECK(!collider.ContainsPickupCenter({0, simulation::PLAYER_RADIUS + 1e-6, 0}));
+    CompoundBallCollider collider(simulation::PLAYER_RADIUS);
+    MOONGTANGE_CHECK(collider.Spheres().size() == 1);
+    collider.AddCollectible({0, 0.75, 0}, {}, CollectibleKind::APPLE,
+                            simulation::COLLECTIBLE_BASE_RADIUS);
+    MOONGTANGE_CHECK(collider.Spheres().size() == 2);
+    collider.AddCollectible({0.8, 0, 0}, {}, CollectibleKind::BANANA,
+                            simulation::COLLECTIBLE_BASE_RADIUS);
+    MOONGTANGE_CHECK(collider.Spheres().size() == 7);
+    collider.AddCollectible({-0.8, 0, 0}, {}, CollectibleKind::BURGER,
+                            simulation::COLLECTIBLE_BASE_RADIUS);
+    MOONGTANGE_CHECK(collider.Spheres().size() == 10);
+    collider.AddCollectible({0, 0, 0.8}, {}, CollectibleKind::DONUT,
+                            simulation::COLLECTIBLE_BASE_RADIUS);
+    MOONGTANGE_CHECK(collider.Spheres().size() == 14);
 
-    collider.AddCollectible({0, simulation::PLAYER_RADIUS, 0}, simulation::COLLECTIBLE_BASE_RADIUS);
-    const double expectedPickupRadius = std::cbrt(
-        simulation::PLAYER_RADIUS * simulation::PLAYER_RADIUS * simulation::PLAYER_RADIUS +
-        simulation::COLLECTIBLE_BASE_RADIUS * simulation::COLLECTIBLE_BASE_RADIUS *
-            simulation::COLLECTIBLE_BASE_RADIUS);
-    MOONGTANGE_CHECK(MoongTangE::test::approx(collider.PickupRadius(), expectedPickupRadius));
-    MOONGTANGE_CHECK(!collider.ContainsPickupCenter(
-        {0, simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS, 0}));
-    const auto pickupSurface = collider.PickupSurface({0, 10, 0});
-    MOONGTANGE_CHECK(pickupSurface.x == 0 && pickupSurface.z == 0);
-    MOONGTANGE_CHECK(MoongTangE::test::approx(pickupSurface.y, expectedPickupRadius));
+    const auto support = collider.Support({}, {0, 1, 0});
+    MOONGTANGE_CHECK(
+        MoongTangE::test::approx(support.y, 0.75 + simulation::COLLECTIBLE_BASE_RADIUS));
 
-    const auto uprightSupport = collider.Support({}, {0, -1, 0});
-    MOONGTANGE_CHECK(uprightSupport.x == 0 && uprightSupport.z == 0);
-    MOONGTANGE_CHECK(MoongTangE::test::approx(uprightSupport.y, -expectedPickupRadius));
-
-    const auto upsideDown = Quaternion::FromRotation({0, 0, std::numbers::pi});
-    const auto extendedSupport = collider.Support(upsideDown, {0, -1, 0});
-    const double rawExcess =
-        simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS - expectedPickupRadius;
-    const double bumpLimit = expectedPickupRadius * 0.3;
-    const double expectedRollingRadius =
-        expectedPickupRadius + bumpLimit * rawExcess / (bumpLimit + rawExcess);
-    MOONGTANGE_CHECK(MoongTangE::test::approx(extendedSupport.y, -expectedRollingRadius));
-
-    for (int index = 0; index < 12; ++index) {
-        collider.AddCollectible({0, -simulation::PLAYER_RADIUS, 0},
-                                simulation::COLLECTIBLE_BASE_RADIUS);
-    }
-    const double absorbedRadius = collider.PickupRadius();
-    MOONGTANGE_CHECK(absorbedRadius >
-                     simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS);
-    const auto absorbedSupport = collider.Support({}, {0, 1, 0});
-    MOONGTANGE_CHECK(absorbedSupport.x == 0 && absorbedSupport.z == 0);
-    MOONGTANGE_CHECK(MoongTangE::test::approx(absorbedSupport.y, absorbedRadius));
+    SweptSphereContact contact;
+    MOONGTANGE_CHECK(collider.SweepSphere({-5, 0, 0}, {5, 0, 0}, 0.2, contact));
+    MOONGTANGE_CHECK(contact.fraction > 0 && contact.fraction < 0.5);
+    MOONGTANGE_CHECK(contact.normal.x < -0.99);
+    MOONGTANGE_CHECK(!collider.SweepSphere({-5, 3, 0}, {5, 3, 0}, 0.2, contact));
 }
 
-void deformable_collider_changes_ground_contact()
+void compound_collider_embeds_the_contacting_proxy_sphere()
 {
-    const PhysicsWorld physics({0, 0, 0});
-    DeformableBallCollider collider(simulation::PLAYER_RADIUS);
-    collider.AddCollectible({0, simulation::PLAYER_RADIUS, 0}, simulation::COLLECTIBLE_BASE_RADIUS);
+    const LocalSphereProxy surfaceSphere{{1, 0, 0}, 0.5};
+    const LocalSphereProxy objectSphere{{0.2, 0, 0}, 0.3};
+    const auto objectOrigin =
+        CompoundBallCollider::EmbeddedOrigin(surfaceSphere, {2, 0, 0}, {}, objectSphere, 0.1);
+    const auto objectCenter = objectOrigin + objectSphere.center;
 
-    RigidBody upsideDown;
-    upsideDown.position.y = simulation::PLAYER_RADIUS;
-    upsideDown.orientation = Quaternion::FromRotation({0, 0, std::numbers::pi});
-    physics.Step(upsideDown, collider);
-    const double pickupRadius = collider.PickupRadius();
-    const double rawExcess =
-        simulation::PLAYER_RADIUS + simulation::COLLECTIBLE_BASE_RADIUS - pickupRadius;
-    const double bumpLimit = pickupRadius * 0.3;
-    const double expectedRollingRadius =
-        pickupRadius + bumpLimit * rawExcess / (bumpLimit + rawExcess);
-    MOONGTANGE_CHECK(MoongTangE::test::approx(upsideDown.position.y, expectedRollingRadius));
-    MOONGTANGE_CHECK(upsideDown.velocity.y == 0);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(objectOrigin.x, 1.5));
+    MOONGTANGE_CHECK(MoongTangE::test::approx(surfaceSphere.radius + objectSphere.radius -
+                                                  (objectCenter - surfaceSphere.center).Length(),
+                                              0.1));
 
-    RigidBody offCenter;
-    offCenter.orientation = Quaternion::FromRotation({0, 0, 5 * std::numbers::pi / 6});
-    const auto initialContactArm = collider.Support(offCenter.orientation, {0, -1, 0});
-    offCenter.position.y = -initialContactArm.y;
-    physics.Step(offCenter, collider);
-    MOONGTANGE_CHECK(offCenter.angularVelocity.z < 0);
+    const auto rotated = Quaternion::FromRotation({0, 0, std::numbers::pi / 2});
+    const auto rotatedOrigin =
+        CompoundBallCollider::EmbeddedOrigin(surfaceSphere, {1, 0, 0}, rotated, objectSphere, 0.1);
+    const auto rotatedCenter = rotatedOrigin + rotated.Rotate(objectSphere.center);
+    MOONGTANGE_CHECK(MoongTangE::test::approx(surfaceSphere.radius + objectSphere.radius -
+                                                  (rotatedCenter - surfaceSphere.center).Length(),
+                                              0.1));
+}
 
-    const auto updatedContactArm = collider.Support(offCenter.orientation, {0, -1, 0});
-    MOONGTANGE_CHECK(offCenter.position.y + updatedContactArm.y >= 0);
+void compound_collider_resolves_deep_multi_contact_deterministically()
+{
+    const PhysicsWorld physics;
+    CompoundBallCollider collider(0.5);
+    collider.AddSphere({-0.4, -0.2, 0}, 0.3);
+    collider.AddSphere({0.4, -0.2, 0}, 0.3);
 
-    RigidBody slope;
-    slope.position = {HILL_TERRAIN[0].x + 1, 5, HILL_TERRAIN[0].z};
-    slope.orientation = Quaternion::FromRotation({0, 0, std::numbers::pi});
+    RigidBody first;
+    RigidBody second;
+    first.position = second.position = {0, -1, 0};
+    first.velocity = second.velocity = {2, -20, 0};
+    first.radius = second.radius = 0.5;
     for (int tick = 0; tick < 600; ++tick) {
-        physics.Step(slope, collider);
-        const auto terrain = terrain_sample(slope.position.x, slope.position.z);
-        const auto slopeContactArm = collider.Support(slope.orientation, terrain.normal * -1);
-        const double normalDistance = (slope.position.y - terrain.height) * terrain.normal.y;
-        MOONGTANGE_CHECK(normalDistance + 1e-9 >= -dot(slopeContactArm, terrain.normal));
+        const Vector3 previousVelocity = first.velocity;
+        physics.Step(first, collider);
+        physics.Step(second, collider);
+        const auto contacts = PhysicsWorld::TerrainContacts(first, collider);
+        MOONGTANGE_CHECK(contacts.count >= 2);
+        MOONGTANGE_CHECK(contacts.points[0].terrain.penetration <= 1e-9);
+        MOONGTANGE_CHECK((first.velocity - previousVelocity).Length() < (tick < 60 ? 25 : 1));
+        MOONGTANGE_CHECK(first.position == second.position && first.velocity == second.velocity &&
+                         first.orientation == second.orientation &&
+                         first.angularVelocity == second.angularVelocity);
     }
+
+    RigidBody resting;
+    resting.position = {0, 2, 0};
+    for (int tick = 0; tick < 600; ++tick) {
+        physics.Step(resting, collider);
+    }
+    MOONGTANGE_CHECK(resting.velocity == Vector3{} && resting.angularVelocity == Vector3{});
 }
 
-void invalid_deformable_collider_is_rejected()
+void compound_mass_properties_include_parallel_axis_inertia()
+{
+    CompoundMassProperties properties;
+    properties.AddSphere(1, 0.5);
+    properties.AddSphere(0.25, 0.35, {0, 0.75, 0});
+    const double expected = 0.4 * 1 * 0.5 * 0.5 + 0.4 * 0.25 * 0.35 * 0.35 + 0.25 * 0.75 * 0.75;
+    MOONGTANGE_CHECK(MoongTangE::test::approx(properties.Mass(), 1.25));
+    MOONGTANGE_CHECK(MoongTangE::test::approx(properties.Inertia(), expected));
+}
+
+void invalid_compound_collider_is_rejected()
 {
     MOONGTANGE_CHECK(MoongTangE::test::throws([] {
-        DeformableBallCollider invalid(0);
+        CompoundBallCollider invalid(0);
     }));
 
-    DeformableBallCollider collider(simulation::PLAYER_RADIUS);
+    CompoundBallCollider collider(simulation::PLAYER_RADIUS);
     MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
-        collider.AddCollectible({}, 0);
+        collider.AddSphere({}, 0);
     }));
     MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
-        collider.PickupSurface(
-            {std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0});
+        SweptSphereContact contact;
+        collider.SweepSphere({std::numeric_limits<double>::max(), 0, 0}, {}, 0.1, contact);
     }));
 }
 
@@ -344,8 +353,10 @@ int main()
         repeated_simulation_keeps_normalized_orientation();
         invalid_state_is_rejected();
         sphere_overlap_detects_contact();
-        deformable_collider_separates_pickup_and_rolling_proxies();
-        deformable_collider_changes_ground_contact();
-        invalid_deformable_collider_is_rejected();
+        compound_collider_uses_shape_proxies_and_surface_sweep();
+        compound_collider_embeds_the_contacting_proxy_sphere();
+        compound_collider_resolves_deep_multi_contact_deterministically();
+        compound_mass_properties_include_parallel_axis_inertia();
+        invalid_compound_collider_is_rejected();
     });
 }
