@@ -27,11 +27,13 @@ class TcpTestSocket
     [[nodiscard]] bool Closed() const;
 
   private:
-    struct Impl;
+    // Implementation state defined in .cpp to keep OS socket types out of this header.
+    // Connect() or TcpTestListener::Accept() allocates it and transfers ownership here.
+    struct ConnectedSocketState;
 
-    explicit TcpTestSocket(std::unique_ptr<Impl> implementation);
+    explicit TcpTestSocket(std::unique_ptr<ConnectedSocketState> socketState);
 
-    std::unique_ptr<Impl> m_impl;
+    std::unique_ptr<ConnectedSocketState> m_socketState;
 
     friend class TcpTestListener;
 };
@@ -52,9 +54,10 @@ class TcpTestListener
     void Close();
 
   private:
-    struct Impl;
+    // Implementation state defined in .cpp and allocated by TcpTestListener().
+    struct ListenerState;
 
-    std::unique_ptr<Impl> m_impl;
+    std::unique_ptr<ListenerState> m_listenerState;
 };
 
 } // namespace MoongTangE::test

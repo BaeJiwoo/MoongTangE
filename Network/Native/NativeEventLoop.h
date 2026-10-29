@@ -44,8 +44,10 @@ class NativeEventLoop
     void Stop();
 
   private:
-    class Impl;
-    std::unique_ptr<Impl> m_impl;
+    // Platform-specific implementation, defined in the selected IOCP or epoll .cpp file.
+    // NativeEventLoop() allocates it with std::make_unique; this pointer owns its lifetime.
+    class PlatformEventLoop;
+    std::unique_ptr<PlatformEventLoop> m_platformLoop;
 };
 
 } // namespace MoongTangE
