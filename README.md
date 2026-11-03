@@ -87,6 +87,24 @@ ctest --test-dir build-core -C Release --output-on-failure
 
 ## 실행
 
+### 반복 테스트 빠르게 실행
+
+Windows 저장소 루트에서 `./Playtest.ps1` 한 번으로 증분 빌드 → API·게임 서버 실행 →
+클라이언트 3개의 게스트 매칭·입장까지 진행합니다. 닉네임은 `Playtest1`~`Playtest3`입니다.
+
+| 목적 | Windows 명령 | 동작 |
+| --- | --- | --- |
+| 3인 멀티플레이 확인 | `./Playtest.ps1` | 같은 방에 클라이언트 3개 자동 입장 |
+| 혼자 물리·부착 확인 | `./Playtest.ps1 single` | 내장 서버로 즉시 시작 |
+| 빠른 자동 검사 | `./Playtest.ps1 check` | 물리·월드·렌더링·CLI·로컬 전송 및 실행 도구 검사 |
+| 같은 배치로 재시작 | `./Playtest.ps1 --seed 42` | 월드 seed 지정; 기본값도 42 |
+
+게임 창을 모두 닫거나 실행 터미널에서 **Ctrl+C**를 누르면 이번 실행의 프로세스를 정리합니다.
+F3로 콜라이더·접촉점을 볼 수 있습니다. [상세 실행·로그 안내](docs/PLAYTEST.md)를 참고하세요.
+Linux에서는 같은 인수를 `python3 Tools/playtest.py` 뒤에 붙입니다.
+
+### 개별 프로세스 실행
+
 Windows / Visual Studio 빌드:
 
 ```powershell

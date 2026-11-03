@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <raylib.h>
 #include <stdexcept>
@@ -55,7 +56,12 @@ std::unique_ptr<IClientTransport> make_transport(const ClientOptions& options, M
 
 ClientApplication::ClientApplication(ClientOptions options) : m_options(std::move(options))
 {
-    if (m_options.smoke) {
+    if (!m_options.playtestNickname.empty()) {
+        m_nickname = m_options.playtestNickname;
+        DisplaySettingsState settings;
+        settings.resolution = {1100, 720};
+        m_displaySettings.LoadConfirmed(settings);
+    } else if (m_options.smoke) {
         m_nickname = "SmokePlayer";
     } else if (const auto savedSettings = m_displaySettingsStore.Load()) {
         m_displaySettings.LoadConfirmed(*savedSettings);
@@ -72,12 +78,16 @@ void ClientApplication::Run()
 #else
     const bool multiplayerAvailable = false;
 #endif
-    if (m_options.smoke) {
-        StartGame(m_options.remote || !m_options.apiUrl.empty() ? MenuAction::MULTIPLAYER
-                                                                : MenuAction::SINGLE_PLAYER);
-    } else {
+    if (!m_options.smoke) {
         m_displaySettings.ClampMonitorCount(GetMonitorCount());
         window.ApplyDisplaySettings(m_displaySettings.Active());
+    }
+    if (!m_options.playtestNickname.empty()) {
+        SetWindowTitle(("MoongTangE - " + m_options.playtestNickname).c_str());
+    }
+    if (m_options.smoke || !m_options.playtestNickname.empty()) {
+        StartGame(m_options.remote || !m_options.apiUrl.empty() ? MenuAction::MULTIPLAYER
+                                                                : MenuAction::SINGLE_PLAYER);
     }
 
     int gameFrames = 0;
@@ -85,6 +95,9 @@ void ClientApplication::Run()
         if (m_options.smoke && (GetTime() >= smokeDeadline || !m_errorMessage.empty())) {
             throw std::runtime_error(m_errorMessage.empty() ? "Smoke connection timed out"
                                                             : m_errorMessage);
+        }
+        if (!m_options.playtestNickname.empty() && !m_errorMessage.empty()) {
+            throw std::runtime_error(m_errorMessage);
         }
 #ifdef MOONGTANGE_HAS_NETWORK
         if (m_connection) {
@@ -348,6 +361,10 @@ void ClientApplication::ReceiveSnapshot()
     }
 
     if (auto snapshot = m_transport->Receive()) {
+        if (!m_options.playtestNickname.empty() && m_authoritativeState.players.empty()) {
+            std::cout << "Playtest joined room=" << roomId << " player=" << m_transport->PlayerId()
+                      << " nickname=" << m_nickname << std::endl;
+        }
         m_authoritativeState = std::move(*snapshot);
         m_presentation.Push(m_authoritativeState);
     }

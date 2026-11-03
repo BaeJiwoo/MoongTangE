@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common/Protocol/AdmissionTicket.h"
+#include "Common/Protocol/Nickname.h"
 #include "Common/SimulationConfig.h"
 #include "Common/Utility/CommandLine.h"
 
@@ -20,6 +21,7 @@ struct ClientOptions
     std::string ticket;
     std::string apiUrl;
     std::string apiCaFile;
+    std::string playtestNickname;
     std::uint64_t worldSeed{simulation::DEFAULT_WORLD_SEED};
 };
 
@@ -41,6 +43,11 @@ inline ClientOptions parse_client_options(std::span<const std::string_view> argu
             singleRequested = true;
         } else if (argument == "--smoke") {
             options.smoke = true;
+        } else if (argument == "--playtest") {
+            options.playtestNickname = reader.ValueFor(argument);
+            if (!valid_nickname(options.playtestNickname)) {
+                throw std::invalid_argument("--playtest requires a valid 1-16 character nickname");
+            }
         } else if (argument == "--connect") {
             options.remote = endpoint_option(reader.ValueFor(argument));
         } else if (argument == "--api-url") {
