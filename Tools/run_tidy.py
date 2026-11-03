@@ -21,10 +21,12 @@ def main():
     includes = (dependencies / "raylib-src/src", dependencies / "httplib-src",
                 dependencies / "protobuf-src/src", dependencies / "absl-src",
                 dependencies / "protobuf-src/third_party/utf8_range",
+                dependencies / "mbedtls-src/include",
                 options.build_dir.resolve() / "generated")
     if not all(path.is_dir() for path in includes):
         parser.error("Build the full project, including generated Protobuf headers, before analysis.")
-    flags = ["-std=c++20", "-I" + str(ROOT), "-DMOONGTANGE_HAS_NETWORK"]
+    flags = ["-std=c++20", "-I" + str(ROOT), "-DMOONGTANGE_HAS_NETWORK",
+             "-DCPPHTTPLIB_MBEDTLS_SUPPORT"]
     for path in includes:
         flags.extend(("-isystem", str(path)))
     if os.name == "nt":

@@ -51,6 +51,12 @@ if(MOONGTANGE_BUILD_NETWORK)
   add_library(TcpTransport ${moongtange_transport_sources})
   target_link_libraries(TcpTransport PUBLIC ServerCore NetworkProtocol)
   moongtange_configure_network_backend(TcpTransport)
+  add_library(ClientMatchmaking Client/Matchmaking/MatchmakingClient.cpp
+    Client/Matchmaking/MultiplayerConnection.cpp)
+  target_link_libraries(ClientMatchmaking PUBLIC TcpTransport PRIVATE MatchmakingHttp MatchmakingMessages)
+  if(MSVC)
+    target_compile_definitions(ClientMatchmaking PRIVATE _CRT_SECURE_NO_WARNINGS)
+  endif()
   add_library(ServerRuntime Server/ServerApplication.cpp
     Server/Api/MatchmakingControlClient.cpp)
   target_link_libraries(ServerRuntime PUBLIC TcpTransport ServerOptions PRIVATE MatchmakingHttp)

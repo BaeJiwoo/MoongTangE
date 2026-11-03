@@ -169,6 +169,29 @@ sequenceDiagram
 
 ## 파일별 함수 안내
 
+<details><summary>Client/Matchmaking/MatchmakingClient.h · .cpp — 게스트 HTTP 연결</summary>
+
+- `Match()`는 30분 게스트 세션을 재사용하고 시도 ID를 생성해 예약 생성·폴링을 수행합니다.
+- 요청 전체 15초, 개별 HTTP 2초, 폴링 250ms를 적용합니다. DNS 조회는 OS resolver 정책을 따릅니다.
+- `GuestApiSession.Request()`는 통신 오류와 429를 같은 시도 ID로 재시도하며 redirect는 따르지 않습니다.
+- 응답은 4 KiB로 제한하고 Protobuf JSON DTO로 타입·상태·주소·포트·버전·방·TTL·티켓을 검증합니다.
+- 외부 API에는 HTTPS가 필요하며 인증서 체인과 호스트명을 검증합니다. HTTP는 loopback만 허용합니다.
+- `CancelReservation()`은 1초 HTTP 한도로 취소를 시도합니다. 실패 시 서버 Tick TTL로 회수합니다.
+- `CompleteReservation()`은 TCP 입장 완료 후 로컬 예약 추적을 종료합니다.
+- `ClientMatchmaking`은 `TcpTransport`를 연결하고 HTTP/TLS/Protobuf JSON은 비공개 의존성으로 유지합니다.
+
+</details>
+
+<details><summary>Client/Matchmaking/MultiplayerConnection.h · .cpp — 비동기 입장 수명</summary>
+
+- 생성자는 닉네임을 검증하고 `jthread`에서 `Run()`을 시작합니다.
+- `Run()`은 게스트 API → 예약 → 네이티브 TCP → 서버 입장 승인 순서로 진행하고 방 ID를 대조합니다.
+- `Cancel()`은 취소 상태를 즉시 게시하고 HTTP 중단·TCP 해제·예약 취소는 작업 스레드가 처리합니다.
+- `Finished()` 이후 `TakeTransport()`로만 승인된 전송 소유권을 넘깁니다. 취소된 시도는 넘기지 않습니다.
+- 실패·취소 뒤에도 객체가 worker를 소유하며 소멸자가 join합니다. UI는 완료 전 객체를 재사용하지 않습니다.
+
+</details>
+
 ### 3인 방 모델 추가 — Issue #35
 
 `GameRoomManager`는 생성 순서대로 빈자리가 있는 방을 채우고, 후보가 없을 때만 최대 방 수 안에서 새 방을 생성합니다. 방 정원은 3명이며 기본 최대 방 수는 8개, 빈 방 보관 시간은 30초입니다. `ServerHost`가 이 관리자를 Tick 스레드에 생성합니다. 방을 미리 만들지 않으며 기존 참가자를 다른 방으로 옮기지 않습니다. `Common/Protocol/RoomSnapshot.h`는 방 ID와 기존 월드 Snapshot을 묶는 의존성 없는 값 타입입니다.
