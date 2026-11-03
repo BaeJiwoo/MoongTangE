@@ -110,6 +110,9 @@ template <typename Message> Message parse_json(const httplib::Response& response
 
 void configure_http(httplib::Client& http)
 {
+    // Match local API examples to IPv4 loopback without changing Host/SNI verification.
+    // Explicit [::1] origins remain available for IPv6-only local deployments.
+    http.set_hostname_addr_map({{"localhost", "127.0.0.1"}});
     http.set_connection_timeout(2);
     http.set_read_timeout(2);
     http.set_write_timeout(2);

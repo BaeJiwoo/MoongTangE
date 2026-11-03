@@ -154,6 +154,10 @@ def tls_tests(probe):
         check(not requests and "verification" in diagnostic, "Untrusted issuer was not rejected: " + diagnostic)
         certificate = fixtures / "localhost-test-cert.pem"
         context.load_cert_chain(certificate, fixtures / "localhost-test-key.pem")
+        diagnostic = run_probe(probe, f"https://localhost:{server.server_port}", "fail", ca_file=certificate)
+        check(requests == ["/client/sessions", "/client/matchmaking/reservations"],
+              "Local hostname connection failed: " + diagnostic)
+        requests.clear()
         diagnostic = run_probe(probe, f"https://127.0.0.1:{server.server_port}", "fail", ca_file=certificate)
         check(not requests and "hostname verification" in diagnostic,
               "Hostname mismatch was not rejected: " + diagnostic)
