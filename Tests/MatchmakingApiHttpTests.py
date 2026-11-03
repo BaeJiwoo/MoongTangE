@@ -139,12 +139,48 @@ def main():
                    body="reserved\t1\t0", empty=True)
             expect(400, "PUT", report_path.replace("/test/", "/other/"), control_key,
                    body="reserved\t1\t0", empty=True)
+            state_tickets = []
             for state, code in (("reserved", 200), ("consumed", 200), ("full", 409),
                                 ("expired", 410), ("cancelled", 410), ("unavailable", 503)):
-                expect(204, "PUT", report_path, control_key, body=f"{state}\t1\t0", empty=True)
-                result = json.loads(expect(code, "GET", "/matchmaking/reservations", public_key, ticket))
+                state_ticket = secrets.token_hex(32)
+                state_tickets.append(state_ticket)
+                expect(200, "PUT", heartbeat_path, control_key, headers=heartbeat)
+                expect(202, "PUT", "/matchmaking/reservations", public_key, state_ticket)
+                expect(204, "PUT", f"/game-servers/test/reservations/{state_ticket}", control_key,
+                       body=f"{state}\t1\t29000", empty=True)
+                result = json.loads(expect(code, "GET", "/matchmaking/reservations", public_key, state_ticket))
                 check(result["status"] == state, "Wrong public reservation state")
-            print("MVC routes, authorization, validation, response contracts and reservation workflow passed")
+                expect(204, "PUT", f"/game-servers/test/reservations/{state_ticket}", control_key,
+                       body="consumed\t1\t0", empty=True)
+            guest = json.loads(expect(201, "POST", "/client/sessions"))
+            stranger = json.loads(expect(201, "POST", "/client/sessions"))
+            check(len(guest["access_token"]) == 64 and guest["expires_in_ms"] > 0, "Guest session contract")
+            attempt = secrets.token_hex(16)
+            path = "/client/matchmaking/reservations"
+            fields = {"Idempotency-Key": attempt}
+            expect(401, "POST", path, public_key, headers=fields)
+            expect(400, "POST", path, guest["access_token"])
+            expect(200, "PUT", heartbeat_path, control_key, headers=heartbeat)
+            pending = json.loads(expect(202, "POST", path, guest["access_token"], headers=fields))
+            check(pending == {"status": "pending"}, "Pending must not expose assignment")
+            expect(202, "POST", path, guest["access_token"], headers=fields)
+            expect(404, "GET", path + "/" + attempt, stranger["access_token"])
+            expect(404, "DELETE", path + "/" + attempt, stranger["access_token"])
+            command = [row for row in expect(200, "PUT", heartbeat_path, control_key,
+                       headers=heartbeat).decode().splitlines() if row.split("\t")[2] not in
+                       (ticket, state_ticket)]
+            # Acknowledge earlier synthetic control commands before checking guest delivery.
+            command = [row for row in command if row.split("\t")[2] not in state_tickets]
+            check(len(command) == 1, "Guest retry created duplicate reservation")
+            command_id, action, admission = command[0].split("\t")
+            expect(204, "PUT", f"/game-servers/test/commands/{command_id}", control_key,
+                   body="reserved\t2\t29000", empty=True)
+            assigned = json.loads(expect(200, "GET", path + "/" + attempt, guest["access_token"]))
+            check(assigned["admission_ticket"] == admission and assigned["room_id"] == "2",
+                  "Guest assignment missing ticket or room")
+            expect(202, "DELETE", path + "/" + attempt, guest["access_token"],
+                   payload={"status": "cancelling"})
+            print("MVC routes and guest authentication, ownership, retry and cancellation passed")
         except Exception:
             log.seek(0)
             print(log.read().decode("utf-8", errors="replace"), file=sys.stderr)

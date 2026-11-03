@@ -2,6 +2,7 @@ using MoongTangE.MatchmakingApi.Models;
 using MoongTangE.MatchmakingApi;
 
 var now = DateTimeOffset.UtcNow;
+GuestSessionTests.Run();
 var store = new MatchmakingStore();
 var heartbeat = new GameServerHeartbeat("game.example", 27015, 6, 3, 0, 0, 3, 30);
 

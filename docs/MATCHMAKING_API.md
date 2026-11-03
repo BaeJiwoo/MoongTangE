@@ -20,7 +20,7 @@ C++ 서버에는 HTTP 수신 포트가 없습니다. 1초마다 API에 outbound 
 ## 요청 흐름
 
 1. C++ 게임 서버가 ASP.NET API에 공개 게임 주소와 점유 상태를 등록합니다.
-2. 클라이언트 백엔드가 공개 API에 256비트 난수 입장권으로 예약을 요청합니다.
+2. 게임 클라이언트가 `/client/sessions`에서 게스트 토큰을 받고, 시도 ID로 예약을 요청합니다. API가 256비트 난수 입장권을 생성합니다.
 3. C++ 제어 스레드가 다음 heartbeat 응답에서 reserve 명령을 가져와 제한된 Tick 명령 큐에 넣습니다.
 4. Tick이 정원을 확인해 자리를 확보하고, C++ 제어 스레드가 결과를 API에 보고합니다.
 5. API는 reserved 결과에 게임 주소·방·입장권을 담아 반환합니다.
@@ -61,6 +61,34 @@ C++ 서버에는 HTTP 수신 포트가 없습니다. 1초마다 API에 outbound 
 
 ## 공개 HTTP API
 
+### 게임 클라이언트 게스트 API — Issue #79
+
+공유 비밀키는 게임 클라이언트에 배포하지 않습니다. 외부 접속은 HTTPS 프록시를 통해 제공합니다.
+
+| 요청 | 인증·입력 | 결과 |
+| --- | --- | --- |
+| POST /client/sessions | 없음 | 201: guest_id, access_token, expires_in_ms |
+| POST /client/matchmaking/reservations | Bearer 게스트 토큰, Idempotency-Key(32자리 소문자 hex) | 202 대기 또는 200 확정 |
+| GET /client/matchmaking/reservations/{attemptId} | 같은 게스트 토큰 | 소유한 예약 상태 |
+| DELETE /client/matchmaking/reservations/{attemptId} | 같은 게스트 토큰 | 취소 요청 |
+
+`reserved` 응답에만 game_host, game_port, protocol_version, room_id(문자열), expires_in_ms,
+admission_ticket이 포함됩니다. pending/cancelling에는 status만 있습니다. consumed/expired/cancelled는
+410, full은 409, 서버 부재는 503입니다. 다른 세션의 시도 조회·취소는 404입니다.
+
+게스트 세션은 30분, 최대 4,096개이며 토큰 해시만 저장합니다. 세션당 시도 기록은 최대 64개이며
+세션 만료까지 실패·종료 결과도 유지하여 응답 유실 후 재전송이 예약을 다시 만들지 않습니다.
+동시 활성 예약은 세션당 하나입니다. 생성은 인스턴스 전체 분당 120회, 인증 후 요청은 세션당
+초당 16회로 제한합니다. 429 응답에는 Retry-After를 반환합니다. 한도 소진 시 새 세션 생성도
+제한되므로 운영 환경의 트래픽에 맞춘 별도 게이트웨이 제한이 필요합니다.
+
+세션 만료는 다음 요청에서 정리하며 활성 예약의 취소를 큐에 넣습니다. API 종료·통신 단절 시에도
+게임 서버 Tick의 예약 TTL이 정원을 회수합니다. 취소 뒤 늦은 reserved 보고는 티켓을 다시 공개하지
+않으며 terminal 상태는 뒤늦은 제어 보고로 되살리지 않습니다. 저장소는 단일 API 프로세스의 메모리이며
+재시작 후 클라이언트는 새 게스트 세션을 발급받습니다.
+
+### 기존 신뢰 클라이언트 API
+
 Authorization: Bearer <MOONGTANGE_PUBLIC_API_KEY>가 필요하고 응답은 Cache-Control: no-store입니다.
 
 - GET /health: 프로세스 생존 확인(인증 없음).
@@ -70,6 +98,8 @@ Authorization: Bearer <MOONGTANGE_PUBLIC_API_KEY>가 필요하고 응답은 Cach
 - DELETE /matchmaking/reservations: 미소비 예약 취소.
 
 예약 요청에는 X-Admission-Ticket: <64자리 소문자 hex>를 보냅니다. 입장권은 bearer 자격 증명이자 멱등 키이므로 재사용하거나 로그에 기록하지 않습니다.
+
+이 기존 경로는 요청자가 티켓을 생성하므로 응답에 admission_ticket을 포함하지 않습니다.
 
     {
       "status": "reserved",
