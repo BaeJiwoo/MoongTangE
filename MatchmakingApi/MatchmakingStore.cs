@@ -285,8 +285,11 @@ public sealed class MatchmakingStore
                 reservation.ChangedAt = now;
             }
             else if (reservation.Status == "reserved" &&
-                     now - reservation.ChangedAt >= TimeSpan.FromMilliseconds(reservation.ExpiresInMs))
+                     now - reservation.ChangedAt >=
+                         TimeSpan.FromMilliseconds(reservation.ExpiresInMs) + RecordRetention)
             {
+                // The Tick owns expiry/consumption. Allow delayed consumption reports to
+                // arrive after the advertised admission TTL before reclaiming orphan records.
                 reservation.Status = "expired";
                 reservation.ChangedAt = now;
             }

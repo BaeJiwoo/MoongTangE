@@ -40,6 +40,17 @@ Check(store.Lookup(unavailableTicket, now.AddSeconds(4))?.Status == "unavailable
 
 Console.WriteLine("MatchmakingStore registration, idempotency, results, cancellation and timeout passed");
 
+var delayedStore = new MatchmakingStore();
+delayedStore.Heartbeat("delayed", heartbeat, now);
+var delayedTicket = new string('d', 64);
+delayedStore.Reserve(delayedTicket, now);
+var delayedCommand = delayedStore.Heartbeat("delayed", heartbeat, now)!.Single();
+delayedStore.ReportCommand("delayed", delayedCommand.Id, "reserved", 1, 500, now);
+delayedStore.Heartbeat("delayed", heartbeat, now.AddSeconds(1));
+delayedStore.ReportReservation("delayed", delayedTicket, "consumed", 1, 0, now.AddSeconds(1));
+Check(delayedStore.Lookup(delayedTicket, now.AddSeconds(1))?.Status == "consumed",
+    "API expiry raced the authoritative Tick consumption report");
+
 static void Check(bool condition, string message)
 {
     if (!condition)
