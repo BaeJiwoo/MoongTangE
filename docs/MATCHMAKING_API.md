@@ -38,12 +38,22 @@ C++ 서버에는 HTTP 수신 포트가 없습니다. 1초마다 API에 outbound 
     dotnet run --project MatchmakingApi/MoongTangE.MatchmakingApi.csproj -c Release
 
     # 터미널 2: 독립 C++ 프로세스
-    ./build/DedicatedServer --port 27015 --require-ticket \
+    ./build/linux-release/DedicatedServer --port 27015 --require-ticket \
       --matchmaking-url http://127.0.0.1:27016 \
       --server-id local-1 --advertise-host 127.0.0.1
 
-    # 터미널 3: 공개 API를 사용하는 예제 백엔드
-    python3 Tools/matchmaking_client.py --api http://127.0.0.1:27016 --client build/Client
+    # 터미널 3: 게임 클라이언트에서 닉네임 입력 후 MULTIPLAYER 선택
+    ./build/linux-release/Client --api-url http://127.0.0.1:27016
+
+Windows 프리셋에서는 `build/windows-release/Release/Client.exe --api-url http://127.0.0.1:27016`을
+사용합니다. 게임 서버 경로도 프리셋에 맞춥니다. 클라이언트는 공개/제어 API 키를 읽지 않습니다.
+외부 API는 HTTPS를 사용하고, 기본 OS 신뢰 저장소 대신 사설 CA를 지정할 때는
+`--api-ca-file /path/to/ca.pem`을 추가합니다. 검증을 끄는 옵션은 없습니다.
+
+매칭 작업은 UI 스레드 밖에서 진행합니다. 생성/매칭/접속 상태를 표시하고 CANCEL/Esc로 취소합니다.
+취소된 작업의 정리가 끝나면 메뉴로 돌아가며, 실패 후에는 오류를 닫고 다시 시작할 수 있습니다.
+세션은 유효한 동안 재사용하고 64개 시도 기록을 소진하면 다음 시도에서 새로 발급합니다.
+`--api-url ... --smoke`는 같은 경로로 입장하여 실제 서버 이동과 회전을 확인합니다.
 
 다른 컴퓨터에 배포할 때 --matchmaking-url에는 C++ 서버에서 접근 가능한 API 주소를, --advertise-host에는 실제 게임 클라이언트가 접근 가능한 C++ 서버 주소를 넣고 게임 서버에는 명시적으로 --public을 추가합니다. 방화벽은 API의 HTTP 포트와 게임 서버의 TCP 포트를 각각 필요한 주체에만 엽니다.
 
@@ -51,6 +61,8 @@ C++ 서버에는 HTTP 수신 포트가 없습니다. 1초마다 API에 outbound 
 | --- | --- | --- |
 | MOONGTANGE_PUBLIC_API_KEY | ASP.NET, 신뢰하는 클라이언트 백엔드 | 공개 상태·예약 API 인증 |
 | MOONGTANGE_CONTROL_KEY | ASP.NET, C++ 게임 서버 | 내부 등록·명령·결과 API 인증 |
+| --api-url URL | 게임 클라이언트 | HTTPS API origin 또는 loopback HTTP |
+| --api-ca-file PEM | 게임 클라이언트 | 명시적인 사설 CA, HTTPS에서만 사용 |
 | --matchmaking-url URL | C++ | ASP.NET API origin. 현재 http:// 지원 |
 | --server-id ID | C++ | 배포 내 고유 서버 ID |
 | --advertise-host HOST | C++ | API가 클라이언트에 돌려줄 게임 주소 |

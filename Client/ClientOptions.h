@@ -18,6 +18,8 @@ struct ClientOptions
     bool showHelp{};
     std::optional<Endpoint> remote;
     std::string ticket;
+    std::string apiUrl;
+    std::string apiCaFile;
     std::uint64_t worldSeed{simulation::DEFAULT_WORLD_SEED};
 };
 
@@ -41,6 +43,16 @@ inline ClientOptions parse_client_options(std::span<const std::string_view> argu
             options.smoke = true;
         } else if (argument == "--connect") {
             options.remote = endpoint_option(reader.ValueFor(argument));
+        } else if (argument == "--api-url") {
+            options.apiUrl = reader.ValueFor(argument);
+            if (options.apiUrl.empty()) {
+                throw std::invalid_argument("API URL cannot be empty");
+            }
+        } else if (argument == "--api-ca-file") {
+            options.apiCaFile = reader.ValueFor(argument);
+            if (options.apiCaFile.empty()) {
+                throw std::invalid_argument("CA file cannot be empty");
+            }
         } else if (argument == "--ticket") {
             options.ticket = reader.ValueFor(argument);
             if (!valid_admission_ticket(options.ticket)) {
@@ -54,13 +66,17 @@ inline ClientOptions parse_client_options(std::span<const std::string_view> argu
         }
     }
 
-    if (singleRequested && options.remote) {
-        throw std::invalid_argument("Choose --single or --connect");
+    if ((singleRequested && (options.remote || !options.apiUrl.empty())) ||
+        (options.remote && !options.apiUrl.empty())) {
+        throw std::invalid_argument("Choose --single, --connect or --api-url");
+    }
+    if (!options.apiCaFile.empty() && !options.apiUrl.starts_with("https://")) {
+        throw std::invalid_argument("--api-ca-file requires an HTTPS --api-url");
     }
     if (!options.ticket.empty() && !options.remote) {
         throw std::invalid_argument("--ticket requires --connect");
     }
-    if (worldSeedRequested && options.remote) {
+    if (worldSeedRequested && (options.remote || !options.apiUrl.empty())) {
         throw std::invalid_argument("--world-seed is available only for single player");
     }
 

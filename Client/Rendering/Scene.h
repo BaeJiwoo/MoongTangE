@@ -50,6 +50,7 @@ class SceneRenderer
                             const DisplaySettingsState& selectedSettings, bool confirmationOpen,
                             int confirmationSeconds, std::string& nickname,
                             const std::string& errorMessage) const;
+    bool DrawConnecting(const char* status, bool cancelling) const;
     MenuAction Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
                     const char* status, bool gameMenuOpen, bool optionsOpen,
                     const DisplaySettingsState& selectedSettings, bool confirmationOpen,

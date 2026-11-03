@@ -1,6 +1,6 @@
 # MoongTangE
 
-매칭 계층은 컨트롤러 기반 ASP.NET Core MVC API와 C++ 게임 소켓 서버를 서로 다른 프로세스·호스트로 배포할 수 있게 분리되어 있습니다. [API 계약과 실행 방법](docs/MATCHMAKING_API.md), [연동 예제](Tools/matchmaking_client.py)를 참고하세요. C++ 서버는 HTTP를 수신하지 않고 외부 API로 등록·heartbeat를 보내며, 최종 예약과 일회용 입장권 소비는 서버 Tick이 처리합니다.
+클라이언트가 ASP.NET Core API에서 게스트 세션과 게임 서버 접속 정보를 받고 C++ 게임 서버에 연결합니다. API와 게임 서버는 별도 프로세스·호스트에 배포할 수 있습니다. C++ 서버는 API로 heartbeat를 보내며 최종 예약과 일회용 입장권 소비는 서버 Tick이 처리합니다. [API 계약과 실행 방법](docs/MATCHMAKING_API.md)을 참고하세요.
 
 MoongTangE는 C++20 기반의 Windows/Linux 3D 물리 시뮬레이션 서비스입니다. macOS는 지원 대상에서 제외합니다.
 
@@ -98,6 +98,9 @@ Windows / Visual Studio 빌드:
 
 # 별도 터미널에서 클라이언트 실행. 여러 개를 실행할 수 있습니다.
 .\build\windows-release\Release\Client.exe --connect 127.0.0.1:27015
+
+# 매칭 API와 ticket 모드 게임 서버를 실행한 뒤 (설정은 docs/MATCHMAKING_API.md)
+.\build\windows-release\Release\Client.exe --api-url http://127.0.0.1:27016
 ```
 
 Linux 프리셋의 실행 파일은 `build/linux-release`에 있습니다.
@@ -111,9 +114,13 @@ Linux 프리셋의 실행 파일은 `build/linux-release`에 있습니다.
 ```
 
 클라이언트는 메인 화면으로 열립니다. `SINGLE PLAYER`를 선택하면 내장 서버를 시작하고,
-`MULTIPLAYER`를 선택하면 `--connect` 또는 매치메이킹으로 배정받은 TCP 서버에 접속합니다.
-서버 배정 정보가 없으면 멀티플레이 버튼은 비활성화됩니다. `--smoke` 실행은 자동 테스트를
-위해 메인 화면을 건너뜁니다.
+`--api-url`을 설정하고 닉네임 입력 후 `MULTIPLAYER`를 선택하면 게스트 세션 발급 → 매칭 →
+TCP 입장이 진행됩니다. 공유 비밀키는 클라이언트에 넣지 않습니다. 진행 중 CANCEL/Esc로 취소하며
+실패 시 오류를 닫고 다시 시도할 수 있습니다. `--connect` 직접 접속도 유지합니다.
+API 주소나 직접 접속 주소가 없으면 멀티플레이 버튼은 비활성화됩니다.
+외부 API에는 HTTPS를 사용하며 사설 인증서는 `--api-ca-file PEM`으로 명시합니다.
+`--single`, `--connect`, `--api-url`은 동시에 지정할 수 없습니다.
+`--smoke`는 메인 화면을 건너뛰고 동일한 입장 경로와 서버 이동을 검증합니다.
 
 메인 화면의 `OPTIONS`에서는 출력 모니터와 `WINDOWED`, `FULLSCREEN WINDOWED`(테두리 없는
 전체화면), `FULLSCREEN` 모드를 선택할 수 있습니다. 기본 창 크기는 `1280×800`이고 창 모드
@@ -160,7 +167,29 @@ Y=8에서 떨어뜨립니다. 물체는 중력과 plane 접촉을 적용받으�
 
 방은 미리 만들지 않습니다. 기본 최대 8개 방이며 `--max-rooms 2`는 최대 6명으로 제한합니다. 모든 방이 차면 입장을 거절합니다. 빈 방은 기본 30초 후 정리하며 `--empty-room-seconds 0`은 즉시 정리합니다. 각 방은 자기 참가자의 입력과 상태만 처리합니다. 이동 입력은 유저당 최신 값 하나를 보관하므로 한 유저의 입력 폭주가 다른 방의 입력 큐를 채우지 않습니다. 화면 상단에 배정된 방 번호가 표시됩니다.
 
-HTTP 상태 조회·입장 예약 API와 일회용 입장권을 지원합니다. 계정 인증과 여러 서버를 선택하는 매칭 서비스는 외부 서비스에서 담당하며, 현재 접속 서버의 Tick이 예약과 입장을 확정합니다.
+게스트 API가 최근 heartbeat와 가용 정원을 바탕으로 게임 서버를 선택하고 일회용 티켓을 발급합니다.
+게임 서버 Tick이 예약과 입장을 확정합니다. 영구 계정·JWT 인증은 후속 범위입니다.
+
+```mermaid
+sequenceDiagram
+    participant C as 게임 클라이언트
+    participant A as ASP.NET API
+    participant S as C++ 게임 서버
+    participant T as 서버 Tick
+    C->>A: 게스트 세션 발급 / 매칭 요청
+    A-->>C: 예약 대기
+    S->>A: heartbeat
+    A-->>S: 예약 명령
+    S->>T: 제한된 명령 큐
+    T-->>S: 방 자리 확보
+    S->>A: 예약 확정 보고
+    C->>A: 예약 결과 조회
+    A-->>C: 게임 서버 주소 + 일회용 티켓
+    C->>S: TCP 연결 / 닉네임 + 티켓
+    S->>T: 입장권 소비 / 입력 처리
+    T-->>S: 게임 스냅샷
+    S-->>C: 게임 스냅샷 전송
+```
 
 ## 구조와 동작
 
@@ -184,10 +213,10 @@ cmake/        커밋 및 SHA-256으로 고정한 외부 의존성
 
 ## 테스트와 제한
 
-- CTest: 벡터/quaternion, 낙하/충돌/구름/관성, 게임 월드, 서버 수명/큐, ServerApplication 실행·종료, 로컬 전송, Protobuf 프로토콜, 화면 보간, CLI, 실제 TCP, 전송 비교, 별도 프로세스 접속. 전체 18개, 외부 의존성 없는 구성 10개입니다. Protobuf 프로토콜 테스트는 네트워크 구성에 포함됩니다.
+- CTest: 물리·Tick·전송 회귀, API 계약, 게스트 매칭·TLS·취소·재시도·실제 TCP 입장. 기본 20개, 외부 의존성 없는 구성 10개입니다. 데스크톱에서 `-DMOONGTANGE_TEST_GUI=ON`으로 구성하면 API 매칭 및 싱글플레이 GUI smoke 2개를 추가합니다.
 - 동일 Tick 입력 일정의 로컬 계산과 직렬화 경로는 매 Tick 비교합니다. 실제 비동기 전송은 입력 도착 시점이 다르므로 이동 속도·방향·바닥 정지 등 물리 조건을 비교합니다.
 - CI: Windows/MSVC의 네이티브 IOCP와 Linux/GCC의 네이티브 epoll에서 전체 빌드와 테스트, 외부 의존성 없는 코어 구성을 검증합니다. GUI 실행은 CI 필수 항목이 아니며 실제 결과는 [Actions](https://github.com/BaeJiwoo/MoongTangE/actions)에서 확인하세요.
-- 자체 구현한 공·복합 구·지형 접촉을 사용합니다. 외부 물리 엔진, 클라이언트 예측, UDP, 물리 롤백 및 사용자 인증은 후속 범위입니다.
+- 자체 구현한 공·복합 구·지형 접촉을 사용합니다. 클라이언트 예측, UDP, 물리 롤백 및 영구 계정 인증은 후속 범위입니다.
 - 방마다 최대 3명, 기본 최대 8개 방(24명), 입력 만료 120 Tick, 고정 dt=1/60이며 플랫폼 간 비트 단위의 결정성을 보장하지 않습니다.
 - 비공개 저장소 브랜치 보호 설정은 현재 계정 요금제에서 HTTP 403으로 거부됐습니다. 저장소 공개 범위는 변경하지 않았습니다.
 

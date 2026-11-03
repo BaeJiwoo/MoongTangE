@@ -214,6 +214,9 @@ def service_test(probe, server_executable, project, gui=None):
 
 
 if __name__ == "__main__":
-    fault_tests(sys.argv[1])
-    tls_tests(sys.argv[1])
-    service_test(*sys.argv[1:4])
+    if len(sys.argv) == 5:
+        service_test(*sys.argv[1:4], gui=sys.argv[4])
+    else:
+        fault_tests(sys.argv[1])
+        tls_tests(sys.argv[1])
+        service_test(*sys.argv[1:4])
