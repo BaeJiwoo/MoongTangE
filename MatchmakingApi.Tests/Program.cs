@@ -2,6 +2,7 @@ using MoongTangE.MatchmakingApi.Models;
 using MoongTangE.MatchmakingApi;
 
 var now = DateTimeOffset.UtcNow;
+GuestSessionTests.Run();
 var store = new MatchmakingStore();
 var heartbeat = new GameServerHeartbeat("game.example", 27015, 6, 3, 0, 0, 3, 30);
 
@@ -38,6 +39,17 @@ Check(store.Lookup(unavailableTicket, now.AddSeconds(4))?.Status == "unavailable
     "stale game server was not removed from assignment");
 
 Console.WriteLine("MatchmakingStore registration, idempotency, results, cancellation and timeout passed");
+
+var delayedStore = new MatchmakingStore();
+delayedStore.Heartbeat("delayed", heartbeat, now);
+var delayedTicket = new string('d', 64);
+delayedStore.Reserve(delayedTicket, now);
+var delayedCommand = delayedStore.Heartbeat("delayed", heartbeat, now)!.Single();
+delayedStore.ReportCommand("delayed", delayedCommand.Id, "reserved", 1, 500, now);
+delayedStore.Heartbeat("delayed", heartbeat, now.AddSeconds(1));
+delayedStore.ReportReservation("delayed", delayedTicket, "consumed", 1, 0, now.AddSeconds(1));
+Check(delayedStore.Lookup(delayedTicket, now.AddSeconds(1))?.Status == "consumed",
+    "API expiry raced the authoritative Tick consumption report");
 
 static void Check(bool condition, string message)
 {

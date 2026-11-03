@@ -228,6 +228,44 @@ public sealed class MatchmakingStore
         }
     }
 
+    // Take a detached response while holding the same lock as control reports.
+    internal ClientReply ClientReservation(string ticket, DateTimeOffset now)
+    {
+        lock (sync)
+        {
+            if (!reservations.TryGetValue(ticket, out var reservation))
+                return new(410, new ClientReservationResponse("expired"));
+            var server = servers[reservation.ServerId];
+            var remaining = Math.Max(0, reservation.ExpiresInMs -
+                (long)(now - reservation.ChangedAt).TotalMilliseconds);
+            var status = reservation.Status;
+            if (!IsTerminal(status))
+            {
+                if (now - server.LastSeen >= ServerTimeout) status = "unavailable";
+                else if (status == "reserved" && remaining == 0) status = "expired";
+                else if (status is "pending" or "cancelling" &&
+                         now - reservation.CreatedAt >= TimeSpan.FromSeconds(15))
+                {
+                    Cancel(ticket, now);
+                    status = "expired";
+                }
+            }
+            var code = status switch
+            {
+                "reserved" => 200,
+                "pending" or "cancelling" => 202,
+                "full" => 409,
+                "unavailable" => 503,
+                _ => 410
+            };
+            return new(code, status == "reserved"
+                ? new ClientReservationResponse(status, server.Heartbeat.Host, server.Heartbeat.Port,
+                    server.Heartbeat.ProtocolVersion, reservation.RoomId.ToString(CultureInfo.InvariantCulture),
+                    remaining, ticket)
+                : new ClientReservationResponse(status));
+        }
+    }
+
     private int EffectiveAvailable(GameServerRecord server)
     {
         var unreflected = reservations.Values.Count(reservation =>
@@ -239,6 +277,23 @@ public sealed class MatchmakingStore
 
     private void Prune(DateTimeOffset now)
     {
+        foreach (var reservation in reservations.Values.Where(value => !IsTerminal(value.Status)))
+        {
+            if (now - servers[reservation.ServerId].LastSeen >= ServerTimeout)
+            {
+                reservation.Status = "unavailable";
+                reservation.ChangedAt = now;
+            }
+            else if (reservation.Status == "reserved" &&
+                     now - reservation.ChangedAt >=
+                         TimeSpan.FromMilliseconds(reservation.ExpiresInMs) + RecordRetention)
+            {
+                // The Tick owns expiry/consumption. Allow delayed consumption reports to
+                // arrive after the advertised admission TTL before reclaiming orphan records.
+                reservation.Status = "expired";
+                reservation.ChangedAt = now;
+            }
+        }
         var expiredTickets = reservations.Values
             .Where(reservation => IsTerminal(reservation.Status) &&
                 now - reservation.ChangedAt >= RecordRetention)
@@ -246,6 +301,7 @@ public sealed class MatchmakingStore
             .ToArray();
         foreach (var ticket in expiredTickets)
         {
+            servers[reservations[ticket].ServerId].Commands.RemoveAll(command => command.Ticket == ticket);
             reservations.Remove(ticket);
         }
 
@@ -270,6 +326,8 @@ public sealed class MatchmakingStore
         long expiresInMs,
         DateTimeOffset now)
     {
+        if (IsTerminal(reservation.Status) ||
+            (reservation.Status == "cancelling" && status == "reserved")) return;
         reservation.Status = status;
         reservation.RoomId = roomId;
         reservation.ExpiresInMs = expiresInMs;

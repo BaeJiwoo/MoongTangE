@@ -464,6 +464,18 @@ API 계약·예제 실행은 [MATCHMAKING_API.md](MATCHMAKING_API.md)에 정리�
 
 </details>
 
+<details><summary>MatchmakingApi/GuestSessionStore.cs · Controllers/ClientSessionsController.cs — 게스트 매칭</summary>
+
+- `Create()`는 30분 게스트 bearer 토큰을 발급하고 SHA-256 해시만 보관합니다.
+- `Handle()`은 소유권·요청 빈도·시도 ID를 검증하고 세션당 하나의 활성 예약을 유지합니다.
+- `Read()`는 종료 응답을 세션 만료까지 보존하고 취소 뒤 티켓 재공개를 막습니다.
+- `Prune()`은 만료 세션의 미완료 예약 취소를 요청합니다. 세션 → MatchmakingStore 순서로 잠급니다.
+- `ClientSessionsController`는 POST 세션과 POST/GET/DELETE 예약을 매핑합니다.
+- `MatchmakingStore.ClientReservation()`은 제어 보고와 같은 잠금 안에서 응답을 복사합니다.
+- `Program.cs`는 게스트 저장소와 전역 생성 제한을 등록합니다. 게임 월드는 계속 Tick이 단독 소유합니다.
+
+</details>
+
 <details><summary>MatchmakingApi/Controllers/MatchmakingController.cs — 공개 매칭</summary>
 
 - `GetStatus()`는 공개 키 인증 후 최근 heartbeat 서버 상태를 반환합니다.
