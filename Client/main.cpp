@@ -11,9 +11,11 @@ int main(int argc, char** argv)
         const auto arguments = MoongTangE::command_line_arguments(argc, argv);
         const auto options = MoongTangE::parse_client_options(arguments);
         if (options.showHelp) {
-            std::cout << "Client [--single [--world-seed uint64] | "
-                         "--connect host:port [--ticket hex] | "
-                         "--api-url origin [--api-ca-file PEM]] [--smoke]\n";
+            std::cout
+                << "Client [--single [--world-seed uint64] | "
+                   "--connect host:port [--ticket hex] | "
+                   "--api-url origin [--api-ca-file PEM]] [--smoke] [--playtest nickname]\n"
+                   "  --playtest: start immediately in a window with temporary display defaults\n";
             return 0;
         }
         MoongTangE::ClientApplication application(options);

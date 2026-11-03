@@ -4,6 +4,14 @@
 
 ## 구성 요소
 
+### 로컬 실행 도구 — Issue #85
+
+`Playtest.ps1` / `Tools/playtest.py`는 기존 `Client`, `DedicatedServer`, ASP.NET API를
+실행하고 종료하는 개발 도구입니다. API·서버는 루프백 임시 포트를 사용하고 클라이언트는
+게스트 매칭과 티켓 입장을 그대로 거칩니다. 도구는 게임 월드나 서버 Tick에 직접 접근하지 않습니다.
+빠른 검사 모드는 별도 코어 구성의 기존 게임플레이 테스트와 `PlaytestToolTests`를 실행합니다.
+프로세스 소유권·로그·사용법은 [플레이테스트 문서](PLAYTEST.md)에 있습니다.
+
 ### 방 입장 통신 — Issue #36
 
 프로토콜 v8은 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.

@@ -59,7 +59,19 @@ int main()
         const auto seededClient =
             MoongTangE::parse_client_options(std::array{"--single"sv, "--world-seed"sv, "42"sv});
         MOONGTANGE_CHECK(seededClient.worldSeed == 42);
+        const auto playtest = MoongTangE::parse_client_options(
+            std::array{"--api-url"sv, "http://127.0.0.1:27016"sv, "--playtest"sv, "Player 1"sv});
+        MOONGTANGE_CHECK(playtest.playtestNickname == "Player 1" && !playtest.smoke);
+        const auto playtestSmoke = MoongTangE::parse_client_options(
+            std::array{"--single"sv, "--playtest"sv, "Player_2"sv, "--smoke"sv});
+        MOONGTANGE_CHECK(playtestSmoke.playtestNickname == "Player_2" && playtestSmoke.smoke);
         for (const auto& arguments : std::vector<std::vector<std::string_view>>{
+                 {"--playtest"},
+                 {"--playtest", ""},
+                 {"--playtest", " Player"},
+                 {"--playtest", "Player "},
+                 {"--playtest", "Player!"},
+                 {"--playtest", "12345678901234567"},
                  {"--connect"},
                  {"--api-url"},
                  {"--api-url", ""},
