@@ -8,6 +8,7 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -108,13 +109,16 @@ def main():
                            ASPNETCORE_URLS=api_url,
                            MOONGTANGE_PUBLIC_API_KEY=public_key,
                            MOONGTANGE_CONTROL_KEY=control_key)
-    api_process = subprocess.Popen(
-        ["dotnet", "run", "--configuration", "Release", "--project", api_project],
-        stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, env=api_environment)
+    subprocess.run(["dotnet", "build", "--configuration", "Release", api_project],
+                   check=True, timeout=60)
+    application = Path(api_project).resolve().parent / "bin/Release/net8.0/MoongTangE.MatchmakingApi.dll"
+    api_log = tempfile.TemporaryFile()
+    api_process = subprocess.Popen(["dotnet", str(application)],
+                                  stdout=api_log, stderr=subprocess.STDOUT, env=api_environment)
     game_process = None
     peers = []
     try:
-        wait_for(lambda: urllib.request.urlopen(api_url + "/health", timeout=1).status == 200)
+        wait_for(lambda: urllib.request.urlopen(api_url + "/health", timeout=1).status == 200, seconds=20)
         api = MatchmakingClient(api_url, public_key)
         check(api.request("GET", "/matchmaking/status")[1]["ready"] is False,
               "API unexpectedly has an in-process game server")
@@ -181,11 +185,16 @@ def main():
         terminate(game_process)
         wait_for(lambda: api.request("GET", "/matchmaking/status")[1]["ready"] is False, seconds=6)
         print("Separate ASP.NET API registration, reservation, TCP admission, cancellation and expiry passed")
+    except Exception:
+        api_log.seek(0)
+        print(api_log.read().decode(errors="replace"), file=sys.stderr)
+        raise
     finally:
         for peer in peers:
             peer.close()
         terminate(game_process)
         terminate(api_process)
+        api_log.close()
         if game_process is not None and game_process.stdout is not None:
             game_process.stdout.close()
 
