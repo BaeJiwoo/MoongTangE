@@ -7,6 +7,9 @@
 #include "Client/Rendering/SnapshotInterpolator.h"
 #include "Common/Protocol/WorldSnapshot.h"
 #include "Common/Transport/IClientTransport.h"
+#ifdef MOONGTANGE_HAS_NETWORK
+#include "Client/Matchmaking/MultiplayerConnection.h"
+#endif
 
 #include <cstdint>
 #include <memory>
@@ -40,6 +43,10 @@ class ClientApplication
 
     ClientOptions m_options;
     std::unique_ptr<IClientTransport> m_transport;
+#ifdef MOONGTANGE_HAS_NETWORK
+    std::shared_ptr<MatchmakingClient> m_matchmaking;
+    std::unique_ptr<MultiplayerConnection> m_connection;
+#endif
 
     SnapshotInterpolator m_presentation;
     DisplaySettings m_displaySettings;
@@ -54,6 +61,7 @@ class ClientApplication
     std::string m_errorMessage;
 
     bool m_optionsOpen{};
+    bool m_multiplayer{};
     bool m_gameMenuOpen{};
     bool m_moved{};
     bool m_rolled{};

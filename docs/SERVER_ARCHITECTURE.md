@@ -169,6 +169,17 @@ sequenceDiagram
 
 ## 파일별 함수 안내
 
+<details><summary>Client/ClientApplication.cpp · Rendering/Scene.cpp — 메뉴에서 게임 입장</summary>
+
+- `StartGame()`은 모든 모드에서 닉네임을 확인하고 API 모드면 `MultiplayerConnection`을 생성합니다.
+- `Run()`은 worker의 단계만 읽어 `DrawConnecting()`으로 표시하며 CANCEL/Esc를 전달합니다.
+- worker가 완료되면 승인된 전송만 가져오며 취소·실패는 메뉴로 돌아갑니다. 화면 스레드에서 HTTP를 호출하지 않습니다.
+- `CloseTransport()`는 진행 중 작업을 종료한 뒤 전송을 닫습니다. HTTP/TCP 작업은 UI 객체보다 먼저 정리됩니다.
+- `--api-url`, 직접 `--connect`, `--single`은 배타적이며 기본 싱글플레이 경로를 유지합니다.
+- `MOONGTANGE_TEST_GUI`를 켜면 실제 Client의 게스트 매칭·싱글플레이 smoke를 CTest에 추가합니다.
+
+</details>
+
 <details><summary>Client/Matchmaking/MatchmakingClient.h · .cpp — 게스트 HTTP 연결</summary>
 
 - `Match()`는 30분 게스트 세션을 재사용하고 시도 ID를 생성해 예약 생성·폴링을 수행합니다.

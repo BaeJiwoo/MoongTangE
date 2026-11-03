@@ -481,6 +481,25 @@ SceneRenderer::SceneRenderer()
 
 SceneRenderer::~SceneRenderer() = default;
 
+bool SceneRenderer::DrawConnecting(const char* status, bool cancelling) const
+{
+    const auto canvas = make_ui_canvas();
+    BeginDrawing();
+    ClearBackground(Color{22, 28, 42, 255});
+    begin_ui(canvas);
+    const int centerX = static_cast<int>(REFERENCE_WINDOW_WIDTH / 2);
+    const int centerY = static_cast<int>(REFERENCE_WINDOW_HEIGHT / 2);
+    DrawText("MULTIPLAYER", centerX - MeasureText("MULTIPLAYER", 36) / 2, centerY - 100, 36,
+             RAYWHITE);
+    DrawText(status, centerX - MeasureText(status, 22) / 2, centerY - 20, 22, LIGHTGRAY);
+    const Rectangle cancelButton{static_cast<float>(centerX) - 100,
+                                 static_cast<float>(centerY) + 50, 200, 50};
+    const bool cancelled = draw_menu_button(cancelButton, "CANCEL", !cancelling);
+    end_ui();
+    EndDrawing();
+    return cancelled;
+}
+
 MenuAction SceneRenderer::DrawMainMenu(bool multiplayerAvailable, bool optionsOpen,
                                        const DisplaySettingsState& selectedSettings,
                                        bool confirmationOpen, int confirmationSeconds,
@@ -535,7 +554,7 @@ MenuAction SceneRenderer::DrawMainMenu(bool multiplayerAvailable, bool optionsOp
     }
 
     const char* hint =
-        multiplayerAvailable ? "Choose a game mode" : "Multiplayer requires a server assignment";
+        multiplayerAvailable ? "Choose a game mode" : "Multiplayer is not configured";
     DrawText(hint, (static_cast<int>(screenWidth) - MeasureText(hint, 16)) / 2,
              static_cast<int>(optionsButton.y + optionsButton.height + 18), 16, LIGHTGRAY);
 

@@ -45,6 +45,10 @@ int main()
         const auto ticketClient = MoongTangE::parse_client_options(
             std::array{"--connect"sv, "localhost:27015"sv, "--ticket"sv, std::string_view(ticket)});
         MOONGTANGE_CHECK(ticketClient.ticket == ticket);
+        const auto apiClient = MoongTangE::parse_client_options(
+            std::array{"--api-url"sv, "https://api.example"sv, "--api-ca-file"sv, "ca.pem"sv});
+        MOONGTANGE_CHECK(apiClient.apiUrl == "https://api.example" &&
+                         apiClient.apiCaFile == "ca.pem");
         MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
             MoongTangE::parse_client_options(std::array{"--ticket"sv, std::string_view(ticket)});
         }));
@@ -57,6 +61,13 @@ int main()
         MOONGTANGE_CHECK(seededClient.worldSeed == 42);
         for (const auto& arguments : std::vector<std::vector<std::string_view>>{
                  {"--connect"},
+                 {"--api-url"},
+                 {"--api-url", ""},
+                 {"--api-ca-file", "ca.pem"},
+                 {"--api-url", "http://localhost", "--api-ca-file", "ca.pem"},
+                 {"--single", "--api-url", "https://api.example"},
+                 {"--connect", "host:1", "--api-url", "https://api.example"},
+                 {"--world-seed", "1", "--api-url", "https://api.example"},
                  {"--unknown"},
                  {"--ticket", "invalid"},
                  {"--world-seed"},

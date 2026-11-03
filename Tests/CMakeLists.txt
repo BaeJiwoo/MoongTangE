@@ -45,4 +45,13 @@ if(MOONGTANGE_BUILD_NETWORK)
     "${CMAKE_CURRENT_SOURCE_DIR}/ClientMatchmakingTests.py" $<TARGET_FILE:MatchmakingProbe>
     $<TARGET_FILE:DedicatedServer> "${PROJECT_SOURCE_DIR}/MatchmakingApi/MoongTangE.MatchmakingApi.csproj")
   set_tests_properties(ClientMatchmakingTests PROPERTIES TIMEOUT 120)
+  if(MOONGTANGE_BUILD_CLIENT AND MOONGTANGE_TEST_GUI)
+    add_test(NAME ClientMatchmakingGuiSmoke COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/ClientMatchmakingTests.py" $<TARGET_FILE:MatchmakingProbe>
+      $<TARGET_FILE:DedicatedServer> "${PROJECT_SOURCE_DIR}/MatchmakingApi/MoongTangE.MatchmakingApi.csproj"
+      $<TARGET_FILE:Client>)
+    set_tests_properties(ClientMatchmakingGuiSmoke PROPERTIES TIMEOUT 90)
+    add_test(NAME ClientSingleGuiSmoke COMMAND Client --single --smoke)
+    set_tests_properties(ClientSingleGuiSmoke PROPERTIES TIMEOUT 30)
+  endif()
 endif()

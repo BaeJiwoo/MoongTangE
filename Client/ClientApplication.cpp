@@ -66,15 +66,46 @@ void ClientApplication::Run()
 {
     GraphicsWindow window(m_options.smoke);
     SceneRenderer renderer;
+    const double smokeDeadline = GetTime() + 25;
+#ifdef MOONGTANGE_HAS_NETWORK
+    const bool multiplayerAvailable = m_options.remote.has_value() || !m_options.apiUrl.empty();
+#else
+    const bool multiplayerAvailable = false;
+#endif
     if (m_options.smoke) {
-        StartGame(m_options.remote ? MenuAction::MULTIPLAYER : MenuAction::SINGLE_PLAYER);
+        StartGame(m_options.remote || !m_options.apiUrl.empty() ? MenuAction::MULTIPLAYER
+                                                                : MenuAction::SINGLE_PLAYER);
     } else {
         m_displaySettings.ClampMonitorCount(GetMonitorCount());
         window.ApplyDisplaySettings(m_displaySettings.Active());
     }
 
-    for (int frame = 0; !WindowShouldClose() && (!m_options.smoke || frame < SMOKE_FRAMES);
-         ++frame) {
+    int gameFrames = 0;
+    while (!WindowShouldClose() && (!m_options.smoke || gameFrames < SMOKE_FRAMES)) {
+        if (m_options.smoke && (GetTime() >= smokeDeadline || !m_errorMessage.empty())) {
+            throw std::runtime_error(m_errorMessage.empty() ? "Smoke connection timed out"
+                                                            : m_errorMessage);
+        }
+#ifdef MOONGTANGE_HAS_NETWORK
+        if (m_connection) {
+            if (!m_connection->Finished()) {
+                const auto stage = m_connection->Stage();
+                const char* message =
+                    stage == ConnectionStage::SESSION     ? "Creating guest session..."
+                    : stage == ConnectionStage::MATCHING  ? "Finding a game..."
+                    : stage == ConnectionStage::CANCELLED ? "Cancelling..."
+                                                          : "Connecting to game...";
+                if (renderer.DrawConnecting(message, stage == ConnectionStage::CANCELLED) ||
+                    IsKeyPressed(KEY_ESCAPE)) {
+                    m_connection->Cancel();
+                }
+                continue;
+            }
+            m_errorMessage = m_connection->Error();
+            m_transport = m_connection->TakeTransport();
+            m_connection.reset();
+        }
+#endif
         if (m_displayConfirmationDeadline && GetTime() >= *m_displayConfirmationDeadline) {
             RevertDisplaySettings(window);
         }
@@ -93,7 +124,7 @@ void ClientApplication::Run()
 
         if (!m_transport) {
             const auto action = renderer.DrawMainMenu(
-                m_options.remote.has_value(), m_optionsOpen, m_displaySettings.Pending(),
+                multiplayerAvailable, m_optionsOpen, m_displaySettings.Pending(),
                 m_displayConfirmationDeadline.has_value(), confirmationSeconds, m_nickname,
                 m_errorMessage);
             if (HandleMenuAction(action, window)) {
@@ -119,6 +150,9 @@ void ClientApplication::Run()
 
         if (m_options.smoke) {
             ObserveSmokeProgress();
+            if (m_transport->Connected()) {
+                ++gameFrames;
+            }
         }
 
         const auto status = m_transport->Connected()
@@ -126,7 +160,7 @@ void ClientApplication::Run()
                                 : std::string("Joining...");
         const auto gameMenuAction = renderer.Draw(
             m_presentation.Sample(), m_transport->PlayerId(),
-            m_options.remote ? "TCP dedicated server" : "Embedded server", status.c_str(),
+            m_multiplayer ? "TCP dedicated server" : "Embedded server", status.c_str(),
             m_gameMenuOpen, m_optionsOpen, m_displaySettings.Pending(),
             m_displayConfirmationDeadline.has_value(), confirmationSeconds);
         if (HandleMenuAction(gameMenuAction, window)) {
@@ -237,11 +271,23 @@ void ClientApplication::RevertDisplaySettings(GraphicsWindow& window)
 
 void ClientApplication::StartGame(MenuAction action)
 {
-    if (action == MenuAction::SINGLE_PLAYER && !valid_nickname(m_nickname)) {
+    if (!valid_nickname(m_nickname)) {
         m_errorMessage = "Enter a valid nickname before starting";
         return;
     }
     try {
+        m_errorMessage.clear();
+        m_multiplayer = action == MenuAction::MULTIPLAYER;
+#ifdef MOONGTANGE_HAS_NETWORK
+        if (action == MenuAction::MULTIPLAYER && !m_options.apiUrl.empty()) {
+            if (!m_matchmaking) {
+                m_matchmaking =
+                    std::make_shared<MatchmakingClient>(m_options.apiUrl, m_options.apiCaFile);
+            }
+            m_connection = std::make_unique<MultiplayerConnection>(m_matchmaking, m_nickname);
+            return;
+        }
+#endif
         m_transport = make_transport(m_options, action, m_nickname);
     } catch (const std::exception& error) {
         m_errorMessage = error.what();
@@ -260,6 +306,9 @@ void ClientApplication::ReturnToMenu(std::string errorMessage)
 
 void ClientApplication::CloseTransport()
 {
+#ifdef MOONGTANGE_HAS_NETWORK
+    m_connection.reset();
+#endif
     if (!m_transport) {
         return;
     }
