@@ -1,0 +1,18 @@
+syntax = "proto3";
+package MoongTangE.proto;
+
+// JSON-only HTTP DTOs; these are not part of the game TCP wire protocol.
+message GuestSession {
+  string guest_id = 1;
+  string access_token = 2;
+  int64 expires_in_ms = 3;
+}
+message MatchAssignment {
+  string status = 1;
+  string game_host = 2;
+  uint32 game_port = 3;
+  uint32 protocol_version = 4;
+  uint64 room_id = 5;
+  int64 expires_in_ms = 6;
+  string admission_ticket = 7;
+}

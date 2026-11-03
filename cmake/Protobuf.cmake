@@ -43,3 +43,13 @@ target_link_libraries(ProtocolMessages PUBLIC protobuf::libprotobuf)
 # Generated Protobuf types are private to the codec. Game state remains plain C++.
 add_library(NetworkProtocol "${PROJECT_SOURCE_DIR}/Network/Protocol/Codec.cpp")
 target_link_libraries(NetworkProtocol PUBLIC Common PRIVATE ProtocolMessages)
+
+set(moongtange_match_schema "${PROJECT_SOURCE_DIR}/Client/Matchmaking/matchmaking.proto")
+add_custom_command(
+  OUTPUT "${moongtange_proto_dir}/matchmaking.pb.cc" "${moongtange_proto_dir}/matchmaking.pb.h"
+  COMMAND protobuf::protoc "--cpp_out=${moongtange_proto_dir}"
+    "--proto_path=${PROJECT_SOURCE_DIR}/Client/Matchmaking" "${moongtange_match_schema}"
+  DEPENDS protobuf::protoc "${moongtange_match_schema}" VERBATIM)
+add_library(MatchmakingMessages "${moongtange_proto_dir}/matchmaking.pb.cc")
+target_include_directories(MatchmakingMessages SYSTEM PUBLIC "${moongtange_proto_dir}")
+target_link_libraries(MatchmakingMessages PUBLIC protobuf::libprotobuf)
