@@ -14,7 +14,7 @@
 
 ### 방 입장 통신 — Issue #36
 
-프로토콜 v8은 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
+프로토콜 v9는 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
 성공한 Hello의 방 ID와 다른 Snapshot은 클라이언트가 거부합니다. `IClientTransport::RoomId()`는
 입장한 방을 제공하며 연결 종료 시 0입니다. 렌더링은 기존 `WorldSnapshot`을 사용하고,
 방이 바뀌면 보간 상태를 비웁니다. #37부터 실제 여러 방 배정과 비동기 입장 확정을 사용합니다.
@@ -121,8 +121,16 @@ sequenceDiagram
 - `UpdateMassProperties()`는 기본 공과 부착물 질량, 자체 구 관성과 공 중심까지의 평행축 항을
   합산합니다. 이동력은 질량의 0.65제곱으로 최대 2.5배까지 보정합니다.
 - `UpdateAttached()`는 공의 월드 변환으로 붙은 물체의 위치·회전과 분리용 표면 속도를
-  갱신합니다. `DetachCollectibles()`는 플레이어 퇴장 시 자유 상태로 되돌립니다.
-- `Snapshot()`은 물체 ID·종류·위치·자세·크기와 부착 플레이어 ID를 복사합니다.
+  갱신합니다. `DetachCollectibles()`는 플레이어 퇴장 또는 사망 시 자유 상태로 되돌립니다.
+- `PlayerVolume()`은 기본 공과 부착물 대표 반지름의 세제곱 합을 구합니다. `PlayersTouch()`는
+  상대 좌표 sweep으로 실제 구 프록시 접촉을 찾고, `ResolvePlayerCollisions()`는 같은 Tick의
+  크기로 작은 공의 탈락을 함께 결정한 뒤 생존 공들의 겹침을 풉니다. 동률은 탈락하지 않습니다.
+- `DefeatPlayer()`는 부착물을 분리하고 `deathTick`을 기록하며 속도·회전·이동 입력을 정지합니다.
+  사망자도 연결·방 정원을 유지하며 새 입장 명령을 만들지 않습니다.
+- `TryRestart()` / `CanRestartAt()`는 최대 81개 후보에서 생존 공의 모든 구와 수집물에 대해
+  XZ 반지름 합 + 2 m 간격을 만족하는 위치를 찾고 몸체를 초기화합니다. 현재 사망 Tick과
+  일치하는 입력 요청만 `Step()`에서 처리하며, 입력 시퀀스와 플레이어 ID는 보존합니다.
+- `Snapshot()`은 플레이어 `deathTick`(0이면 생존)과 물체 ID·종류·위치·자세·크기·부착 ID를 복사합니다.
 - `DeterministicRandom::Next/Index/Range`는 STL 분포에 기대지 않는 고정 난수 변환입니다.
 
 </details>
@@ -133,11 +141,36 @@ sequenceDiagram
   프록시 데이터를 제공합니다.
 - `CompoundBallCollider::AddCollectible()`은 부착물 크기·로컬 자세를 적용한 구들을 기본 공에
   추가하고, `SweepSphere()`는 빠른 물체의 최초 표면 접촉 비율·법선을 구합니다.
-- `Support()`는 플레이어 쌍 충돌 방향에서 구 합집합의 가장 먼 표면점을 선택합니다.
+- `Support()`는 구 합집합의 가장 먼 표면점을 선택합니다. `Contact()`는 실제 구 쌍의 가장
+  깊은 접촉을 고르므로 비대칭 부착물 사이 빈 공간을 충돌로 처리하지 않습니다.
 - `CompoundMassProperties::AddSphere()`는 질량과 `2/5 mr²+m|c|²` 관성을 누적합니다.
 - `PhysicsWorld::TerrainContacts()`는 각 구 위치에서 지형을 표본화해 침투가 깊은 최대 4개
   접촉점·접촉 팔·법선을 고릅니다. `Step()`은 반복 침투 보정 뒤 이 접촉들에 정상·마찰·회전
   충격량을 적용합니다.
+
+</details>
+
+<details><summary>Common/Physics/Collision/SphereSphere.h — 공 쌍 충돌 응답</summary>
+
+- `spheres_overlap()`는 기본 구끼리의 겹침을 검사합니다.
+- `resolve_body_contact()`는 단위 접촉 법선과 침투 깊이를 받아 질량 비율로 위치와 충격량을
+  보정합니다. 구 쌍과 복합 공의 접촉 응답이 같은 계산을 사용합니다.
+- `resolve_sphere_collision()`은 기본 구의 거리·법선·침투를 구해 공통 응답으로 전달합니다.
+
+</details>
+
+<details><summary>Client/PlayerLifeState.h — 사망 확인과 재시작 요청</summary>
+
+- `Observe()`는 자신의 서버 `deathTick`만 관측하고 생사 전환 시 요청 상태를 초기화합니다.
+- `Defeated()` / `RequestRestart()` / `RestartDeathTick()`는 Fail 화면·중립 입력과 반복 요청을
+  연결합니다. 요청은 기존 `InputCommand`를 거쳐 플레이어별 bounded 입력 슬롯으로 전달됩니다.
+- `Reset()`은 방 변경·메뉴 복귀에서 요청을 해제합니다. 클라이언트가 임의로 공을 부활시키지
+  않으며, 같은 방에서의 재시작은 매칭이나 새 티켓을 요구하지 않습니다.
+- `SnapshotInterpolator`는 사망·재시작 전환에서 위치 보간을 건너뜁니다.
+
+`SurvivalTests`는 Common만으로 사망·동률·반복 재시작을 검증하고, `IntegrationTests`는
+Local/TCP 양쪽의 사망·동일 방 재시작을 검증합니다. `SurvivalGuiSmoke`는
+`MOONGTANGE_TEST_GUI=ON`에서 SceneRenderer의 Fail 화면과 키 입력을 검사하는 선택 대상입니다.
 
 </details>
 
@@ -423,7 +456,10 @@ Linux 구현은 non-blocking socket, `epoll`, `eventfd`를 사용합니다. Wind
 | `encode<Message>()` / `decode<Message>()` (cpp 내부) | 메시지 종류와 Protobuf 직렬화/역직렬화, 크기·파서 한도를 공통 처리합니다. |
 | `write_vector()` / `read_vector()` / `write_quaternion()` / `read_quaternion()` (cpp 내부) | 벡터·회전을 Protobuf 필드와 게임 값 타입 사이에서 검증하며 변환합니다. |
 
-`PROTOCOL_VERSION = 8`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. MessageType의 대문자 이름 변경은 wire 바이트 값을 바꾸지 않습니다. `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
+`PROTOCOL_VERSION = 9`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. 입력 코덱은
+`restart_death_tick`을 보존하고 Snapshot 코덱은 명시적인 `death_tick` 존재·Tick 상한과 생존한
+부착 소유자를 검증합니다. MessageType의 wire 값은 유지하며 이전 버전은 Hello에서 거부합니다.
+`.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
 
 </details>
 
@@ -467,7 +503,12 @@ flowchart LR
 
 TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + Protobuf 본문**입니다. 종류별 필수 값, 입력 범위, ID, 중복 플레이어, quaternion 정규화와 유한한 실수를 변환 시 검증합니다. 플레이어 ID는 클라이언트 입력 메시지에 없으며 접속 세션의 ID를 서버에서 주입합니다.
 
-최대 메시지는 8KiB이며, 코덱의 방어적 상한은 32명입니다. 최대 길이 플레이어·방 ID·Tick과 16자 닉네임을 넣은 32명 Snapshot은 종류 바이트를 포함해 4,878바이트이며, 여기에 최대 24개 부착 물체를 포함해도 상한 안입니다. 실제 게임방은 최대 3명만 허용합니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는 16으로 제한합니다. 프로토콜 버전은 8이며 이전 버전 Hello는 거부합니다. 알 수 없는 Protobuf 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
+최대 메시지는 8KiB이며, 코덱의 방어적 상한은 32명입니다. 최대 길이 플레이어 ID·Tick과
+16자 닉네임, 방 ID 1을 넣은 생존자 32명 Snapshot은 종류 바이트를 포함해 4,942바이트입니다.
+최대 24개 부착 물체 또는 최대 길이 사망 Tick을 포함해도 프레임 상한 안인지 검사합니다.
+실제 게임방은 최대 3명만 허용합니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는
+16으로 제한합니다. 프로토콜 버전은 9이며 이전 버전 Hello는 거부합니다. 알 수 없는 Protobuf
+필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
 
 ## 시작과 종료
 

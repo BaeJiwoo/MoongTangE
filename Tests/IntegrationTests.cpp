@@ -6,6 +6,7 @@
 #include "TestSupport.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 
@@ -135,6 +136,81 @@ void asynchronous_transport_invariants()
     }));
 }
 
+void defeat_and_restart_cross_both_transports(bool localVictim)
+{
+    using namespace MoongTangE;
+    GameRoomOptions options;
+    options.m_worldSeed = 24;
+    auto core = std::make_shared<ServerHost>(options);
+    core->Start();
+    NetworkServer server(core, "127.0.0.1", 0);
+
+    std::unique_ptr<IClientTransport> winner;
+    if (localVictim) {
+        winner = std::make_unique<TcpClientTransport>("127.0.0.1", server.Port());
+    } else {
+        winner = std::make_unique<LocalTransport>(core);
+    }
+    MOONGTANGE_CHECK(test::wait_for([&] {
+        return winner->Connected();
+    }));
+    std::unique_ptr<IClientTransport> victim;
+    if (localVictim) {
+        victim = std::make_unique<LocalTransport>(core);
+    } else {
+        victim = std::make_unique<TcpClientTransport>("127.0.0.1", server.Port());
+    }
+    MOONGTANGE_CHECK(test::wait_for([&] {
+        return victim->Connected();
+    }));
+    const auto playerId = victim->PlayerId();
+    const auto roomId = victim->RoomId();
+    WorldSnapshot state;
+    MOONGTANGE_CHECK(test::wait_for([&] {
+        if (auto received = victim->Receive()) {
+            state = std::move(*received);
+        }
+        return state.tick >= 90 && state.players.size() == 2 &&
+               std::any_of(state.collectibles.begin(), state.collectibles.end(),
+                           [&](const auto& item) {
+                               return item.attachedPlayerId == winner->PlayerId();
+                           });
+    }));
+
+    std::uint64_t sequence = 0;
+    MOONGTANGE_CHECK(test::wait_for(
+        [&] {
+            if (auto received = victim->Receive()) {
+                state = std::move(*received);
+            }
+            if (state.players[1].deathTick != 0) {
+                return true;
+            }
+            auto direction = state.players[0].position - state.players[1].position;
+            direction.y = 0;
+            direction = direction.Normalized();
+            MOONGTANGE_CHECK(victim->Send({playerId, ++sequence, direction.x, direction.z}));
+            return false;
+        },
+        std::chrono::seconds(5)));
+    const auto deathTick = state.players[1].deathTick;
+    MOONGTANGE_CHECK(victim->Connected() && state.players[0].deathTick == 0);
+
+    MOONGTANGE_CHECK(test::wait_for([&] {
+        MOONGTANGE_CHECK(victim->Send({playerId, ++sequence, 0, 0, deathTick}));
+        if (auto received = victim->Receive()) {
+            state = std::move(*received);
+            return state.players[1].deathTick == 0;
+        }
+        return false;
+    }));
+    MOONGTANGE_CHECK(victim->PlayerId() == playerId && victim->RoomId() == roomId);
+    MOONGTANGE_CHECK((state.players[1].position - state.players[0].position).Length() > 3);
+    MOONGTANGE_CHECK(state.players.size() == 2);
+    victim->Close();
+    winner->Close();
+}
+
 } // namespace
 
 int main()
@@ -142,5 +218,7 @@ int main()
     return MoongTangE::test::run([] {
         deterministic_transport_equivalence();
         asynchronous_transport_invariants();
+        defeat_and_restart_cross_both_transports(false);
+        defeat_and_restart_cross_both_transports(true);
     });
 }

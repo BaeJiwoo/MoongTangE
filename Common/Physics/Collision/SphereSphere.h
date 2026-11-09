@@ -15,21 +15,13 @@ inline bool spheres_overlap(const RigidBody& first, const RigidBody& second)
     return dot(offset, offset) <= combinedRadius * combinedRadius;
 }
 
-inline bool resolve_sphere_collision(RigidBody& first, RigidBody& second, double minimumDistance)
+inline void resolve_body_contact(RigidBody& first, RigidBody& second, Vector3 normal,
+                                 double penetration)
 {
-    const Vector3 separation = second.position - first.position;
-    const double distanceSquared = dot(separation, separation);
-    if (distanceSquared > minimumDistance * minimumDistance) {
-        return false;
-    }
-
-    const double distance = std::sqrt(distanceSquared);
-    const Vector3 normal = distance > 0 ? separation * (1.0 / distance) : Vector3{1, 0, 0};
     const double inverseFirstMass = 1.0 / first.mass;
     const double inverseSecondMass = 1.0 / second.mass;
     const double inverseMass = inverseFirstMass + inverseSecondMass;
 
-    const double penetration = minimumDistance - distance;
     if (penetration > 0) {
         first.position = first.position - normal * (penetration * inverseFirstMass / inverseMass);
         second.position =
@@ -38,7 +30,7 @@ inline bool resolve_sphere_collision(RigidBody& first, RigidBody& second, double
 
     const double approachingSpeed = dot(second.velocity - first.velocity, normal);
     if (approachingSpeed >= 0) {
-        return true;
+        return;
     }
 
     const double impulseMagnitude =
@@ -46,6 +38,18 @@ inline bool resolve_sphere_collision(RigidBody& first, RigidBody& second, double
     const Vector3 impulse = normal * impulseMagnitude;
     first.velocity = first.velocity - impulse * inverseFirstMass;
     second.velocity = second.velocity + impulse * inverseSecondMass;
+}
+
+inline bool resolve_sphere_collision(RigidBody& first, RigidBody& second, double minimumDistance)
+{
+    const Vector3 separation = second.position - first.position;
+    const double distanceSquared = dot(separation, separation);
+    if (distanceSquared > minimumDistance * minimumDistance) {
+        return false;
+    }
+    const double distance = std::sqrt(distanceSquared);
+    const Vector3 normal = distance > 0 ? separation * (1.0 / distance) : Vector3{1, 0, 0};
+    resolve_body_contact(first, second, normal, minimumDistance - distance);
     return true;
 }
 

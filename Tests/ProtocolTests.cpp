@@ -32,10 +32,13 @@ proto::WorldSnapshot protobuf_snapshot(const WorldSnapshot& state)
 
 void framing_and_version_negotiation()
 {
-    // Known Protobuf bytes: field 1, varint wire type, protocol version 8.
-    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 8});
-    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 8});
-    wire::read_client_hello(wire::Bytes{1, 8, 8});
+    // Known Protobuf bytes: field 1, varint wire type, protocol version 9.
+    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 9});
+    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 9});
+    wire::read_client_hello(wire::Bytes{1, 8, 9});
+    MOONGTANGE_CHECK(test::throws([] {
+        wire::read_client_hello(wire::Bytes{1, 8, 8});
+    }));
     const std::string ticket(64, 'a');
     const auto hello = wire::read_client_hello(wire::client_hello(ticket, "Alice"));
     MOONGTANGE_CHECK(hello.ticket == ticket && hello.nickname == "Alice");
@@ -128,6 +131,8 @@ void inputs_use_session_identity_and_validate_presence()
     const auto restored = wire::read_input(bytes, 7);
     MOONGTANGE_CHECK(restored.playerId == 7 && restored.sequence == input.sequence);
     MOONGTANGE_CHECK(restored.x == input.x && std::signbit(restored.x) && restored.z == -1);
+    const auto restart = wire::read_input(wire::input({42, 9, 0, 0, 123}), 7);
+    MOONGTANGE_CHECK(restart.playerId == 7 && restart.restartDeathTick == 123);
 
     for (std::size_t size = 0; size < bytes.size(); ++size) {
         MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
@@ -248,6 +253,28 @@ void snapshots_validate_all_game_invariants()
     };
 
     auto bad = original;
+    bad.mutable_players(0)->clear_death_tick();
+    reject(bad);
+
+    bad = original;
+    bad.mutable_players(0)->set_death_tick(state.tick + 1);
+    reject(bad);
+
+    bad = original;
+    bad.mutable_players(0)->set_death_tick(state.tick);
+    reject(bad); // A defeated player cannot own collectibles.
+
+    auto defeated = state;
+    defeated.players[0].deathTick = state.tick;
+    MOONGTANGE_CHECK(test::throws([&] {
+        wire::snapshot({1, defeated});
+    }));
+    defeated.collectibles[0].attachedPlayerId = 0;
+    MOONGTANGE_CHECK(
+        wire::read_snapshot(wire::snapshot({1, defeated})).world.players[0].deathTick ==
+        state.tick);
+
+    bad = original;
     bad.clear_server_tick();
     reject(bad);
 
@@ -348,7 +375,7 @@ void maximum_snapshot_fits_bounded_frame()
     }
 
     const auto bytes = wire::snapshot({1, state});
-    MOONGTANGE_CHECK(bytes.size() == 4878 && bytes.size() <= wire::MAX_FRAME_BYTES);
+    MOONGTANGE_CHECK(bytes.size() == 4942 && bytes.size() <= wire::MAX_FRAME_BYTES);
     MOONGTANGE_CHECK(wire::read_snapshot(bytes).world.players.size() == MAX_PLAYERS);
     const auto framed = wire::frame(bytes);
     MOONGTANGE_CHECK(wire::frame_size(std::span(framed).first(wire::FRAME_HEADER_BYTES)) ==
@@ -365,6 +392,15 @@ void maximum_snapshot_fits_bounded_frame()
     const auto fullBytes = wire::snapshot({1, state});
     MOONGTANGE_CHECK(fullBytes.size() <= wire::MAX_FRAME_BYTES);
     MOONGTANGE_CHECK(wire::read_snapshot(fullBytes).world.collectibles.size() == MAX_COLLECTIBLES);
+
+    auto allDefeated = state;
+    for (auto& player : allDefeated.players) {
+        player.deathTick = state.tick;
+    }
+    for (auto& collectible : allDefeated.collectibles) {
+        collectible.attachedPlayerId = 0;
+    }
+    MOONGTANGE_CHECK(wire::snapshot({1, allDefeated}).size() <= wire::MAX_FRAME_BYTES);
 
     state.players.push_back({1, {}, {}, {}, {}, "Extra"});
     MOONGTANGE_CHECK(MoongTangE::test::throws([&] {

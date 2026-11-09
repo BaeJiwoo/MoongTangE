@@ -11,6 +11,8 @@ struct InputCommand
     std::uint64_t sequence{};
 
     double x{}, z{};
+    // Repeat until acknowledged. A previous defeat cannot restart a later life.
+    std::uint64_t restartDeathTick{};
 
     bool Valid() const
     {

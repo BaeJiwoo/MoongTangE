@@ -76,7 +76,7 @@ def fault_tests(probe):
                         pass
                     return
                 assignment = {"status": "reserved", "game_host": "127.0.0.1",
-                              "game_port": unused_port(), "protocol_version": 8,
+                              "game_port": unused_port(), "protocol_version": 9,
                               "room_id": "1", "expires_in_ms": 29000, "admission_ticket": "c" * 64}
                 overrides = {"bad_port": ("game_port", 65536), "bad_version": ("protocol_version", 999),
                              "bad_ticket": ("admission_ticket", "oops"), "expired": ("expires_in_ms", 0)}
