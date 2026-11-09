@@ -26,6 +26,12 @@ struct SweptSphereContact
     Vector3 normal{0, 1, 0};
 };
 
+struct CompoundSphereContact
+{
+    Vector3 normal{1, 0, 0};
+    double penetration{};
+};
+
 // Exact bounded union of local sphere proxies used for pickup, terrain contact and debug display.
 class CompoundBallCollider
 {
@@ -65,6 +71,31 @@ class CompoundBallCollider
     const std::vector<LocalSphereProxy>& Spheres() const
     {
         return m_spheres;
+    }
+
+    bool Contact(Vector3 position, Quaternion orientation, const CompoundBallCollider& other,
+                 Vector3 otherPosition, Quaternion otherOrientation,
+                 CompoundSphereContact& contact) const
+    {
+        bool found = false;
+        contact = {};
+        for (const auto& first : m_spheres) {
+            const auto firstCenter = position + orientation.Rotate(first.center);
+            for (const auto& second : other.m_spheres) {
+                const auto offset =
+                    otherPosition + otherOrientation.Rotate(second.center) - firstCenter;
+                const double distance = offset.Length();
+                const double penetration = first.radius + second.radius - distance;
+                if (penetration < 0 || (found && penetration <= contact.penetration)) {
+                    continue;
+                }
+                contact = {distance > MIN_DIRECTION_LENGTH ? offset * (1.0 / distance)
+                                                           : Vector3{1, 0, 0},
+                           penetration};
+                found = true;
+            }
+        }
+        return found;
     }
 
     static Vector3 EmbeddedOrigin(const LocalSphereProxy& surfaceSphere, Vector3 outwardNormal,

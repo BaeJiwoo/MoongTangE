@@ -322,6 +322,25 @@ void compound_mass_properties_include_parallel_axis_inertia()
     MOONGTANGE_CHECK(MoongTangE::test::approx(properties.Inertia(), expected));
 }
 
+void compound_player_contact_uses_actual_spheres()
+{
+    CompoundBallCollider first(0.5), second(0.5);
+    first.AddSphere({2, 0, 2}, 0.4);
+    CompoundSphereContact contact;
+    // The first shape projects past the second along X but their actual spheres do not touch.
+    MOONGTANGE_CHECK(!first.Contact({}, {}, second, {2, 0, 0}, {}, contact));
+    MOONGTANGE_CHECK(first.Contact({}, {}, second, {2, 0, 2.8}, {}, contact));
+    MOONGTANGE_CHECK(test::approx(contact.penetration, 0.1));
+    MOONGTANGE_CHECK((contact.normal - Vector3{0, 0, 1}).Length() < 1e-9);
+
+    RigidBody firstBody, secondBody;
+    firstBody.position = {};
+    secondBody.position = {0.8, 0, 0};
+    MOONGTANGE_CHECK(first.Contact({}, {}, second, secondBody.position, {}, contact));
+    resolve_body_contact(firstBody, secondBody, contact.normal, contact.penetration);
+    MOONGTANGE_CHECK(test::approx((secondBody.position - firstBody.position).Length(), 1));
+}
+
 void invalid_compound_collider_is_rejected()
 {
     MOONGTANGE_CHECK(MoongTangE::test::throws([] {
@@ -358,5 +377,6 @@ int main()
         compound_collider_resolves_deep_multi_contact_deterministically();
         compound_mass_properties_include_parallel_axis_inertia();
         invalid_compound_collider_is_rejected();
+        compound_player_contact_uses_actual_spheres();
     });
 }

@@ -58,7 +58,7 @@ class SnapshotInterpolator
                                                [&](const PlayerState& candidate) {
                                                    return candidate.id == player.id;
                                                });
-            if (previous != m_from.players.end()) {
+            if (previous != m_from.players.end() && previous->deathTick == player.deathTick) {
                 InterpolatePlayer(*previous, player, fraction);
             }
         }

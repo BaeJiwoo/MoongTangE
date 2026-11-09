@@ -12,7 +12,7 @@ namespace {
 
 void world_replays_attachment_and_motion_deterministically()
 {
-    MoongTangE::GameWorld first(1001), second(1001);
+    MoongTangE::GameWorld first(24), second(24);
     MOONGTANGE_CHECK(first.AddPlayer(1) && second.AddPlayer(1));
     bool sawAttachment = false;
 
@@ -198,7 +198,8 @@ int main()
             MOONGTANGE_CHECK(players[0].position.x <= players[1].position.x);
         }
 
-        MoongTangE::GameWorld attachingWorld(1001);
+        // This seed places an apple (one centered proxy) at the player's landing area.
+        MoongTangE::GameWorld attachingWorld(1192);
         MoongTangE::PhysicsWorld comparisonPhysics;
         MoongTangE::RigidBody comparisonPlayer;
         MOONGTANGE_CHECK(attachingWorld.AddPlayer(1));
@@ -231,6 +232,7 @@ int main()
             }
         }
         MOONGTANGE_CHECK(attached.attachedPlayerId == 1);
+        MOONGTANGE_CHECK(attached.kind == MoongTangE::CollectibleKind::APPLE);
 
         auto attachedSnapshot = attachingWorld.Snapshot();
         const auto& attachmentPlayer = attachedSnapshot.players.front();

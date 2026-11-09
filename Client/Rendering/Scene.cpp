@@ -318,6 +318,30 @@ MenuAction draw_game_menu(float screenWidth, float screenHeight, bool optionsOpe
     return MenuAction::NONE;
 }
 
+MenuAction draw_fail_screen(float screenWidth, float screenHeight, bool restartPending)
+{
+    DrawRectangleRec({0, 0, screenWidth, screenHeight}, Color{0, 0, 0, 185});
+    const Rectangle dialog{(screenWidth - 560) * 0.5f, (screenHeight - 350) * 0.5f, 560, 350};
+    DrawRectangleRounded(dialog, 0.08f, 8, Color{30, 37, 52, 255});
+    DrawText("FAIL", static_cast<int>(dialog.x) + 30, static_cast<int>(dialog.y) + 25, 48,
+             Color{255, 110, 90, 255});
+    DrawText("You collided with a larger ball.", static_cast<int>(dialog.x) + 30,
+             static_cast<int>(dialog.y) + 95, 22, RAYWHITE);
+    DrawText(restartPending ? "Finding a safe place to restart..." : "Start fresh and grow again.",
+             static_cast<int>(dialog.x) + 30, static_cast<int>(dialog.y) + 132, 18, LIGHTGRAY);
+
+    const Rectangle restartButton{dialog.x + 70, dialog.y + 184, 420, 54};
+    const Rectangle menuButton{dialog.x + 70, dialog.y + 260, 420, 54};
+    if (draw_menu_button(restartButton, "PLAY AGAIN  [ENTER / R]", !restartPending) ||
+        (!restartPending && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_R)))) {
+        return MenuAction::RESTART_GAME;
+    }
+    if (draw_menu_button(menuButton, "MAIN MENU  [ESC]", true) || IsKeyPressed(KEY_ESCAPE)) {
+        return MenuAction::MAIN_MENU;
+    }
+    return MenuAction::NONE;
+}
+
 ::Vector3 render_vector(Vector3 value)
 {
     return {static_cast<float>(value.x), static_cast<float>(value.y), static_cast<float>(value.z)};
@@ -377,8 +401,9 @@ void draw_player_label(const PlayerState& player, const Camera3D& camera, const 
 
 void draw_terrain()
 {
-    DrawPlane({0, 0, 0}, {100, 100}, Color{50, 65, 80, 255});
-    DrawGrid(40, 1);
+    constexpr float MAP_SIZE = static_cast<float>(2 * simulation::MAP_HALF_EXTENT);
+    DrawPlane({0, 0, 0}, {MAP_SIZE, MAP_SIZE}, Color{50, 65, 80, 255});
+    DrawGrid(simulation::MAP_GRID_SLICES, 1);
 
     DrawCylinder({static_cast<float>(POINTED_TERRAIN.x), 0, static_cast<float>(POINTED_TERRAIN.z)},
                  0, static_cast<float>(POINTED_TERRAIN.radius),
@@ -723,7 +748,7 @@ void SceneRenderer::DrawPhysicsDebug(const WorldSnapshot& state, const PlayerSta
 MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
                                const char* status, bool gameMenuOpen, bool optionsOpen,
                                const DisplaySettingsState& selectedSettings, bool confirmationOpen,
-                               int confirmationSeconds) const
+                               int confirmationSeconds, bool restartPending) const
 {
     if (IsKeyPressed(KEY_F3)) {
         m_showPhysicsDebug = !m_showPhysicsDebug;
@@ -747,6 +772,9 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
         DrawCollectible(collectible);
     }
     for (const auto& player : state.players) {
+        if (player.deathTick != 0) {
+            continue;
+        }
         DrawBall(player, player.id == playerId);
         if (m_showPhysicsDebug) {
             DrawPhysicsDebug(state, player);
@@ -756,7 +784,9 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
 
     begin_ui(uiCanvas);
     for (const auto& player : state.players) {
-        draw_player_label(player, camera, uiCanvas);
+        if (player.deathTick == 0) {
+            draw_player_label(player, camera, uiCanvas);
+        }
     }
 
     draw_overlay(state.tick, playerId, mode, status);
@@ -764,10 +794,16 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
         DrawText("F3 compound colliders | red contacts | yellow normals", 28, 164, 16,
                  Color{80, 220, 255, 255});
     }
+    const bool defeated =
+        std::any_of(state.players.begin(), state.players.end(), [playerId](const auto& player) {
+            return player.id == playerId && player.deathTick != 0;
+        });
     const auto gameMenuAction =
-        gameMenuOpen ? draw_game_menu(REFERENCE_WINDOW_WIDTH, REFERENCE_WINDOW_HEIGHT, optionsOpen,
-                                      selectedSettings, confirmationOpen, confirmationSeconds)
-                     : MenuAction::NONE;
+        defeated ? draw_fail_screen(REFERENCE_WINDOW_WIDTH, REFERENCE_WINDOW_HEIGHT, restartPending)
+        : gameMenuOpen
+            ? draw_game_menu(REFERENCE_WINDOW_WIDTH, REFERENCE_WINDOW_HEIGHT, optionsOpen,
+                             selectedSettings, confirmationOpen, confirmationSeconds)
+            : MenuAction::NONE;
     end_ui();
     EndDrawing();
     return gameMenuAction;

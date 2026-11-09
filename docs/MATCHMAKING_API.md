@@ -118,7 +118,7 @@ Authorization: Bearer <MOONGTANGE_PUBLIC_API_KEY>가 필요하고 응답은 Cach
       "server_id": "local-1",
       "game_host": "127.0.0.1",
       "game_port": 27015,
-      "protocol_version": 6,
+      "protocol_version": 9,
       "room_id": "1",
       "expires_in_ms": 29834
     }

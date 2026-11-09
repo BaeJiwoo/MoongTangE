@@ -146,6 +146,7 @@ Bytes input(InputCommand command)
     message.set_sequence(command.sequence);
     message.set_x(command.x);
     message.set_z(command.z);
+    message.set_restart_death_tick(command.restartDeathTick);
     return encode(MessageType::INPUT, message);
 }
 
@@ -153,7 +154,8 @@ InputCommand read_input(std::span<const std::uint8_t> data, std::uint32_t sessio
 {
     const auto message = decode<proto::InputCommand>(data, MessageType::INPUT);
     require(message.has_x() && message.has_z());
-    const InputCommand command{sessionId, message.sequence(), message.x(), message.z()};
+    const InputCommand command{sessionId, message.sequence(), message.x(), message.z(),
+                               message.restart_death_tick()};
     require(command.Valid());
     return command;
 }
@@ -169,13 +171,19 @@ Bytes snapshot(const RoomSnapshot& room)
     message.set_room_id(room.roomId);
 
     std::set<std::uint32_t> ids;
+    std::set<std::uint32_t> aliveIds;
     for (const auto& player : state.players) {
         require(player.id != 0 && ids.insert(player.id).second);
+        require(player.deathTick <= state.tick);
+        if (player.deathTick == 0) {
+            aliveIds.insert(player.id);
+        }
 
         auto& record = *message.add_players();
         record.set_id(player.id);
         require(player.nickname.empty() || valid_nickname(player.nickname));
         record.set_nickname(player.nickname);
+        record.set_death_tick(player.deathTick);
         write_vector(*record.mutable_position(), player.position);
         write_vector(*record.mutable_velocity(), player.velocity);
         write_quaternion(*record.mutable_orientation(), player.orientation);
@@ -184,11 +192,12 @@ Bytes snapshot(const RoomSnapshot& room)
 
     std::set<std::uint32_t> collectibleIds;
     for (const auto& collectible : state.collectibles) {
-        require(collectible.id != 0 && collectibleIds.insert(collectible.id).second &&
-                valid_collectible_kind(collectible.kind) && std::isfinite(collectible.scale) &&
-                collectible.scale >= simulation::COLLECTIBLE_MIN_SCALE &&
-                collectible.scale <= simulation::COLLECTIBLE_MAX_SCALE &&
-                (collectible.attachedPlayerId == 0 || ids.contains(collectible.attachedPlayerId)));
+        require(
+            collectible.id != 0 && collectibleIds.insert(collectible.id).second &&
+            valid_collectible_kind(collectible.kind) && std::isfinite(collectible.scale) &&
+            collectible.scale >= simulation::COLLECTIBLE_MIN_SCALE &&
+            collectible.scale <= simulation::COLLECTIBLE_MAX_SCALE &&
+            (collectible.attachedPlayerId == 0 || aliveIds.contains(collectible.attachedPlayerId)));
 
         auto& record = *message.add_collectibles();
         record.set_id(collectible.id);
@@ -213,27 +222,32 @@ RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
     state.collectibles.reserve(static_cast<std::size_t>(message.collectibles_size()));
 
     std::set<std::uint32_t> ids;
+    std::set<std::uint32_t> aliveIds;
     for (const auto& record : message.players()) {
         require(record.id() != 0 && ids.insert(record.id()).second);
+        require(record.has_death_tick() && record.death_tick() <= state.tick);
+        if (record.death_tick() == 0) {
+            aliveIds.insert(record.id());
+        }
         require(record.nickname().empty() || valid_nickname(record.nickname()));
         require(record.has_position() && record.has_velocity() && record.has_orientation() &&
                 record.has_angular_velocity());
 
-        state.players.push_back({record.id(), read_vector(record.position()),
-                                 read_vector(record.velocity()),
-                                 read_quaternion(record.orientation()),
-                                 read_vector(record.angular_velocity()), record.nickname()});
+        state.players.push_back(
+            {record.id(), read_vector(record.position()), read_vector(record.velocity()),
+             read_quaternion(record.orientation()), read_vector(record.angular_velocity()),
+             record.nickname(), record.death_tick()});
     }
 
     std::set<std::uint32_t> collectibleIds;
     for (const auto& record : message.collectibles()) {
-        require(record.id() != 0 && collectibleIds.insert(record.id()).second &&
-                record.kind() >= proto::APPLE && record.kind() <= proto::DONUT &&
-                record.has_position() && record.has_orientation() && record.has_scale() &&
-                std::isfinite(record.scale()) &&
-                record.scale() >= simulation::COLLECTIBLE_MIN_SCALE &&
-                record.scale() <= simulation::COLLECTIBLE_MAX_SCALE &&
-                (record.attached_player_id() == 0 || ids.contains(record.attached_player_id())));
+        require(
+            record.id() != 0 && collectibleIds.insert(record.id()).second &&
+            record.kind() >= proto::APPLE && record.kind() <= proto::DONUT &&
+            record.has_position() && record.has_orientation() && record.has_scale() &&
+            std::isfinite(record.scale()) && record.scale() >= simulation::COLLECTIBLE_MIN_SCALE &&
+            record.scale() <= simulation::COLLECTIBLE_MAX_SCALE &&
+            (record.attached_player_id() == 0 || aliveIds.contains(record.attached_player_id())));
         state.collectibles.push_back({record.id(), static_cast<CollectibleKind>(record.kind()),
                                       read_vector(record.position()),
                                       read_quaternion(record.orientation()), record.scale(),

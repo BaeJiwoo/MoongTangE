@@ -41,6 +41,7 @@ message InputCommand {
   optional double x = 2;
   optional double z = 3;
   // Player identity comes from the server-assigned session, never this message.
+  uint64 restart_death_tick = 4;
 }
 
 message PlayerState {
@@ -50,6 +51,8 @@ message PlayerState {
   Quaternion orientation = 4;
   Vector3 angular_velocity = 5;
   string nickname = 6;
+  // Explicit zero means alive; nonzero identifies the defeat being acknowledged.
+  optional uint64 death_tick = 7;
 }
 
 enum CollectibleKind {

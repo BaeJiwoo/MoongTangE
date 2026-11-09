@@ -19,6 +19,7 @@
 #include <iterator>
 #include <map>
 #include <numbers>
+#include <set>
 #include <vector>
 
 namespace MoongTangE {
@@ -93,6 +94,15 @@ class GameWorld
     {
         std::map<std::uint32_t, BodyTransform> previousPlayers;
         for (auto& [id, player] : m_players) {
+            if (player.deathTick != 0) {
+                if (m_tick - player.inputTick < simulation::INPUT_TIMEOUT_TICKS &&
+                    player.input.restartDeathTick == player.deathTick) {
+                    TryRestart(id, player);
+                }
+                if (player.deathTick != 0) {
+                    continue;
+                }
+            }
             previousPlayers.emplace(id,
                                     BodyTransform{player.body.position, player.body.orientation});
             UpdateMassProperties(id, player);
@@ -109,7 +119,7 @@ class GameWorld
                            force);
         }
 
-        ResolvePlayerCollisions();
+        ResolvePlayerCollisions(previousPlayers);
 
         for (auto& collectible : m_collectibles) {
             if (collectible.attachedPlayerId != 0) {
@@ -138,8 +148,13 @@ class GameWorld
 
         for (const auto& [id, player] : m_players) {
             const auto& body = player.body;
-            result.players.push_back(
-                {id, body.position, body.velocity, body.orientation, body.angularVelocity, {}});
+            result.players.push_back({id,
+                                      body.position,
+                                      body.velocity,
+                                      body.orientation,
+                                      body.angularVelocity,
+                                      {},
+                                      player.deathTick});
         }
 
         for (const auto& collectible : m_collectibles) {
@@ -167,6 +182,7 @@ class GameWorld
 
         InputCommand input;
         std::uint64_t inputTick{};
+        std::uint64_t deathTick{};
     };
 
     struct Collectible
@@ -211,33 +227,153 @@ class GameWorld
         player.body.rotationalInertia = properties.Inertia();
     }
 
-    void ResolvePlayerCollisions()
+    double PlayerVolume(std::uint32_t playerId) const
+    {
+        // The common 4*pi/3 factor cancels. Count each object once, not its proxy spheres.
+        double volume =
+            simulation::PLAYER_RADIUS * simulation::PLAYER_RADIUS * simulation::PLAYER_RADIUS;
+        for (const auto& collectible : m_collectibles) {
+            if (collectible.attachedPlayerId == playerId) {
+                const double radius = collectible.body.radius;
+                volume += radius * radius * radius;
+            }
+        }
+        return volume;
+    }
+
+    static bool PlayersTouch(const Player& first, const BodyTransform& previousFirst,
+                             const CompoundBallCollider& firstCollider, const Player& second,
+                             const BodyTransform& previousSecond,
+                             const CompoundBallCollider& secondCollider)
+    {
+        // Sweep every first-player proxy in the second player's local frame, as for pickups.
+        const auto inverseStart = previousSecond.orientation.Conjugate();
+        const auto inverseEnd = second.body.orientation.Conjugate();
+        for (const auto& sphere : firstCollider.Spheres()) {
+            const auto start = inverseStart.Rotate(previousFirst.position +
+                                                   previousFirst.orientation.Rotate(sphere.center) -
+                                                   previousSecond.position);
+            const auto end = inverseEnd.Rotate(first.body.position +
+                                               first.body.orientation.Rotate(sphere.center) -
+                                               second.body.position);
+            SweptSphereContact contact;
+            if (secondCollider.SweepSphere(start, end, sphere.radius, contact)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void DefeatPlayer(std::uint32_t id, Player& player)
+    {
+        DetachCollectibles(id, player);
+        player.deathTick = m_tick + 1;
+        player.body.velocity = {};
+        player.body.angularVelocity = {};
+        player.input.x = 0;
+        player.input.z = 0;
+        player.input.restartDeathTick = 0;
+    }
+
+    bool CanRestartAt(Vector3 position) const
+    {
+        constexpr double SAFE_GAP = 2;
+        for (const auto& [id, player] : m_players) {
+            if (player.deathTick != 0) {
+                continue;
+            }
+            const auto collider = PlayerCollider(id, player);
+            for (const auto& sphere : collider.Spheres()) {
+                const auto center =
+                    player.body.position + player.body.orientation.Rotate(sphere.center);
+                if (std::hypot(position.x - center.x, position.z - center.z) <
+                    simulation::PLAYER_RADIUS + sphere.radius + SAFE_GAP) {
+                    return false;
+                }
+            }
+        }
+        return std::all_of(
+            m_collectibles.begin(), m_collectibles.end(), [&](const auto& collectible) {
+                return std::hypot(position.x - collectible.body.position.x,
+                                  position.z - collectible.body.position.z) >=
+                       simulation::PLAYER_RADIUS + collectible.body.radius + SAFE_GAP;
+            });
+    }
+
+    bool TryRestart(std::uint32_t id, Player& player)
+    {
+        constexpr std::size_t COLUMNS = 9;
+        constexpr double EXTENT = simulation::COLLECTIBLE_AREA_HALF_EXTENT - 2;
+        constexpr double SPACING = 2 * EXTENT / (COLUMNS - 1);
+        for (std::size_t attempt = 0; attempt < COLUMNS * COLUMNS; ++attempt) {
+            const auto slot = (player.spawnSlot + attempt) % (COLUMNS * COLUMNS);
+            const auto row = slot / COLUMNS;
+            Vector3 position{-EXTENT + static_cast<double>(slot % COLUMNS) * SPACING, 0,
+                             -EXTENT + static_cast<double>(row) * SPACING};
+            if (!CanRestartAt(position)) {
+                continue;
+            }
+            position.y = terrain_sample(position.x, position.z).height + simulation::SPAWN_HEIGHT;
+            player.body = {};
+            player.body.position = position;
+            player.deathTick = 0;
+            player.input = {id, player.input.sequence, 0, 0};
+            player.inputTick = m_tick;
+            return true;
+        }
+        return false;
+    }
+
+    void ResolvePlayerCollisions(const std::map<std::uint32_t, BodyTransform>& previousPlayers)
     {
         std::map<std::uint32_t, CompoundBallCollider> colliders;
+        std::map<std::uint32_t, double> volumes;
         for (const auto& [id, player] : m_players) {
-            colliders.emplace(id, PlayerCollider(id, player));
+            if (player.deathTick == 0) {
+                colliders.emplace(id, PlayerCollider(id, player));
+                volumes.emplace(id, PlayerVolume(id));
+            }
+        }
+
+        // Decide simultaneous defeats before mutating ownership or resolving penetration.
+        std::set<std::uint32_t> defeated;
+        for (auto first = colliders.begin(); first != colliders.end(); ++first) {
+            for (auto second = std::next(first); second != colliders.end(); ++second) {
+                const double firstVolume = volumes.at(first->first);
+                const double secondVolume = volumes.at(second->first);
+                constexpr double RELATIVE_SIZE_TOLERANCE = 1e-9;
+                if (std::abs(firstVolume - secondVolume) <=
+                    RELATIVE_SIZE_TOLERANCE * std::max(firstVolume, secondVolume)) {
+                    continue;
+                }
+                if (PlayersTouch(m_players.at(first->first), previousPlayers.at(first->first),
+                                 first->second, m_players.at(second->first),
+                                 previousPlayers.at(second->first), second->second)) {
+                    defeated.insert(firstVolume < secondVolume ? first->first : second->first);
+                }
+            }
+        }
+        for (const auto id : defeated) {
+            DefeatPlayer(id, m_players.at(id));
+            colliders.erase(id);
         }
 
         for (int iteration = 0; iteration < COLLISION_SOLVER_ITERATIONS; ++iteration) {
-            for (auto first = m_players.begin(); first != m_players.end(); ++first) {
-                for (auto second = std::next(first); second != m_players.end(); ++second) {
-                    const Vector3 separation =
-                        second->second.body.position - first->second.body.position;
-                    const double distance = separation.Length();
-                    const Vector3 normal =
-                        distance > 0 ? separation * (1.0 / distance) : Vector3{1, 0, 0};
-                    const auto& firstCollider = colliders.at(first->first);
-                    const auto& secondCollider = colliders.at(second->first);
-                    const double minimumDistance =
-                        dot(firstCollider.Support(first->second.body.orientation, normal), normal) +
-                        dot(secondCollider.Support(second->second.body.orientation, normal * -1),
-                            normal * -1);
-                    resolve_sphere_collision(first->second.body, second->second.body,
-                                             minimumDistance);
+            for (auto first = colliders.begin(); first != colliders.end(); ++first) {
+                for (auto second = std::next(first); second != colliders.end(); ++second) {
+                    auto& firstBody = m_players.at(first->first).body;
+                    auto& secondBody = m_players.at(second->first).body;
+                    CompoundSphereContact contact;
+                    if (first->second.Contact(firstBody.position, firstBody.orientation,
+                                              second->second, secondBody.position,
+                                              secondBody.orientation, contact)) {
+                        resolve_body_contact(firstBody, secondBody, contact.normal,
+                                             contact.penetration);
+                    }
                 }
             }
-            for (auto& [id, player] : m_players) {
-                m_physics.ConstrainToTerrain(player.body, colliders.at(id));
+            for (const auto& [id, collider] : colliders) {
+                m_physics.ConstrainToTerrain(m_players.at(id).body, collider);
             }
         }
     }
@@ -308,6 +444,9 @@ class GameWorld
         bool found = false;
         const auto& shape = collectible_proxy_shape(collectible.kind);
         for (const auto& [playerId, player] : m_players) {
+            if (player.deathTick != 0) {
+                continue;
+            }
             const auto& previousPlayer = previousPlayers.at(playerId);
             const Quaternion inversePreviousPlayer = previousPlayer.orientation.Conjugate();
             const Quaternion inversePlayer = player.body.orientation.Conjugate();

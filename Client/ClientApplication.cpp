@@ -129,7 +129,7 @@ void ClientApplication::Run()
                 : 0;
 
         const bool escapePressed = IsKeyPressed(KEY_ESCAPE);
-        if (m_transport && escapePressed && !m_optionsOpen) {
+        if (m_transport && escapePressed && !m_optionsOpen && !m_playerLife.Defeated()) {
             m_gameMenuOpen = !m_gameMenuOpen;
         } else if (!m_transport && escapePressed && !m_optionsOpen && m_errorMessage.empty()) {
             break;
@@ -154,12 +154,19 @@ void ClientApplication::Run()
             continue;
         }
 
-        if (!SendInput(!m_gameMenuOpen)) {
+        if (!SendInput(!m_gameMenuOpen && !m_playerLife.Defeated())) {
             failure = m_transport->Error();
             ReturnToMenu(failure.empty() ? "Input was rejected by the server" : std::move(failure));
             continue;
         }
         ReceiveSnapshot();
+        if (m_playerLife.Defeated()) {
+            if (m_displayConfirmationDeadline) {
+                RevertDisplaySettings(window);
+            }
+            m_gameMenuOpen = false;
+            m_optionsOpen = false;
+        }
 
         if (m_options.smoke) {
             ObserveSmokeProgress();
@@ -171,11 +178,12 @@ void ClientApplication::Run()
         const auto status = m_transport->Connected()
                                 ? "Room " + std::to_string(m_transport->RoomId())
                                 : std::string("Joining...");
-        const auto gameMenuAction = renderer.Draw(
-            m_presentation.Sample(), m_transport->PlayerId(),
-            m_multiplayer ? "TCP dedicated server" : "Embedded server", status.c_str(),
-            m_gameMenuOpen, m_optionsOpen, m_displaySettings.Pending(),
-            m_displayConfirmationDeadline.has_value(), confirmationSeconds);
+        const auto gameMenuAction =
+            renderer.Draw(m_presentation.Sample(), m_transport->PlayerId(),
+                          m_multiplayer ? "TCP dedicated server" : "Embedded server",
+                          status.c_str(), m_gameMenuOpen, m_optionsOpen,
+                          m_displaySettings.Pending(), m_displayConfirmationDeadline.has_value(),
+                          confirmationSeconds, m_playerLife.RestartDeathTick() != 0);
         if (HandleMenuAction(gameMenuAction, window)) {
             break;
         }
@@ -203,6 +211,12 @@ bool ClientApplication::HandleMenuAction(MenuAction action, GraphicsWindow& wind
         break;
     case MenuAction::RESUME_GAME:
         m_gameMenuOpen = false;
+        break;
+    case MenuAction::RESTART_GAME:
+        m_playerLife.RequestRestart();
+        break;
+    case MenuAction::MAIN_MENU:
+        ReturnToMenu({});
         break;
     case MenuAction::EXIT_GAME:
         CloseTransport();
@@ -311,6 +325,7 @@ void ClientApplication::ReturnToMenu(std::string errorMessage)
 {
     CloseTransport();
     m_presentation.Reset();
+    m_playerLife.Reset();
     m_authoritativeState = {};
     m_roomId = 0;
     m_sequence = 0;
@@ -339,6 +354,7 @@ bool ClientApplication::SendInput(bool movementEnabled)
     }
 
     auto input = keyboard_input(m_transport->PlayerId(), ++m_sequence);
+    input.restartDeathTick = m_playerLife.RestartDeathTick();
     if (!movementEnabled) {
         input.x = 0;
         input.z = 0;
@@ -357,6 +373,7 @@ void ClientApplication::ReceiveSnapshot()
         m_roomId = roomId;
         m_authoritativeState = {};
         m_presentation.Reset();
+        m_playerLife.Reset();
         m_initialX.reset();
     }
 
@@ -366,6 +383,7 @@ void ClientApplication::ReceiveSnapshot()
                       << " nickname=" << m_nickname << std::endl;
         }
         m_authoritativeState = std::move(*snapshot);
+        m_playerLife.Observe(m_authoritativeState, m_transport->PlayerId());
         m_presentation.Push(m_authoritativeState);
     }
 }

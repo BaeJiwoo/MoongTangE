@@ -33,6 +33,8 @@ struct PlayerState
     Quaternion orientation{};
     Vector3 angularVelocity{};
     std::string nickname;
+    // Zero while alive; otherwise the authoritative tick of this particular defeat.
+    std::uint64_t deathTick{};
 };
 
 struct CollectibleState

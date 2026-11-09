@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-QUICK_TESTS = ("PhysicsTests", "WorldTests", "RenderingTests", "CliTests", "LocalTests")
+QUICK_TESTS = ("PhysicsTests", "WorldTests", "SurvivalTests", "RenderingTests", "CliTests", "LocalTests")
 SECRET_KEYS = ("MOONGTANGE_PUBLIC_API_KEY", "MOONGTANGE_CONTROL_KEY")
 
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Client/ClientOptions.h"
+#include "Client/PlayerLifeState.h"
 #include "Client/Rendering/DisplaySettings.h"
 #include "Client/Rendering/DisplaySettingsStore.h"
 #include "Client/Rendering/Scene.h"
@@ -49,6 +50,7 @@ class ClientApplication
 #endif
 
     SnapshotInterpolator m_presentation;
+    PlayerLifeState m_playerLife;
     DisplaySettings m_displaySettings;
     DisplaySettingsStore m_displaySettingsStore;
 

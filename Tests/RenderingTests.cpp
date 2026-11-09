@@ -1,3 +1,4 @@
+#include "Client/PlayerLifeState.h"
 #include "Client/Rendering/DisplaySettings.h"
 #include "Client/Rendering/DisplaySettingsStore.h"
 #include "Client/Rendering/SnapshotInterpolator.h"
@@ -13,6 +14,38 @@ int main()
 {
     return MoongTangE::test::run([] {
         using namespace MoongTangE;
+
+        PlayerLifeState life;
+        WorldSnapshot alive{10, {{1, {}, {}, {}, {}, "Alice"}}, {}};
+        auto defeated = alive;
+        defeated.tick = 20;
+        defeated.players[0].deathTick = 20;
+        life.Observe(alive, 1);
+        life.RequestRestart();
+        MOONGTANGE_CHECK(!life.Defeated() && life.RestartDeathTick() == 0);
+        life.Observe(defeated, 2);
+        MOONGTANGE_CHECK(!life.Defeated());
+        life.Observe(defeated, 1);
+        MOONGTANGE_CHECK(life.Defeated() && life.RestartDeathTick() == 0);
+        life.RequestRestart();
+        life.Observe(defeated, 1);
+        MOONGTANGE_CHECK(life.RestartDeathTick() == 20);
+        auto restarted = alive;
+        restarted.tick = 23;
+        restarted.players[0].position = {20, 2, 20};
+        life.Observe(restarted, 1);
+        MOONGTANGE_CHECK(!life.Defeated() && life.RestartDeathTick() == 0);
+
+        SnapshotInterpolator lifeView;
+        lifeView.Push(alive);
+        lifeView.Push(defeated);
+        MOONGTANGE_CHECK(lifeView.Sample().players[0].deathTick == 20);
+        lifeView.Push(restarted);
+        MOONGTANGE_CHECK(lifeView.Sample().players[0].position == restarted.players[0].position);
+        life.Observe(defeated, 1);
+        life.RequestRestart();
+        life.Reset();
+        MOONGTANGE_CHECK(!life.Defeated() && life.RestartDeathTick() == 0);
 
         constexpr Resolution DEFAULT_RESOLUTION{1280, 800};
         constexpr Resolution PREVIOUS_RESOLUTION{1280, 720};
