@@ -71,6 +71,41 @@ Quaternion read_quaternion(const proto::Quaternion& message)
     return value;
 }
 
+void validate_round(const RoundState& round)
+{
+    switch (round.phase) {
+    case RoundPhase::FREE_PLAY:
+        require(round.id == 0 && round.remainingTicks == 0 && !round.competitive);
+        break;
+    case RoundPhase::COUNTDOWN:
+        require(round.id != 0 && round.remainingTicks > 0 &&
+                round.remainingTicks <= simulation::ROUND_COUNTDOWN_TICKS);
+        break;
+    case RoundPhase::PLAYING:
+        require(round.id != 0 && round.remainingTicks > 0 &&
+                round.remainingTicks <= simulation::ROUND_DURATION_TICKS);
+        break;
+    case RoundPhase::RESULTS:
+        require(round.id != 0 && round.remainingTicks <= simulation::ROUND_RESULTS_TICKS);
+        break;
+    default:
+        require(false);
+    }
+}
+
+void validate_score(const PlayerState& player, const RoundState& round)
+{
+    require(player.roundScore <= MAX_COLLECTIBLES * simulation::COLLECTION_POINTS &&
+            player.roundScore % simulation::COLLECTION_POINTS == 0);
+    require(!player.roundWinner ||
+            (round.phase == RoundPhase::RESULTS &&
+             player.roundScore >= (round.competitive ? simulation::COLLECTION_POINTS
+                                                     : simulation::SOLO_TARGET_SCORE)));
+    if (round.phase == RoundPhase::FREE_PLAY || round.phase == RoundPhase::COUNTDOWN) {
+        require(player.roundScore == 0 && !player.roundWinner);
+    }
+}
+
 } // namespace
 
 void require(bool condition)
@@ -147,6 +182,7 @@ Bytes input(InputCommand command)
     message.set_x(command.x);
     message.set_z(command.z);
     message.set_restart_death_tick(command.restartDeathTick);
+    message.set_next_round_id(command.nextRoundId);
     return encode(MessageType::INPUT, message);
 }
 
@@ -154,8 +190,8 @@ InputCommand read_input(std::span<const std::uint8_t> data, std::uint32_t sessio
 {
     const auto message = decode<proto::InputCommand>(data, MessageType::INPUT);
     require(message.has_x() && message.has_z());
-    const InputCommand command{sessionId, message.sequence(), message.x(), message.z(),
-                               message.restart_death_tick()};
+    const InputCommand command{sessionId,   message.sequence(),           message.x(),
+                               message.z(), message.restart_death_tick(), message.next_round_id()};
     require(command.Valid());
     return command;
 }
@@ -169,12 +205,19 @@ Bytes snapshot(const RoomSnapshot& room)
     proto::WorldSnapshot message;
     message.set_server_tick(state.tick);
     message.set_room_id(room.roomId);
+    validate_round(state.round);
+    auto& round = *message.mutable_round();
+    round.set_id(state.round.id);
+    round.set_phase(static_cast<proto::RoundState::Phase>(state.round.phase));
+    round.set_remaining_ticks(state.round.remainingTicks);
+    round.set_competitive(state.round.competitive);
 
     std::set<std::uint32_t> ids;
     std::set<std::uint32_t> aliveIds;
     for (const auto& player : state.players) {
         require(player.id != 0 && ids.insert(player.id).second);
         require(player.deathTick <= state.tick);
+        validate_score(player, state.round);
         if (player.deathTick == 0) {
             aliveIds.insert(player.id);
         }
@@ -184,6 +227,8 @@ Bytes snapshot(const RoomSnapshot& room)
         require(player.nickname.empty() || valid_nickname(player.nickname));
         record.set_nickname(player.nickname);
         record.set_death_tick(player.deathTick);
+        record.set_round_score(player.roundScore);
+        record.set_round_winner(player.roundWinner);
         write_vector(*record.mutable_position(), player.position);
         write_vector(*record.mutable_velocity(), player.velocity);
         write_quaternion(*record.mutable_orientation(), player.orientation);
@@ -213,11 +258,14 @@ Bytes snapshot(const RoomSnapshot& room)
 RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
 {
     const auto message = decode<proto::WorldSnapshot>(data, MessageType::SNAPSHOT);
-    require(message.room_id() != 0 && message.has_server_tick() &&
+    require(message.room_id() != 0 && message.has_server_tick() && message.has_round() &&
             message.players_size() <= static_cast<int>(MAX_PLAYERS) &&
             message.collectibles_size() <= static_cast<int>(MAX_COLLECTIBLES));
 
     WorldSnapshot state{message.server_tick(), {}, {}};
+    state.round = {message.round().id(), static_cast<RoundPhase>(message.round().phase()),
+                   message.round().remaining_ticks(), message.round().competitive()};
+    validate_round(state.round);
     state.players.reserve(static_cast<std::size_t>(message.players_size()));
     state.collectibles.reserve(static_cast<std::size_t>(message.collectibles_size()));
 
@@ -225,7 +273,8 @@ RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
     std::set<std::uint32_t> aliveIds;
     for (const auto& record : message.players()) {
         require(record.id() != 0 && ids.insert(record.id()).second);
-        require(record.has_death_tick() && record.death_tick() <= state.tick);
+        require(record.has_death_tick() && record.death_tick() <= state.tick &&
+                record.has_round_score() && record.has_round_winner());
         if (record.death_tick() == 0) {
             aliveIds.insert(record.id());
         }
@@ -236,7 +285,8 @@ RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
         state.players.push_back(
             {record.id(), read_vector(record.position()), read_vector(record.velocity()),
              read_quaternion(record.orientation()), read_vector(record.angular_velocity()),
-             record.nickname(), record.death_tick()});
+             record.nickname(), record.death_tick(), record.round_score(), record.round_winner()});
+        validate_score(state.players.back(), state.round);
     }
 
     std::set<std::uint32_t> collectibleIds;

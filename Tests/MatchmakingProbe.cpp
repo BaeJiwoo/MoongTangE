@@ -1,4 +1,5 @@
 #include "Client/Matchmaking/MultiplayerConnection.h"
+#include "GameplayTestSupport.h"
 #include "TestSupport.h"
 
 #include <chrono>
@@ -46,6 +47,7 @@ int main(int argc, char** argv)
             }
             auto transport = connection.TakeTransport();
             MOONGTANGE_CHECK(transport && transport->Connected());
+            MoongTangE::test::wait_for_gameplay(*transport);
             const auto playerId = transport->PlayerId();
             std::optional<double> initialX;
             std::uint64_t sequence = 0;

@@ -26,6 +26,22 @@ inline constexpr bool valid_collectible_kind(CollectibleKind kind)
     return kind >= CollectibleKind::APPLE && kind <= CollectibleKind::DONUT;
 }
 
+enum class RoundPhase : std::uint32_t
+{
+    FREE_PLAY = 0, // Standalone physics snapshots; hosted games always have a round.
+    COUNTDOWN = 1,
+    PLAYING = 2,
+    RESULTS = 3
+};
+
+struct RoundState
+{
+    std::uint64_t id{};
+    RoundPhase phase{RoundPhase::FREE_PLAY};
+    std::uint64_t remainingTicks{};
+    bool competitive{};
+};
+
 struct PlayerState
 {
     std::uint32_t id{};
@@ -35,6 +51,8 @@ struct PlayerState
     std::string nickname;
     // Zero while alive; otherwise the authoritative tick of this particular defeat.
     std::uint64_t deathTick{};
+    std::uint32_t roundScore{};
+    bool roundWinner{};
 };
 
 struct CollectibleState
@@ -52,6 +70,7 @@ struct WorldSnapshot
     std::uint64_t tick{};
     std::vector<PlayerState> players;
     std::vector<CollectibleState> collectibles;
+    RoundState round;
 };
 
 } // namespace MoongTangE

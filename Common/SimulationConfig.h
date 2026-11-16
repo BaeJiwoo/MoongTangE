@@ -10,6 +10,12 @@ inline constexpr double FIXED_DELTA = 1.0 / TICKS_PER_SECOND;
 inline constexpr std::uint64_t SNAPSHOT_INTERVAL_TICKS = 3;
 inline constexpr std::uint64_t INPUT_TIMEOUT_TICKS = 2 * TICKS_PER_SECOND;
 
+inline constexpr std::uint64_t ROUND_COUNTDOWN_TICKS = 3 * TICKS_PER_SECOND;
+inline constexpr std::uint64_t ROUND_DURATION_TICKS = 90 * TICKS_PER_SECOND;
+inline constexpr std::uint64_t ROUND_RESULTS_TICKS = 3 * TICKS_PER_SECOND;
+inline constexpr std::uint32_t COLLECTION_POINTS = 100;
+inline constexpr std::uint32_t SOLO_TARGET_SCORE = 5 * COLLECTION_POINTS;
+
 inline constexpr std::size_t MAX_PLAYERS = 32;
 
 inline constexpr double GRAVITY = 9.81;
@@ -21,11 +27,11 @@ inline constexpr double SPAWN_SPACING = 1.5;
 inline constexpr std::uint32_t SPAWN_COLUMNS = 8;
 
 inline constexpr double MOVEMENT_FORCE = 10.0;
-inline constexpr double ATTACHED_MOVEMENT_MASS_EXPONENT = 0.65;
-inline constexpr double ATTACHED_MOVEMENT_FORCE_LIMIT = 2.5;
+inline constexpr double ATTACHED_MOVEMENT_MASS_EXPONENT = 1.0;
+inline constexpr double ATTACHED_MOVEMENT_FORCE_LIMIT = 10.0;
 
 inline constexpr std::uint64_t DEFAULT_WORLD_SEED = 0x4d6f6f6e6754616eULL;
-inline constexpr std::size_t INITIAL_COLLECTIBLES = 8;
+inline constexpr std::size_t INITIAL_COLLECTIBLES = 16;
 inline constexpr std::size_t MAX_COLLECTIBLES = 24;
 inline constexpr std::uint64_t COLLECTIBLE_SPAWN_INTERVAL_TICKS = 5 * TICKS_PER_SECOND;
 inline constexpr std::size_t COLLECTIBLE_SPAWN_ATTEMPTS = 256;

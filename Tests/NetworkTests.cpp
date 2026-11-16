@@ -1,4 +1,5 @@
 #include "Client/Transport/TcpClientTransport.h"
+#include "GameplayTestSupport.h"
 #include "Network/Protocol/Codec.h"
 #include "Server/Network/NetworkServer.h"
 #include "TcpTestSocket.h"
@@ -94,6 +95,7 @@ void clients_receive_authoritative_rolling(const NetworkServer& server, ServerHo
 
     const auto firstId = first.PlayerId();
     MOONGTANGE_CHECK(firstId && firstId != second.PlayerId());
+    test::wait_for_gameplay(first);
     MOONGTANGE_CHECK(!first.Send({second.PlayerId(), 1, 1, 0}));
     MOONGTANGE_CHECK(first.Send({firstId, 1, 1, 0}));
     MOONGTANGE_CHECK(second.Send({second.PlayerId(), 1, 0, -1}));
@@ -181,6 +183,11 @@ void fragmented_frames_and_disconnect(const NetworkServer& server)
         const auto id = wire::read_server_hello(read_frame(raw)).playerId;
         MOONGTANGE_CHECK(id);
 
+        bool playing = false;
+        for (int frame = 0; frame < 100 && !playing; ++frame) {
+            playing = wire::read_snapshot(read_frame(raw)).world.round.phase == RoundPhase::PLAYING;
+        }
+        MOONGTANGE_CHECK(playing);
         const auto command = wire::frame(wire::input({id, 1, 1, 0}));
         for (const auto byte : command) {
             raw.WriteByte(byte);

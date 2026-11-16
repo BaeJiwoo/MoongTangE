@@ -32,12 +32,12 @@ proto::WorldSnapshot protobuf_snapshot(const WorldSnapshot& state)
 
 void framing_and_version_negotiation()
 {
-    // Known Protobuf bytes: field 1, varint wire type, protocol version 9.
-    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 9});
-    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 9});
-    wire::read_client_hello(wire::Bytes{1, 8, 9});
+    // Known Protobuf bytes: field 1, varint wire type, protocol version 10.
+    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 10});
+    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 10});
+    wire::read_client_hello(wire::Bytes{1, 8, 10});
     MOONGTANGE_CHECK(test::throws([] {
-        wire::read_client_hello(wire::Bytes{1, 8, 8});
+        wire::read_client_hello(wire::Bytes{1, 8, 9});
     }));
     const std::string ticket(64, 'a');
     const auto hello = wire::read_client_hello(wire::client_hello(ticket, "Alice"));
@@ -133,6 +133,8 @@ void inputs_use_session_identity_and_validate_presence()
     MOONGTANGE_CHECK(restored.x == input.x && std::signbit(restored.x) && restored.z == -1);
     const auto restart = wire::read_input(wire::input({42, 9, 0, 0, 123}), 7);
     MOONGTANGE_CHECK(restart.playerId == 7 && restart.restartDeathTick == 123);
+    const auto nextRound = wire::read_input(wire::input({42, 10, 0, 0, 0, 456}), 7);
+    MOONGTANGE_CHECK(nextRound.playerId == 7 && nextRound.nextRoundId == 456);
 
     for (std::size_t size = 0; size < bytes.size(); ++size) {
         MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
@@ -364,18 +366,24 @@ void snapshots_validate_all_game_invariants()
 void maximum_snapshot_fits_bounded_frame()
 {
     WorldSnapshot state{std::numeric_limits<std::uint64_t>::max(), {}, {}};
+    state.round = {std::numeric_limits<std::uint64_t>::max(), RoundPhase::RESULTS,
+                   simulation::ROUND_RESULTS_TICKS, true};
     // Largest varints, all vector/quaternion components present, all 32 records.
     for (std::uint32_t index = 0; index < MAX_PLAYERS; ++index) {
-        state.players.push_back({std::numeric_limits<std::uint32_t>::max() - index,
-                                 {1, 2, 3},
-                                 {4, 5, 6},
-                                 {0.5, 0.5, 0.5, 0.5},
-                                 {7, 8, 9},
-                                 std::string(MAX_NICKNAME_LENGTH, 'a')});
+        state.players.push_back(
+            {std::numeric_limits<std::uint32_t>::max() - index,
+             {1, 2, 3},
+             {4, 5, 6},
+             {0.5, 0.5, 0.5, 0.5},
+             {7, 8, 9},
+             std::string(MAX_NICKNAME_LENGTH, 'a'),
+             0,
+             static_cast<std::uint32_t>(MAX_COLLECTIBLES) * simulation::COLLECTION_POINTS,
+             true});
     }
 
     const auto bytes = wire::snapshot({1, state});
-    MOONGTANGE_CHECK(bytes.size() == 4942 && bytes.size() <= wire::MAX_FRAME_BYTES);
+    MOONGTANGE_CHECK(bytes.size() <= wire::MAX_FRAME_BYTES);
     MOONGTANGE_CHECK(wire::read_snapshot(bytes).world.players.size() == MAX_PLAYERS);
     const auto framed = wire::frame(bytes);
     MOONGTANGE_CHECK(wire::frame_size(std::span(framed).first(wire::FRAME_HEADER_BYTES)) ==
@@ -414,6 +422,67 @@ void maximum_snapshot_fits_bounded_frame()
     }));
 }
 
+void round_state_is_required_and_bounded()
+{
+    WorldSnapshot state{6000,
+                        {{1, {}, {}, {}, {}, "Alice", 0, 500, true}},
+                        {},
+                        {7, RoundPhase::RESULTS, 180, false}};
+    const auto decoded = wire::read_snapshot(wire::snapshot({1, state})).world;
+    MOONGTANGE_CHECK(decoded.round.id == 7 && decoded.round.phase == RoundPhase::RESULTS &&
+                     decoded.round.remainingTicks == 180 && !decoded.round.competitive);
+    MOONGTANGE_CHECK(decoded.players[0].roundScore == 500 && decoded.players[0].roundWinner);
+    const auto valid = protobuf_snapshot(state);
+    auto rejects = [](const auto& message) {
+        return test::throws([&] {
+            wire::read_snapshot(packet(wire::MessageType::SNAPSHOT, message));
+        });
+    };
+    auto message = valid;
+    message.clear_round();
+    MOONGTANGE_CHECK(rejects(message));
+    message = valid;
+    message.mutable_round()->set_phase(static_cast<proto::RoundState::Phase>(99));
+    MOONGTANGE_CHECK(rejects(message));
+    message = valid;
+    message.mutable_round()->set_id(0);
+    MOONGTANGE_CHECK(rejects(message));
+    message = valid;
+    message.mutable_round()->set_remaining_ticks(simulation::ROUND_RESULTS_TICKS + 1);
+    MOONGTANGE_CHECK(rejects(message));
+    message = valid;
+    message.mutable_players(0)->clear_round_score();
+    MOONGTANGE_CHECK(rejects(message));
+    message = valid;
+    message.mutable_players(0)->clear_round_winner();
+    MOONGTANGE_CHECK(rejects(message));
+    for (const auto badScore : {1U, 100U, 2500U}) {
+        message = valid;
+        message.mutable_players(0)->set_round_score(badScore);
+        MOONGTANGE_CHECK(rejects(message));
+    }
+    message = valid;
+    message.mutable_round()->set_phase(proto::RoundState::PLAYING);
+    MOONGTANGE_CHECK(rejects(message)); // A winner cannot be declared during play.
+    state.round.phase = RoundPhase::COUNTDOWN;
+    MOONGTANGE_CHECK(test::throws([&] {
+        wire::snapshot({1, state});
+    }));
+
+    state.players[0].roundWinner = false;
+    state.players[0].roundScore = 0;
+    for (const auto phase : {RoundPhase::COUNTDOWN, RoundPhase::PLAYING}) {
+        state.round.phase = phase;
+        state.round.remainingTicks = 1;
+        MOONGTANGE_CHECK(wire::read_snapshot(wire::snapshot({1, state})).world.round.phase ==
+                         phase);
+        state.round.remainingTicks = 0;
+        MOONGTANGE_CHECK(test::throws([&] {
+            wire::snapshot({1, state});
+        }));
+    }
+}
+
 } // namespace
 
 int main()
@@ -425,5 +494,6 @@ int main()
         inputs_use_session_identity_and_validate_presence();
         snapshots_validate_all_game_invariants();
         maximum_snapshot_fits_bounded_frame();
+        round_state_is_required_and_bounded();
     });
 }

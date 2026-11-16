@@ -357,6 +357,19 @@ void invalid_compound_collider_is_rejected()
     }));
 }
 
+void near_rest_friction_remains_finite()
+{
+    PhysicsWorld physics;
+    RigidBody body;
+    body.position = {0, simulation::PLAYER_RADIUS, 0};
+    body.velocity = {1e-310, 0, 0};
+    for (int tick = 0; tick < 60; ++tick) {
+        physics.Step(body, PhysicsWorld::FIXED_DELTA, {1e-310, 0, 0});
+        MOONGTANGE_CHECK(body.velocity.Finite() && body.angularVelocity.Finite() &&
+                         body.orientation.Unit());
+    }
+}
+
 } // namespace
 
 int main()
@@ -378,5 +391,6 @@ int main()
         compound_mass_properties_include_parallel_axis_inertia();
         invalid_compound_collider_is_rejected();
         compound_player_contact_uses_actual_spheres();
+        near_rest_friction_remains_finite();
     });
 }

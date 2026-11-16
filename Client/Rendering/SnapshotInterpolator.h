@@ -34,7 +34,7 @@ class SnapshotInterpolator
             return;
         }
 
-        m_from = m_initialized ? Sample() : next;
+        m_from = m_initialized && next.round.id == m_target.round.id ? Sample() : next;
         if (m_initialized) {
             const double tickInterval =
                 static_cast<double>(next.tick - m_target.tick) * simulation::FIXED_DELTA;

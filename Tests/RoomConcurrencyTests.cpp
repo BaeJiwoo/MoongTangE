@@ -126,6 +126,12 @@ void input_flood_cannot_fill_other_players_slots()
         return player_count(host) == players.size();
     }));
     MOONGTANGE_CHECK(host.Admission(players[0]).roomId != host.Admission(players[3]).roomId);
+    MOONGTANGE_CHECK(test::wait_for(
+        [&] {
+            const auto room = host.SnapshotFor(players[3]);
+            return room && room->world.round.phase == RoundPhase::PLAYING;
+        },
+        6s));
 
     std::atomic<bool> accepted{true};
     std::jthread flood([&](std::stop_token stop) {

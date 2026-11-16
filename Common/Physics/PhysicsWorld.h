@@ -241,7 +241,8 @@ class PhysicsWorld
             return;
         }
 
-        const Vector3 slipDirection = slip * (1.0 / slipSpeed);
+        // Normalized scales first, so a near-rest subnormal slip cannot overflow its reciprocal.
+        const Vector3 slipDirection = slip.Normalized();
         const Vector3 rotationalArm = cross(contactArm, slipDirection);
         const double inverseEffectiveMass =
             1.0 / body.mass + dot(rotationalArm, rotationalArm) / body.Inertia();
