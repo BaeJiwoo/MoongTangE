@@ -51,6 +51,7 @@ class ClientApplication
 
     SnapshotInterpolator m_presentation;
     PlayerLifeState m_playerLife;
+    std::uint64_t m_smokeInputFrames{};
     DisplaySettings m_displaySettings;
     DisplaySettingsStore m_displaySettingsStore;
 

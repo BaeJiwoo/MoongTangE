@@ -1,7 +1,9 @@
 #include "Client/Transport/LocalTransport.h"
 #include "Client/Transport/TcpClientTransport.h"
 #include "Common/Game/GameWorld.h"
+#include "GameplayTestSupport.h"
 #include "Network/Protocol/Codec.h"
+#include "Server/Core/GameRound.h"
 #include "Server/Network/NetworkServer.h"
 #include "TestSupport.h"
 
@@ -18,6 +20,7 @@ MoongTangE::PlayerState exercise(MoongTangE::IClientTransport& client)
         return client.Connected();
     }));
 
+    MoongTangE::test::wait_for_gameplay(client);
     MoongTangE::PlayerState result;
     const auto id = client.PlayerId();
     auto settled = [&] {
@@ -165,6 +168,7 @@ void defeat_and_restart_cross_both_transports(bool localVictim)
     }));
     const auto playerId = victim->PlayerId();
     const auto roomId = victim->RoomId();
+    test::wait_for_gameplay(*victim);
     WorldSnapshot state;
     MOONGTANGE_CHECK(test::wait_for([&] {
         if (auto received = victim->Receive()) {
@@ -211,12 +215,43 @@ void defeat_and_restart_cross_both_transports(bool localVictim)
     winner->Close();
 }
 
+void round_results_and_replay_cross_the_protocol()
+{
+    using namespace MoongTangE;
+    GameRound direct(24), serialized(24);
+    MOONGTANGE_CHECK(direct.AddPlayer(1) && direct.AddPlayer(2));
+    MOONGTANGE_CHECK(serialized.AddPlayer(1) && serialized.AddPlayer(2));
+    bool observedWinner = false;
+    for (std::uint64_t tick = 0; tick < 6000; ++tick) {
+        const auto state = direct.Snapshot();
+        const InputCommand input{
+            1, tick + 1, 0, 0, 0, state.round.phase == RoundPhase::RESULTS ? state.round.id : 0};
+        MOONGTANGE_CHECK(direct.Apply(input));
+        MOONGTANGE_CHECK(serialized.Apply(wire::read_input(wire::input(input), 1)));
+        direct.Step();
+        serialized.Step();
+        const auto a = direct.Snapshot();
+        const auto b = wire::read_snapshot(wire::snapshot({1, serialized.Snapshot()})).world;
+        MOONGTANGE_CHECK(a.tick == b.tick && a.round.id == b.round.id &&
+                         a.round.phase == b.round.phase &&
+                         a.round.remainingTicks == b.round.remainingTicks);
+        for (std::size_t index = 0; index < a.players.size(); ++index) {
+            MOONGTANGE_CHECK(a.players[index].position == b.players[index].position &&
+                             a.players[index].roundScore == b.players[index].roundScore &&
+                             a.players[index].roundWinner == b.players[index].roundWinner);
+            observedWinner = observedWinner || b.players[index].roundWinner;
+        }
+    }
+    MOONGTANGE_CHECK(observedWinner && direct.Snapshot().round.id == 2);
+}
+
 } // namespace
 
 int main()
 {
     return MoongTangE::test::run([] {
         deterministic_transport_equivalence();
+        round_results_and_replay_cross_the_protocol();
         asynchronous_transport_invariants();
         defeat_and_restart_cross_both_transports(false);
         defeat_and_restart_cross_both_transports(true);

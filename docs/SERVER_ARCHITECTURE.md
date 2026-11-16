@@ -14,7 +14,7 @@
 
 ### 방 입장 통신 — Issue #36
 
-프로토콜 v9는 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
+프로토콜 v10은 `AdmissionResult`(상태·플레이어 ID·방 ID)와 `RoomSnapshot`을 사용합니다.
 성공한 Hello의 방 ID와 다른 Snapshot은 클라이언트가 거부합니다. `IClientTransport::RoomId()`는
 입장한 방을 제공하며 연결 종료 시 0입니다. 렌더링은 기존 `WorldSnapshot`을 사용하고,
 방이 바뀌면 보간 상태를 비웁니다. #37부터 실제 여러 방 배정과 비동기 입장 확정을 사용합니다.
@@ -41,7 +41,8 @@
 | `main` | 명령행 해석, 도움말, `ServerApplication::Run()` 호출, 예외와 종료 코드 보고 | 서버 루프와 물리 처리 |
 | `ServerApplication` | 독립 서버 시작, 종료 요청·시그널·시간 제한, 실행 중 자원 소유 | 개별 플레이어 물리 변경 |
 | `ServerHost` | Tick 스레드, 연결 등록, 제한된 명령 큐, 최신 Snapshot의 안전한 공유 | 소켓·화면 처리 |
-| `GameRoomManager` / `GameRoom` | 생성 순서에 따른 3인 방 배정·퇴장·빈 방 정리, 방별 월드 소유 | 소켓과 다른 스레드의 직접 접근 |
+| `GameRoomManager` / `GameRoom` | 생성 순서에 따른 3인 방 배정·퇴장·예약·빈 방 정리, 방별 경기 소유 | 소켓과 다른 스레드의 직접 접근 |
+| `GameRound` | 준비·제한 시간·점수·결과·다음 판, 방별 월드 소유 | 소켓·그래픽·영구 결과 저장 |
 | `GameWorld` | 플레이어·수집 물체·입력·결정론적 seed 상태, 입력 만료와 플레이어 충돌 호출 | 스레드 생성·소켓 접근 |
 | `PhysicsWorld` | 중력, 지형·복합 구 접촉, 마찰, 구름 저항과 자세 갱신 | 입력 수신·렌더링 |
 | `NetworkServer` (`NativeServer`) | 운영체제별 네트워크 실행 객체 소유, 시작·종료와 포트 조회의 공개 진입점 | 개별 세션 처리 |
@@ -64,7 +65,8 @@ flowchart TD
     Network -->|명령 큐에 등록| Host
     Host --> Rooms[GameRoomManager]
     Rooms --> Room[GameRoom: 최대 3명]
-    Room --> World[방별 GameWorld]
+    Room --> Round[GameRound: 준비 / 진행 / 결과]
+    Round --> World[방별 GameWorld]
     World --> Physics[PhysicsWorld]
     Host -->|잠금 아래 최신 Snapshot 복사| Network
 ```
@@ -103,7 +105,7 @@ sequenceDiagram
 
 ## 결정론적 수집 물체와 복합 구 콜라이더 — Issues #53, #54, #57, #71
 
-방 생성 시 seed에 따라 간격을 둔 물체 8개를 만들고, 참가자가 있는 동안 5초마다 Y=8에서
+방 생성 시 seed에 따라 간격을 둔 물체 16개를 만들고, 경기 진행 중 5초마다 Y=8에서
 새 물체를 떨어뜨립니다. 모든 변경은 기존 Tick 스레드에서 일어나며 최대 24개입니다. 자세한
 상수, 난수 변환, 배치 거부, 이중 물리 프록시·로컬 부착, Snapshot과 GLB 정규화 규칙은
 [수집 물체 시스템](COLLECTIBLE_SYSTEM.md)에 정리합니다.
@@ -119,7 +121,7 @@ sequenceDiagram
   찾습니다. 목표 중심은 반지름의 25%가 묻히며 위치·자세는 9 Tick 감쇠 보간합니다. 부착
   순간에는 플레이어 `RigidBody`에 충격량을 적용하지 않습니다.
 - `UpdateMassProperties()`는 기본 공과 부착물 질량, 자체 구 관성과 공 중심까지의 평행축 항을
-  합산합니다. 이동력은 질량의 0.65제곱으로 최대 2.5배까지 보정합니다.
+  합산합니다. 이동력은 질량에 비례해 최대 10배까지 보정합니다.
 - `UpdateAttached()`는 공의 월드 변환으로 붙은 물체의 위치·회전과 분리용 표면 속도를
   갱신합니다. `DetachCollectibles()`는 플레이어 퇴장 또는 사망 시 자유 상태로 되돌립니다.
 - `PlayerVolume()`은 기본 공과 부착물 대표 반지름의 세제곱 합을 구합니다. `PlayersTouch()`는
@@ -262,13 +264,38 @@ Local/TCP 양쪽의 사망·동일 방 재시작을 검증합니다. `SurvivalGu
 <details>
 <summary>Server/Core/GameRoom.h · GameRoom.cpp — 독립 게임방</summary>
 
+`GameRoom`의 `m_round`가 `GameRound`를 소유하고, `GameRound::m_world`가 실제 `GameWorld`를
+소유합니다. 예약·빈 방 수명은 방의 책임이며 경기 진행·점수·승패는 `GameRound`의 책임입니다.
+두 클래스 모두 `ServerCore`에 빌드되고 서버 Tick 스레드에서만 접근합니다.
+
 | 함수 | 설명 |
 | --- | --- |
 | `Join(playerId)` | 정원 내에서 월드에 참가자를 추가하고 빈 방 타이머를 해제합니다. |
 | `Leave(playerId, now)` | 참가자를 제거하고 마지막 퇴장 시 단조 시계의 빈 방 시작 시각을 기록합니다. 중복 퇴장은 무시합니다. |
-| `Apply(input)` / `Step()` | 해당 월드의 입력·물리를 처리합니다. 빈 월드는 물리 단계를 생략합니다. |
+| `Apply(input)` / `Step()` | 해당 경기의 입력과 준비·진행·결과 전이를 처리합니다. 빈 방은 진행을 생략합니다. |
 | `PlayerCount()` / `Snapshot()` | 해당 월드의 인원과 상태를 조회합니다. |
 | `Expired(now, lifetime)` | 빈 방 보관 기한 경과 여부를 반환합니다. |
+
+</details>
+
+<details>
+<summary>Server/Core/GameRound.h · GameRound.cpp — 경기와 점수</summary>
+
+| 함수 | 설명 |
+| --- | --- |
+| 생성자 | 방 seed와 월드를 보유하고 첫 판의 180 Tick 준비 상태를 만듭니다. |
+| `AddPlayer()` / `RemovePlayer()` | 참가·포기를 처리합니다. 두 명 이상이 되면 경쟁 모드를 유지하고 전원 이탈 시 다음 준비 상태로 초기화합니다. |
+| `HasPlayer()` / `PlayerCount()` | 예약 정원 계산에 필요한 실제 참가자 정보를 반환합니다. |
+| `Apply()` | 연결별 증가 시퀀스를 검증합니다. 진행 중 입력은 월드로 전달하고 결과의 일치하는 경기 번호만 재시작 요청으로 저장합니다. |
+| `Step()` | 준비/결과에서는 월드 시계만 진행합니다. 플레이 중 물리 실행 후 처음 획득한 물체에 점수를 부여하고 목표·시간 종료를 판정합니다. |
+| `FinishRound()` | 최고 점수 또는 솔로 목표로 승자를 한 번 확정하고 결과 표시 상태로 바꿉니다. |
+| `StartNextRound()` | Tick·입력 시퀀스·참가 ID를 유지하며 새 seed로 월드, 점수, 사망 상태를 재설정합니다. |
+| `Snapshot()` | 물리 상태에 경기 상태와 참가자 점수·승리 여부를 붙입니다. 닉네임은 기존 ServerHost 경로에서 설정됩니다. |
+
+`Common/Game/CollectionScore.h`의 `Collect()`는 물체 ID별로 한 번만 기록하며 `Points()`는
+100점씩 합산합니다. 저장량은 최대 물체 수에 묶입니다. `GameWorld::AdvanceClock()`은
+정지된 물리와 별도로 Snapshot Tick을 증가시키고, 생성자의 `initialTick`은 판 전환 시
+단조 증가를 보존합니다. 소환 주기는 실제 물리 Step 횟수로 계산합니다.
 
 </details>
 
@@ -456,7 +483,7 @@ Linux 구현은 non-blocking socket, `epoll`, `eventfd`를 사용합니다. Wind
 | `encode<Message>()` / `decode<Message>()` (cpp 내부) | 메시지 종류와 Protobuf 직렬화/역직렬화, 크기·파서 한도를 공통 처리합니다. |
 | `write_vector()` / `read_vector()` / `write_quaternion()` / `read_quaternion()` (cpp 내부) | 벡터·회전을 Protobuf 필드와 게임 값 타입 사이에서 검증하며 변환합니다. |
 
-`PROTOCOL_VERSION = 9`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. 입력 코덱은
+`PROTOCOL_VERSION = 10`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. 입력 코덱은
 `restart_death_tick`을 보존하고 Snapshot 코덱은 명시적인 `death_tick` 존재·Tick 상한과 생존한
 부착 소유자를 검증합니다. MessageType의 wire 값은 유지하며 이전 버전은 Hello에서 거부합니다.
 `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
@@ -504,10 +531,10 @@ flowchart LR
 TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + Protobuf 본문**입니다. 종류별 필수 값, 입력 범위, ID, 중복 플레이어, quaternion 정규화와 유한한 실수를 변환 시 검증합니다. 플레이어 ID는 클라이언트 입력 메시지에 없으며 접속 세션의 ID를 서버에서 주입합니다.
 
 최대 메시지는 8KiB이며, 코덱의 방어적 상한은 32명입니다. 최대 길이 플레이어 ID·Tick과
-16자 닉네임, 방 ID 1을 넣은 생존자 32명 Snapshot은 종류 바이트를 포함해 4,942바이트입니다.
+최대 ID·점수·경기 번호·16자 닉네임을 넣은 32명/24개 물체 Snapshot이 8KiB 안에 드는지 검사합니다.
 최대 24개 부착 물체 또는 최대 길이 사망 Tick을 포함해도 프레임 상한 안인지 검사합니다.
 실제 게임방은 최대 3명만 허용합니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는
-16으로 제한합니다. 프로토콜 버전은 9이며 이전 버전 Hello는 거부합니다. 알 수 없는 Protobuf
+16으로 제한합니다. 프로토콜 버전은 10이며 이전 버전 Hello는 거부합니다. 알 수 없는 Protobuf
 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
 
 ## 시작과 종료

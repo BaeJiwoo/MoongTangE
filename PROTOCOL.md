@@ -1,8 +1,8 @@
-# TCP protocol v9 — Protobuf
+# TCP protocol v10 — Protobuf
 
 The source of truth for message fields is [game.proto](Network/Protocol/game.proto). [Codec.cpp](Network/Protocol/Codec.cpp) converts between generated messages and the plain C++ game types. Common, ServerCore and LocalTransport do not depend on Protobuf.
 
-The package is `MoongTangE.proto`, producing C++ types under `MoongTangE::proto`; handwritten codecs use `MoongTangE::wire`. Protocol v9 adds authoritative defeat state, idempotent restart inputs and wider collectible scales. v8 added collectible attachment ownership; v7 added deterministic collectible states, v6 added server-validated player nicknames and v5 added a single-use admission ticket. Existing field numbers and type discriminator bytes are preserved. This protocol sends ordinary messages directly, without Any type URLs or RPC service names.
+The package is `MoongTangE.proto`, producing C++ types under `MoongTangE::proto`; handwritten codecs use `MoongTangE::wire`. Protocol v10 adds server-owned rounds, scores, results and round-scoped replay requests. v9 added authoritative defeat state, idempotent restart inputs and wider collectible scales. v8 added collectible attachment ownership; v7 added deterministic collectible states, v6 added server-validated player nicknames and v5 added a single-use admission ticket. Existing field numbers and type discriminator bytes are preserved. This protocol sends ordinary messages directly, without Any type URLs or RPC service names.
 
 The C++ codec names are `wire::MessageType`, `PROTOCOL_VERSION`, `MAX_FRAME_BYTES` and `FRAME_HEADER_BYTES`. Enum values use uppercase names such as `CLIENT_HELLO` and `SNAPSHOT`; their on-wire numbers are unchanged. [NativeTcpChannel](Network/Native/NativeTcpChannel.h) implements the framing contract, while its server runtime owns sessions and passes decoded inputs to ServerHost. See the [file/function guide](docs/SERVER_ARCHITECTURE.md#파일별-함수-안내).
 
@@ -12,21 +12,25 @@ Each TCP frame contains a **4-byte unsigned big-endian payload length**, followe
 
 | Type byte | Protobuf message | Main fields |
 | --- | --- | --- |
-| 1 | ClientHello | protocol_version (=9), admission_ticket, nickname |
+| 1 | ClientHello | protocol_version (=10), admission_ticket, nickname |
 | 2 | ServerHello | protocol_version, status, server-assigned player_id, room_id |
-| 3 | InputCommand | sequence, x, z, restart_death_tick |
-| 4 | WorldSnapshot | server_tick, repeated PlayerState, room_id, repeated CollectibleState |
+| 3 | InputCommand | sequence, x, z, restart_death_tick, next_round_id |
+| 4 | WorldSnapshot | server_tick, repeated PlayerState, room_id, repeated CollectibleState, RoundState |
 | 5 | Disconnect | empty message |
 
-The body uses Protobuf's encoding (varints, length-delimited submessages and binary64 `double` fields), not the old fixed-position big-endian field layout. Example framed ClientHello without optional text fields: `00 00 00 03 01 08 09`. Empty Disconnect has payload `05`. C++ object memory is never transmitted.
+The body uses Protobuf's encoding (varints, length-delimited submessages and binary64 `double` fields), not the old fixed-position big-endian field layout. Example framed ClientHello without optional text fields: `00 00 00 03 01 08 0a`. Empty Disconnect has payload `05`. C++ object memory is never transmitted.
 
-The first client message must be ClientHello. The tick thread confirms admission before ServerHello success. No inputs are accepted before admission; snapshots contain only that room. Rejections are flushed before closing the channel, within its existing read deadline. Handshake version must equal 9. Previous versions are incompatible and rejected; update client and server together. Protobuf library version 36.2 is separate from application protocol version 9.
+The first client message must be ClientHello. The tick thread confirms admission before ServerHello success. No inputs are accepted before admission; snapshots contain only that room. Rejections are flushed before closing the channel, within its existing read deadline. Handshake version must equal 10. Previous versions are incompatible and rejected; update client and server together. Protobuf library version 36.2 is separate from application protocol version 10.
 
 ClientHello field 2 is an optional 64-character lowercase hex ticket. Ticket-only mode requires an unexpired reservation on this server, consumed once on the tick thread. Empty tickets use ordinary allocation only when ticket-only mode is disabled. Invalid, unknown, expired or consumed tickets are rejected as UNAVAILABLE, never downgraded to ordinary admission. See [the matching API contract](docs/MATCHMAKING_API.md).
 
 ClientHello field 3 is the requested nickname. The server validates it before claiming a reservation, so an invalid name does not consume the ticket. Current names are 1–16 ASCII characters using letters, digits, spaces, `_` or `-`, without leading or trailing spaces. Accepted names are attached to server snapshots and rendered above player balls.
 
 ## Semantic validation
+
+- `WorldSnapshot.round` is required in v10. It carries `id`, `phase`, `remaining_ticks` and `competitive`. Hosted games use nonzero IDs: COUNTDOWN (1–180 ticks), PLAYING (1–5400), RESULTS (0–180). FREE_PLAY with ID/timer zero is reserved for standalone physics snapshots. Unknown phases and out-of-range clocks are rejected.
+- Player fields `round_score` and `round_winner` have explicit presence. Scores are multiples of 100, at most 2400. Winners may only appear in RESULTS, with a positive competitive score or at least 500 solo points. The server awards each object at most once per player per round.
+- `next_round_id` is zero unless requesting another round. The tick thread accepts only the current RESULTS ID and preserves input sequence high-water marks across replays. Results remain visible for at least 180 ticks; the first valid participant request then resets the room. Server ticks remain monotonic across reset. Clients repeat a request until a new round ID acknowledges it. See [round rules](docs/GAME_LOOP.md) for late joins, departures and scoring.
 
 - Input sequence must be nonzero and increase within its connection. The server keeps only the newest input per admitted player until the next tick. x/z must be explicitly present, finite and in [-1,1]. Their zero values are valid. The input message has no player ID; the server supplies its session ID. Hello assigns an ID but is **not user authentication**.
 - `restart_death_tick` is zero unless the player requests a restart. The client repeats the authoritative defeat tick with neutral movement until a live snapshot acknowledges it. The tick thread restarts only a defeated player whose current death tick equals this token; duplicate, old and speculative tokens cannot reset a live player or restart a later defeat. This held request survives input coalescing and uses the existing bounded input slot.
@@ -39,7 +43,7 @@ ClientHello field 3 is the requested nickname. The server validates it before cl
 - Unknown message type bytes, missing required semantic fields, invalid Protobuf data, oversized frames and unsupported versions close the connection.
 - Unknown Protobuf fields are accepted within size/depth limits to allow additive schema changes. Duplicate singular fields follow Protobuf's last-value/merge semantics; the resulting message still passes all game validation. Valid unknown fields are not treated as forbidden trailing bytes. Removed field numbers must be reserved in future schemas and never reused.
 
-With all fields present, maximum IDs and 16-character nicknames, 32 living players produce a 4,942-byte payload including the type byte. The test suite also constructs the maximum 32-player and 24-collectible snapshot, including maximum defeat ticks, and requires it to remain within the 8KiB frame limit. Parsers enforce this limit before parsing and set a recursion limit of 16. Deserialization is not accepted merely because Protobuf parsing succeeds.
+The test suite constructs the maximum 32-player and 24-collectible snapshot with maximum IDs, defeat ticks, round ID, scores and 16-character nicknames, and requires it to remain within the 8KiB frame limit. Parsers enforce this limit before parsing and set a recursion limit of 16. Deserialization is not accepted merely because Protobuf parsing succeeds.
 
 ## Simulation and transport
 
@@ -52,7 +56,7 @@ Tests compare decoded player physics, collectible positions/orientations/kinds/s
 ## Limits and shutdown
 
 - Each room holds 3 occupied seats, counting players and reservations together. Default 8 rooms (24 players); --max-rooms accepts 1–256. Rooms are created on demand, fill oldest vacancies first, and expire after --empty-room-seconds (default 30, 0–86400).
-- Each room starts with 8 collectibles, attempts one additional drop every 300 active room ticks and stops at 24. The server or embedded client accepts `--world-seed` as an unsigned 64-bit deterministic seed.
+- Each room starts with 16 collectibles, attempts one additional drop every 300 active room ticks and stops at 24. The server or embedded client accepts `--world-seed` as an unsigned 64-bit deterministic seed.
 - Core admission records and TCP connections each allow twice the configured player capacity, including pending handshakes. Further requests return UNAVAILABLE or close at the socket cap. FULL is decided by the tick thread after allocation fails.
 - Server lifecycle queue: 1024 regular commands plus at most twice the player capacity in guaranteed leave commands. Movement inputs have a separate slot per admitted player (at most player capacity); flooding one slot cannot exhaust other slots.
 - Per connection: at most 32 outbound frames; a slower peer is disconnected.

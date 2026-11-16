@@ -1,4 +1,5 @@
 #include "Client/Transport/LocalTransport.h"
+#include "GameplayTestSupport.h"
 #include "TestSupport.h"
 
 #include <memory>
@@ -22,6 +23,7 @@ int main()
         }));
         MOONGTANGE_CHECK(a.PlayerId() != b.PlayerId() && a.RoomId() == b.RoomId());
 
+        MoongTangE::test::wait_for_gameplay(a);
         MOONGTANGE_CHECK(!a.Send({b.PlayerId(), 1, 1, 0}));
         MOONGTANGE_CHECK(a.Send({a.PlayerId(), 1, 1, 0}));
         std::optional<MoongTangE::WorldSnapshot> state;

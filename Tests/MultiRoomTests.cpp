@@ -1,5 +1,6 @@
 #include "Client/Transport/LocalTransport.h"
 #include "Client/Transport/TcpClientTransport.h"
+#include "GameplayTestSupport.h"
 #include "Server/Network/NetworkServer.h"
 #include "TestSupport.h"
 
@@ -62,6 +63,7 @@ void rooms_isolate_players_and_reuse_vacancies(bool remote)
     MOONGTANGE_CHECK(replacement->RoomId() == 1 && replacement->PlayerId() != departed);
     MOONGTANGE_CHECK(clients[3]->RoomId() == 2 && clients[6]->RoomId() == 3);
 
+    test::wait_for_gameplay(*replacement);
     MOONGTANGE_CHECK(replacement->Send({replacement->PlayerId(), 1, 1, 0}));
     MOONGTANGE_CHECK(test::wait_for([&] {
         const auto state = replacement->Receive();

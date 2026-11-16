@@ -23,6 +23,12 @@ int main()
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {
             return server.HasClient(id);
         }));
+        MOONGTANGE_CHECK(MoongTangE::test::wait_for(
+            [&] {
+                const auto room = server.SnapshotFor(id);
+                return room && room->world.round.phase == MoongTangE::RoundPhase::PLAYING;
+            },
+            6s));
         MOONGTANGE_CHECK(server.Submit({id, 1, 1, 0}));
         MOONGTANGE_CHECK(!server.Submit({id, 1, 1, 0}));
         MOONGTANGE_CHECK(MoongTangE::test::wait_for([&] {

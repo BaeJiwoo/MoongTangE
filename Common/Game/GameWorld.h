@@ -28,8 +28,10 @@ namespace MoongTangE {
 class GameWorld
 {
   public:
-    explicit GameWorld(std::uint64_t seed = simulation::DEFAULT_WORLD_SEED)
-        : m_random(seed), m_scaleOffset(m_random.Index(simulation::MAX_COLLECTIBLES))
+    explicit GameWorld(std::uint64_t seed = simulation::DEFAULT_WORLD_SEED,
+                       std::uint64_t initialTick = 0)
+        : m_random(seed), m_scaleOffset(m_random.Index(simulation::MAX_COLLECTIBLES)),
+          m_tick(initialTick)
     {
         for (std::size_t index = 0; index < simulation::INITIAL_COLLECTIBLES; ++index) {
             SpawnCollectible(false);
@@ -90,6 +92,12 @@ class GameWorld
         return true;
     }
 
+    // Keep transport ticks monotonic while a round is preparing or showing results.
+    void AdvanceClock()
+    {
+        ++m_tick;
+    }
+
     void Step()
     {
         std::map<std::uint32_t, BodyTransform> previousPlayers;
@@ -135,7 +143,7 @@ class GameWorld
         }
 
         ++m_tick;
-        if (m_tick % simulation::COLLECTIBLE_SPAWN_INTERVAL_TICKS == 0) {
+        if (++m_collectibleSpawnTicks % simulation::COLLECTIBLE_SPAWN_INTERVAL_TICKS == 0) {
             SpawnCollectible(true);
         }
     }
@@ -605,6 +613,7 @@ class GameWorld
     std::size_t m_scaleOffset{};
     std::uint32_t m_nextCollectibleId{1};
     std::uint64_t m_tick{};
+    std::uint64_t m_collectibleSpawnTicks{};
 };
 
 } // namespace MoongTangE

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Common/Game/GameWorld.h"
+#include "Server/Core/GameRound.h"
 
 #include <chrono>
 #include <cstddef>
@@ -31,7 +31,7 @@ class GameRoom
     WorldSnapshot Snapshot() const;
 
   private:
-    GameWorld m_world;
+    GameRound m_round;
     std::set<std::uint32_t> m_reserved;
     std::optional<Clock::time_point> m_emptySince;
 };

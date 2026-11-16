@@ -29,11 +29,15 @@ void sequential_admission_and_isolation()
     MOONGTANGE_CHECK(firstRoom.players.back().position.x == simulation::SPAWN_SPACING);
     MOONGTANGE_CHECK(rooms.RoomFor(100) == 1 && rooms.RoomFor(2) == 0);
     MOONGTANGE_CHECK(!rooms.Apply({2, 1, 1, 0}));
-    MOONGTANGE_CHECK(rooms.Apply({100, 1, 1, 0}));
+    for (std::uint64_t tick = 0; tick < simulation::ROUND_COUNTDOWN_TICKS; ++tick) {
+        rooms.Step(now);
+    }
+    // Move away from the neighbouring spawn slots; this tests isolation, not combat.
+    MOONGTANGE_CHECK(rooms.Apply({100, 1, 0, -1}));
     for (int tick = 0; tick < 90; ++tick) {
         rooms.Step(now);
     }
-    MOONGTANGE_CHECK(rooms.Snapshot(1)->world.players.back().velocity.x > 0);
+    MOONGTANGE_CHECK(rooms.Snapshot(1)->world.players.back().velocity.z < 0);
     const auto secondRoom = rooms.Snapshot(2);
     for (const auto& player : secondRoom->world.players) {
         MOONGTANGE_CHECK(player.velocity.x == 0 && player.velocity.z == 0);
