@@ -104,7 +104,7 @@ Snapshot은 기본 3 Tick마다 게시하며 클라이언트는 표시용 보간
 
 ## 음식 성장과 지뢰 — Issue #91
 
-초기 음식 64개, 최대 96개이며 플레이 중 30 Tick마다 보충합니다. 지뢰는 6개입니다.
+초기 음식 144개, 최대 192개이며 플레이 중 15 Tick마다 보충합니다. 지뢰는 6개입니다.
 [상세 규칙](COLLECTIBLE_SYSTEM.md)은 서버와 클라이언트의 공유 상수를 설명합니다.
 
 <details><summary>Common/Game/GameWorld.h — 이동·섭취·성장·지뢰</summary>
@@ -117,14 +117,24 @@ Snapshot은 기본 3 Tick마다 게시하며 클라이언트는 표시용 보간
   `Constrain()`은 높이와 경기장 경계를 제한합니다.
 - `Volume/SetVolume`은 반지름의 세제곱 단위로 부피를 계산하고 반지름·질량을 갱신합니다.
 - `SweepFraction()`은 XZ 상대 이동 구간의 최초 원 접촉을 계산합니다.
-- `ConsumeFood()`는 최초 접촉자에게 부피와 누적 섭취 횟수를 부여하고 음식을 제거합니다.
+- `ConsumeFood()`는 음식보다 작지 않은 최초 접촉자에게 부피와 누적 섭취 횟수를 부여하고 음식을 제거합니다.
 - `TriggerMines()`는 크기·보호 시간·재활성화 시간을 검사하고 질량을 40% 줄입니다.
 - `ResolvePlayers()`는 같은 Tick의 크기로 먹히는 플레이어를 결정하고 생존자에게만 부피를
   전달합니다. 나머지 겹침은 기존 자체 구 충돌 응답으로 분리합니다.
-- `TryRestart()`는 생존자와 음식에서 떨어진 최대 81개 후보를 검사하고 같은 ID/시퀀스로
+- `TryRestart()`는 생존자와 음식에서 떨어진 확장 맵의 최대 81개 후보를 검사하고 같은 ID/시퀀스로
   몸체만 초기화합니다. 통계용 누적 섭취 횟수는 보존합니다.
 - `SpawnFood()`는 유한한 후보 횟수로 음식·지뢰·플레이어와 겹치지 않는 위치를 찾습니다.
 - `Snapshot()`은 음식, 플레이어 크기·섭취 횟수·피격 Tick, 지뢰의 재활성화 Tick을 복사합니다.
+
+</details>
+
+<details><summary>Common/Game/ArenaLayout.h — 공유 정적 경기장</summary>
+
+- `ARENA_ROCKS` / `ARENA_MUD`는 v12에 고정된 바위 10개·진흙 6개의 중심과 반지름입니다.
+- `horizontal_distance()`는 지면상의 거리를, `overlaps_rock()`는 생성·재시작 후보와 바위의 겹침을 검사합니다.
+- `in_mud()`는 이동 감속과 HUD 안내에 같은 원형 영역을 사용합니다.
+- `GameWorld::Constrain()`은 이동·성장·플레이어 충돌 뒤 바위 침투를 보정하고 안쪽 속도를 제거합니다. `Move()`는 진흙에 있을 때 목표 속도를 45%로 줄입니다.
+- 클라이언트의 `draw_arena_obstacles()`와 레이더는 같은 상수를 렌더링합니다. 정적 배치는 Snapshot에 중복 전송하지 않으며 프로토콜 버전 불일치로 구버전 클라이언트를 차단합니다.
 
 </details>
 
@@ -459,13 +469,13 @@ Linux 구현은 non-blocking socket, `epoll`, `eventfd`를 사용합니다. Wind
 | `client_hello()` / `server_hello(admission)` | 프로토콜 버전·입장 결과·서버 할당 ID·방 ID가 담긴 Hello를 인코딩합니다. |
 | `read_client_hello(data)` / `read_server_hello(data)` | Hello 버전과 입장 결과·ID 조합을 검증합니다. 서버 Hello 해석은 AdmissionResult를 반환합니다. |
 | `input(command)` / `read_input(data, sessionId)` | 입력을 인코딩하거나 세션 ID를 결합하여 검증된 InputCommand로 해석합니다. |
-| `snapshot(room)` / `read_snapshot(data)` | Tick, 플레이어와 최대 96개 음식 및 6개 지뢰 상태를 변환하고 개수·ID·종류·필드·수치·회전·반지름·섭취 횟수·피격/재활성화 Tick를 검사합니다. |
+| `snapshot(room)` / `read_snapshot(data)` | Tick, 플레이어와 최대 192개 음식 및 6개 지뢰 상태를 변환하고 개수·ID·종류·필드·수치·회전·반지름·섭취 횟수·피격/재활성화 Tick를 검사합니다. |
 | `disconnect()` / `is_disconnect(data)` | Disconnect를 만들거나 종류와 Protobuf 본문을 검증합니다. |
 | `frame(payload)` / `frame_size(header)` | 4바이트 big-endian 길이를 붙이거나 읽고 프레임 한도를 검사합니다. |
 | `encode<Message>()` / `decode<Message>()` (cpp 내부) | 메시지 종류와 Protobuf 직렬화/역직렬화, 크기·파서 한도를 공통 처리합니다. |
 | `write_vector()` / `read_vector()` / `write_quaternion()` / `read_quaternion()` (cpp 내부) | 벡터·회전을 Protobuf 필드와 게임 값 타입 사이에서 검증하며 변환합니다. |
 
-`PROTOCOL_VERSION = 11`, `MAX_FRAME_BYTES = 32768`, `FRAME_HEADER_BYTES = 4`입니다. 입력 코덱은
+`PROTOCOL_VERSION = 12`, `MAX_FRAME_BYTES = 32768`, `FRAME_HEADER_BYTES = 4`입니다. 입력 코덱은
 `restart_death_tick`을 보존하고 Snapshot 코덱은 명시적인 `death_tick` 존재·Tick 상한과 반지름·섭취 횟수·지뢰 상태를 검증합니다. 부착 ID는 0만 허용합니다. MessageType의 wire 값은 유지하며 이전 버전은 Hello에서 거부합니다.
 `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
 
@@ -512,10 +522,10 @@ flowchart LR
 TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + Protobuf 본문**입니다. 종류별 필수 값, 입력 범위, ID, 중복 플레이어, quaternion 정규화와 유한한 실수를 변환 시 검증합니다. 플레이어 ID는 클라이언트 입력 메시지에 없으며 접속 세션의 ID를 서버에서 주입합니다.
 
 최대 메시지는 32KiB이며, 코덱의 방어적 상한은 32명입니다. 최대 길이 플레이어 ID·Tick과
-최대 ID·점수·경기 번호·16자 닉네임을 넣은 32명/96개 음식/6개 지뢰 Snapshot이 32KiB 안에 드는지 검사합니다.
+최대 ID·점수·경기 번호·16자 닉네임을 넣은 32명/192개 음식/6개 지뢰 Snapshot이 32KiB 안에 드는지 검사합니다.
 최대 크기의 음식·지뢰 데이터 또는 최대 길이 사망 Tick을 포함해도 프레임 상한 안인지 검사합니다.
 실제 게임방은 최대 3명만 허용합니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는
-16으로 제한합니다. 프로토콜 버전은 11이며 이전 버전 Hello는 거부합니다. 알 수 없는 Protobuf
+16으로 제한합니다. 프로토콜 버전은 12이며 이전 버전 Hello는 거부합니다. 알 수 없는 Protobuf
 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
 
 ## 시작과 종료

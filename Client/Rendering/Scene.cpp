@@ -3,6 +3,7 @@
 #include "Client/Rendering/ChomperGeometry.h"
 #include "Client/Rendering/PlayerRanking.h"
 #include "Client/Rendering/UiLayout.h"
+#include "Common/Game/ArenaLayout.h"
 #include "Common/Physics/CompoundBallCollider.h"
 #include "Common/Physics/PhysicsWorld.h"
 #include "Common/Physics/Terrain.h"
@@ -361,9 +362,9 @@ void draw_collection_radar(const WorldSnapshot& state, const PlayerState& own)
     constexpr float CENTER_X = 980;
     constexpr float CENTER_Y = 585;
     constexpr float RADIUS = 85;
-    constexpr double RANGE = 50;
+    constexpr double RANGE = 70;
     DrawRectangleRounded({872, 470, 214, 236}, 0.08f, 8, Color{12, 18, 30, 225});
-    DrawText("COLLECTION RADAR", 890, 486, 16, RAYWHITE);
+    DrawText("ARENA RADAR", 890, 486, 16, RAYWHITE);
     DrawCircleLines(static_cast<int>(CENTER_X), static_cast<int>(CENTER_Y), RADIUS,
                     Color{62, 78, 94, 255});
     DrawLine(895, 585, 1065, 585, Color{42, 55, 71, 255});
@@ -382,9 +383,18 @@ void draw_collection_radar(const WorldSnapshot& state, const PlayerState& own)
         return ::Vector2{CENTER_X + static_cast<float>(relative.x / RANGE) * RADIUS,
                          CENTER_Y + static_cast<float>(relative.z / RANGE) * RADIUS};
     };
+    for (const auto& mud : ARENA_MUD) {
+        DrawCircleV(point(mud.position), static_cast<float>(mud.radius / RANGE) * RADIUS,
+                    Color{143, 91, 54, 255});
+    }
+    for (const auto& rock : ARENA_ROCKS) {
+        DrawCircleV(point(rock.position), 4, LIGHTGRAY);
+    }
     for (const auto& collectible : state.collectibles) {
         if (collectible.attachedPlayerId == 0) {
-            DrawCircleV(point(collectible.position), 3.5f, GOLD);
+            const bool edible =
+                own.radius >= simulation::COLLECTIBLE_BASE_RADIUS * collectible.scale;
+            DrawCircleV(point(collectible.position), 2.5f, edible ? GOLD : ORANGE);
         }
     }
     for (const auto& mine : state.mines) {
@@ -396,7 +406,8 @@ void draw_collection_radar(const WorldSnapshot& state, const PlayerState& own)
         }
     }
     DrawCircleV({CENTER_X, CENTER_Y}, 5, SKYBLUE);
-    DrawText("Gold: food  Green: mines", 890, 682, 14, LIGHTGRAY);
+    DrawText("Gold: edible  Orange: too big", 882, 676, 12, LIGHTGRAY);
+    DrawText("Gray: rock  Brown: mud", 890, 692, 12, LIGHTGRAY);
 }
 
 void draw_survival_hud(const WorldSnapshot& state, std::uint32_t playerId)
@@ -407,7 +418,7 @@ void draw_survival_hud(const WorldSnapshot& state, std::uint32_t playerId)
     }
     DrawRectangleRounded({14, 14, 480, 158}, 0.08f, 8, Color{12, 18, 30, 230});
     DrawText("MOONGTANGE  /  FREE PLAY", 30, 28, 20, RAYWHITE);
-    DrawText("Eat. Grow. Survive. No time limit.", 30, 60, 18, LIGHTGRAY);
+    DrawText("Eat smaller food & players. Keep growing.", 30, 60, 17, LIGHTGRAY);
     DrawText(TextFormat("MASS %.1f", player_mass(*own)), 30, 91, 30, GOLD);
     DrawText(TextFormat("SIZE %.2f m", own->radius * 2), 280, 100, 19, RAYWHITE);
     DrawText("WASD move   |   ESC menu   |   F3 debug", 30, 142, 15, LIGHTGRAY);
@@ -419,6 +430,11 @@ void draw_survival_hud(const WorldSnapshot& state, std::uint32_t playerId)
                                 ? "CAUTION: green mines shrink you!"
                                 : "Small enough to pass safely through green mines."),
              28, 198, 16, recentlyHit ? Color{255, 126, 97, 255} : Color{157, 230, 156, 255});
+
+    DrawRectangleRounded({14, 242, 480, 48}, 0.1f, 8, Color{12, 18, 30, 220});
+    DrawText(in_mud(own->position) ? "MUD: movement slowed. Head for clear ground."
+                                   : "Gray rocks block. Brown mud slows you down.",
+             28, 259, 16, in_mud(own->position) ? ORANGE : LIGHTGRAY);
 
     const auto players = ranked_players(state);
     DrawRectangleRounded({862, 14, 224, 72}, 0.08f, 8, Color{12, 18, 30, 230});
@@ -474,12 +490,40 @@ void draw_terrain()
 {
     constexpr float EXTENT = static_cast<float>(simulation::MAP_HALF_EXTENT);
     DrawPlane({0, -0.01f, 0}, {2 * EXTENT, 2 * EXTENT}, Color{49, 78, 75, 255});
-    for (int line = -32; line <= 32; line += 2) {
+    for (int line = -simulation::MAP_GRID_SLICES / 2; line <= simulation::MAP_GRID_SLICES / 2;
+         line += 2) {
         const float offset = static_cast<float>(line);
         DrawLine3D({offset, 0, -EXTENT}, {offset, 0, EXTENT}, Color{64, 96, 88, 255});
         DrawLine3D({-EXTENT, 0, offset}, {EXTENT, 0, offset}, Color{64, 96, 88, 255});
     }
     DrawCubeWires({0, 0.2f, 0}, EXTENT * 2, 0.4f, EXTENT * 2, Color{145, 208, 159, 255});
+}
+
+void draw_arena_obstacles()
+{
+    for (const auto& mud : ARENA_MUD) {
+        const auto center = render_vector(mud.position + Vector3{0, 0.012, 0});
+        const float radius = static_cast<float>(mud.radius);
+        DrawCylinder(center, radius, radius, 0.01f, 40, Color{107, 72, 47, 255});
+        DrawCircle3D({center.x, 0.026f, center.z}, radius, {1, 0, 0}, 90, Color{183, 130, 73, 255});
+        for (int patch = 0; patch < 7; ++patch) {
+            const double angle = static_cast<double>(patch) * 2 * std::numbers::pi / 7;
+            const auto spot =
+                render_vector(mud.position + Vector3{std::cos(angle) * mud.radius * 0.55, 0.028,
+                                                     std::sin(angle) * mud.radius * 0.55});
+            DrawCylinder(spot, radius * 0.2f, radius * 0.2f, 0.006f, 12, Color{134, 89, 55, 255});
+        }
+    }
+    for (const auto& rock : ARENA_ROCKS) {
+        const float radius = static_cast<float>(rock.radius);
+        DrawCylinder(render_vector(rock.position + Vector3{0, 0.015, 0}), radius, radius, 0.01f, 24,
+                     Color{29, 42, 43, 255});
+        DrawSphereEx(render_vector(rock.position + Vector3{0, rock.radius * 0.6, 0}), radius, 5, 7,
+                     Color{111, 124, 134, 255});
+        DrawSphereEx(render_vector(rock.position + Vector3{-rock.radius * 0.2, rock.radius * 0.9,
+                                                           -rock.radius * 0.25}),
+                     radius * 0.6f, 4, 6, Color{149, 161, 169, 255});
+    }
 }
 
 } // namespace
@@ -821,12 +865,19 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
 
     BeginMode3D(camera);
     draw_terrain();
+    draw_arena_obstacles();
 
     for (const auto& mine : state.mines) {
         DrawMine(mine, state.tick);
     }
     for (const auto& collectible : state.collectibles) {
         DrawCollectible(collectible);
+        const double foodRadius = simulation::COLLECTIBLE_BASE_RADIUS * collectible.scale;
+        if (own != state.players.end() && foodRadius > own->radius) {
+            DrawCircle3D({static_cast<float>(collectible.position.x), 0.035f,
+                          static_cast<float>(collectible.position.z)},
+                         static_cast<float>(foodRadius + 0.12), {1, 0, 0}, 90, ORANGE);
+        }
     }
     for (const auto& player : state.players) {
         if (player.deathTick != 0) {
@@ -850,7 +901,7 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
     if (m_showPhysicsDebug) {
         DrawText(TextFormat("%s | %s | Tick %llu | collision spheres", mode, status,
                             static_cast<unsigned long long>(state.tick)),
-                 28, 250, 16, Color{80, 220, 255, 255});
+                 28, 306, 16, Color{80, 220, 255, 255});
     }
     const bool defeated =
         std::any_of(state.players.begin(), state.players.end(), [playerId](const auto& player) {

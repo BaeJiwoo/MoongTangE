@@ -32,12 +32,12 @@ proto::WorldSnapshot protobuf_snapshot(const WorldSnapshot& state)
 
 void framing_and_version_negotiation()
 {
-    // Known Protobuf bytes: field 1, varint wire type, protocol version 11.
-    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 11});
-    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 11});
-    wire::read_client_hello(wire::Bytes{1, 8, 11});
+    // Known Protobuf bytes: field 1, varint wire type, protocol version 12.
+    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 12});
+    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 12});
+    wire::read_client_hello(wire::Bytes{1, 8, 12});
     MOONGTANGE_CHECK(test::throws([] {
-        wire::read_client_hello(wire::Bytes{1, 8, 9});
+        wire::read_client_hello(wire::Bytes{1, 8, 11});
     }));
     const std::string ticket(64, 'a');
     const auto hello = wire::read_client_hello(wire::client_hello(ticket, "Alice"));
