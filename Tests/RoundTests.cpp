@@ -1,4 +1,5 @@
 #include "Common/Game/CollectionScore.h"
+#include "GrowthTestSupport.h"
 #include "Server/Core/GameRound.h"
 #include "TestSupport.h"
 
@@ -42,16 +43,15 @@ InputCommand collect_nearest(const WorldSnapshot& state)
 void unique_objects_have_bounded_scores()
 {
     CollectionScore score;
-    score.Collect(0);
+    score.Observe(0);
     MOONGTANGE_CHECK(score.Points() == 0);
-    for (std::uint32_t id = 1; id <= 1000; ++id) {
-        score.Collect(id);
-        score.Collect(id);
-    }
-    MOONGTANGE_CHECK(score.Points() == MAX_COLLECTIBLES * simulation::COLLECTION_POINTS);
-    CollectionScore opponent;
-    opponent.Collect(1); // Another player may earn this object's first award independently.
-    MOONGTANGE_CHECK(opponent.Points() == simulation::COLLECTION_POINTS);
+    score.Observe(12);
+    score.Observe(12);
+    score.Observe(3);
+    MOONGTANGE_CHECK(score.Points() == 1200);
+    score.Observe(simulation::MAX_FOOD_PER_ROUND + 1);
+    MOONGTANGE_CHECK(score.Points() ==
+                     simulation::MAX_FOOD_PER_ROUND * simulation::COLLECTION_POINTS);
 }
 
 void countdown_timeout_and_replay_are_authoritative()
@@ -129,7 +129,7 @@ void late_join_and_departure_do_not_reset_the_clock()
     MOONGTANGE_CHECK(round.AddPlayer(1));
     advance(round, simulation::ROUND_COUNTDOWN_TICKS + 90);
     const auto beforeJoin = round.Snapshot();
-    MOONGTANGE_CHECK(beforeJoin.players[0].roundScore > 0);
+    MOONGTANGE_CHECK(beforeJoin.players[0].roundScore == 0);
     MOONGTANGE_CHECK(round.AddPlayer(2));
     MOONGTANGE_CHECK(round.Snapshot().round.competitive);
     MOONGTANGE_CHECK(round.Snapshot().round.remainingTicks == beforeJoin.round.remainingTicks);
@@ -137,7 +137,7 @@ void late_join_and_departure_do_not_reset_the_clock()
     MOONGTANGE_CHECK(round.Snapshot().round.competitive);
     advance(round, beforeJoin.round.remainingTicks);
     const auto result = round.Snapshot();
-    MOONGTANGE_CHECK(result.round.phase == RoundPhase::RESULTS && result.players[0].roundWinner);
+    MOONGTANGE_CHECK(result.round.phase == RoundPhase::RESULTS && !result.players[0].roundWinner);
     round.RemovePlayer(1);
     MOONGTANGE_CHECK(round.AddPlayer(3));
     MOONGTANGE_CHECK(round.Snapshot().round.phase == RoundPhase::COUNTDOWN);

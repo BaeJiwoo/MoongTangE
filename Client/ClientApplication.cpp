@@ -405,15 +405,15 @@ void ClientApplication::ObserveSmokeProgress()
             m_initialX = player.position.x;
         }
         m_moved = m_moved || player.position.x > *m_initialX + simulation::PLAYER_RADIUS;
-        m_rolled = m_rolled ||
-                   (player.orientation != Quaternion{} && player.angularVelocity.Length() > 0.1);
+        m_facedMovement = m_facedMovement || (player.orientation.Unit() &&
+                                              player.orientation.Rotate({0, 0, -1}).x > 0.5);
     }
 }
 
 void ClientApplication::ValidateSmokeProgress() const
 {
-    if (!m_moved || !m_rolled) {
-        throw std::runtime_error("Smoke test did not observe server rolling");
+    if (!m_moved || !m_facedMovement) {
+        throw std::runtime_error("Smoke test did not observe movement and facing");
     }
 }
 

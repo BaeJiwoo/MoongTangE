@@ -1,5 +1,6 @@
 #include "Client/Rendering/Scene.h"
 
+#include "Client/Rendering/ChomperGeometry.h"
 #include "Client/Rendering/UiLayout.h"
 #include "Common/Physics/CompoundBallCollider.h"
 #include "Common/Physics/PhysicsWorld.h"
@@ -21,7 +22,6 @@ namespace {
 
 constexpr int BALL_RINGS = 20;
 constexpr int BALL_SECTORS = 32;
-constexpr float BALL_RADIUS = static_cast<float>(simulation::PLAYER_RADIUS);
 constexpr float START_BUTTON_WIDTH = 260;
 constexpr float START_BUTTON_HEIGHT = 64;
 constexpr float BUTTON_GAP = 18;
@@ -326,7 +326,7 @@ MenuAction draw_fail_screen(float screenWidth, float screenHeight, bool restartP
     DrawRectangleRounded(dialog, 0.08f, 8, Color{30, 37, 52, 255});
     DrawText("FAIL", static_cast<int>(dialog.x) + 30, static_cast<int>(dialog.y) + 25, 48,
              Color{255, 110, 90, 255});
-    DrawText("You collided with a larger ball.", static_cast<int>(dialog.x) + 30,
+    DrawText("A larger chomper ate you.", static_cast<int>(dialog.x) + 30,
              static_cast<int>(dialog.y) + 95, 22, RAYWHITE);
     DrawText(restartPending ? "Finding a safe place to restart..."
                             : "Score kept. The round timer keeps running.",
@@ -400,13 +400,16 @@ void draw_collection_radar(const WorldSnapshot& state, const PlayerState& own)
             DrawCircleV(point(collectible.position), 3.5f, GOLD);
         }
     }
+    for (const auto& mine : state.mines) {
+        DrawCircleV(point(mine.position), 4, mine.readyTick <= state.tick ? LIME : GRAY);
+    }
     for (const auto& player : state.players) {
         if (player.id != own.id && player.deathTick == 0) {
             DrawCircleV(point(player.position), 5, Color{255, 110, 90, 255});
         }
     }
     DrawCircleV({CENTER_X, CENTER_Y}, 5, SKYBLUE);
-    DrawText("Gold: food  Red: rivals", 890, 682, 14, LIGHTGRAY);
+    DrawText("Gold: food  Green: mines", 890, 682, 14, LIGHTGRAY);
 }
 
 void draw_round_hud(const WorldSnapshot& state, std::uint32_t playerId)
@@ -419,19 +422,27 @@ void draw_round_hud(const WorldSnapshot& state, std::uint32_t playerId)
         static_cast<unsigned>((state.round.remainingTicks + simulation::TICKS_PER_SECOND - 1) /
                               simulation::TICKS_PER_SECOND);
     DrawRectangleRounded({14, 14, 480, 158}, 0.08f, 8, Color{12, 18, 30, 230});
-    DrawText("MOONGTANGE  /  COLLECTION SPRINT", 30, 28, 20, RAYWHITE);
-    DrawText(
-        state.round.competitive
-            ? "Collect food. Highest score wins when time is up."
-            : TextFormat("Collect %u different objects before time runs out.", SOLO_TARGET_OBJECTS),
-        30, 60, 17, LIGHTGRAY);
+    DrawText("MOONGTANGE  /  CHOMP & GROW", 30, 28, 20, RAYWHITE);
+    DrawText(state.round.competitive
+                 ? "Collect food. Highest score wins when time is up."
+                 : TextFormat("Eat %u foods before time runs out.", SOLO_TARGET_OBJECTS),
+             30, 60, 17, LIGHTGRAY);
     DrawText(TextFormat("%u PTS", own->roundScore), 30, 91, 30, GOLD);
     DrawText(state.round.competitive
                  ? TextFormat("%u points per new object", simulation::COLLECTION_POINTS)
                  : TextFormat("%u / %u collected", own->roundScore / simulation::COLLECTION_POINTS,
                               SOLO_TARGET_OBJECTS),
              210, 100, 19, RAYWHITE);
-    DrawText("WASD move / brake   |   ESC menu   |   F3 debug", 30, 142, 15, LIGHTGRAY);
+    DrawText(TextFormat("SIZE %.2fm   |   WASD move   ESC menu", own->radius * 2), 30, 142, 15,
+             LIGHTGRAY);
+    DrawRectangleRounded({14, 180, 480, 54}, 0.1f, 8, Color{12, 18, 30, 220});
+    const bool recentlyHit =
+        own->mineHitTick != 0 && state.tick - own->mineHitTick < simulation::MINE_IMMUNITY_TICKS;
+    DrawText(recentlyHit ? "MINE HIT!  Lost 40% mass. Keep eating!"
+                         : (own->radius >= simulation::MINE_TRIGGER_RADIUS
+                                ? "CAUTION: green mines shrink you!"
+                                : "Small enough to pass safely through green mines."),
+             28, 198, 16, recentlyHit ? Color{255, 126, 97, 255} : Color{157, 230, 156, 255});
 
     DrawRectangleRounded({862, 14, 224, 88}, 0.08f, 8, Color{12, 18, 30, 230});
     DrawText(TextFormat("ROUND %llu", static_cast<unsigned long long>(state.round.id)), 880, 26, 16,
@@ -457,7 +468,7 @@ void draw_round_hud(const WorldSnapshot& state, std::uint32_t playerId)
         DrawRectangleRounded({365, 250, 370, 184}, 0.1f, 8, Color{12, 18, 30, 230});
         DrawText("GET READY", 438, 274, 32, RAYWHITE);
         DrawText(TextFormat("%u", seconds), 532, 321, 64, GOLD);
-        DrawText("Grow bigger. Avoid larger balls.", 406, 404, 17, LIGHTGRAY);
+        DrawText("Eat, grow, and watch the green mines.", 406, 404, 17, LIGHTGRAY);
     }
 }
 
@@ -517,14 +528,6 @@ MenuAction draw_round_results(const WorldSnapshot& state, std::uint32_t playerId
     return {static_cast<float>(value.x), static_cast<float>(value.y), static_cast<float>(value.z)};
 }
 
-Vector3 sphere_point(int ring, int sector)
-{
-    const double latitude = std::numbers::pi * ring / BALL_RINGS;
-    const double longitude = 2 * std::numbers::pi * sector / BALL_SECTORS;
-    return {std::sin(latitude) * std::cos(longitude), std::cos(latitude),
-            std::sin(latitude) * std::sin(longitude)};
-}
-
 ::Vector3 camera_target(const WorldSnapshot& state, std::uint32_t playerId)
 {
     for (const auto& player : state.players) {
@@ -557,8 +560,7 @@ void draw_player_label(const PlayerState& player, const Camera3D& camera, const 
         return;
     }
 
-    const auto worldPosition =
-        render_vector(player.position + Vector3{0, simulation::PLAYER_RADIUS + 0.35, 0});
+    const auto worldPosition = render_vector(player.position + Vector3{0, player.radius + 0.35, 0});
     const auto screenPosition = ui_position(GetWorldToScreen(worldPosition, camera), canvas);
     const int fontSize = 16;
     const int width = MeasureText(player.nickname.c_str(), fontSize);
@@ -571,19 +573,14 @@ void draw_player_label(const PlayerState& player, const Camera3D& camera, const 
 
 void draw_terrain()
 {
-    constexpr float MAP_SIZE = static_cast<float>(2 * simulation::MAP_HALF_EXTENT);
-    DrawPlane({0, 0, 0}, {MAP_SIZE, MAP_SIZE}, Color{50, 65, 80, 255});
-    DrawGrid(simulation::MAP_GRID_SLICES, 1);
-
-    DrawCylinder({static_cast<float>(POINTED_TERRAIN.x), 0, static_cast<float>(POINTED_TERRAIN.z)},
-                 0, static_cast<float>(POINTED_TERRAIN.radius),
-                 static_cast<float>(POINTED_TERRAIN.height), 32, Color{150, 86, 54, 255});
-
-    for (const auto& hill : HILL_TERRAIN) {
-        DrawSphereEx({static_cast<float>(hill.x), static_cast<float>(hill.centerY),
-                      static_cast<float>(hill.z)},
-                     static_cast<float>(hill.radius), 24, 32, Color{74, 112, 72, 255});
+    constexpr float EXTENT = static_cast<float>(simulation::MAP_HALF_EXTENT);
+    DrawPlane({0, -0.01f, 0}, {2 * EXTENT, 2 * EXTENT}, Color{49, 78, 75, 255});
+    for (int line = -32; line <= 32; line += 2) {
+        const float offset = static_cast<float>(line);
+        DrawLine3D({offset, 0, -EXTENT}, {offset, 0, EXTENT}, Color{64, 96, 88, 255});
+        DrawLine3D({-EXTENT, 0, offset}, {EXTENT, 0, offset}, Color{64, 96, 88, 255});
     }
+    DrawCubeWires({0, 0.2f, 0}, EXTENT * 2, 0.4f, EXTENT * 2, Color{145, 208, 159, 255});
 }
 
 } // namespace
@@ -669,10 +666,7 @@ class SceneRenderer::CollectibleModels
     std::size_t m_loadedCount{};
 };
 
-SceneRenderer::SceneRenderer()
-    : m_ballGeometry(MakeBallGeometry()), m_collectibleModels(std::make_unique<CollectibleModels>())
-{
-}
+SceneRenderer::SceneRenderer() : m_collectibleModels(std::make_unique<CollectibleModels>()) {}
 
 SceneRenderer::~SceneRenderer() = default;
 
@@ -794,56 +788,77 @@ MenuAction SceneRenderer::DrawMainMenu(bool multiplayerAvailable, bool optionsOp
     return MenuAction::NONE;
 }
 
-std::vector<SceneRenderer::BallTriangle> SceneRenderer::MakeBallGeometry()
-{
-    std::vector<BallTriangle> triangles;
-    triangles.reserve(BALL_RINGS * BALL_SECTORS * 2);
-
-    for (int ring = 0; ring < BALL_RINGS; ++ring) {
-        for (int sector = 0; sector < BALL_SECTORS; ++sector) {
-            const auto topLeft = sphere_point(ring, sector);
-            const auto bottomLeft = sphere_point(ring + 1, sector);
-            const auto topRight = sphere_point(ring, sector + 1);
-            const auto bottomRight = sphere_point(ring + 1, sector + 1);
-
-            // White equator, alternating panels and colored caps reveal every rolling direction.
-            const bool equator = ring == BALL_RINGS / 2 - 1 || ring == BALL_RINGS / 2;
-            const bool panel =
-                ring > 1 && ring < BALL_RINGS - 2 && (sector / 4 + ring / 5) % 2 == 0;
-            const bool light = equator || panel;
-
-            triangles.push_back({{topLeft, topRight, bottomLeft}, light});
-            triangles.push_back({{bottomLeft, topRight, bottomRight}, light});
-        }
-    }
-    return triangles;
-}
-
 void SceneRenderer::DrawBall(const PlayerState& player, bool own) const
 {
+    const auto radius = static_cast<float>(player.radius);
     DrawCylinder(
         {static_cast<float>(player.position.x), 0.008f, static_cast<float>(player.position.z)},
-        0.48f, 0.48f, 0.002f, 32, Color{28, 37, 46, 255});
-
-    const auto lightDirection = Vector3{-0.4, 0.8, 0.5}.Normalized();
+        radius * 0.95f, radius * 0.95f, 0.002f, 32, Color{20, 42, 40, 180});
+    const double opening = mouth_angle(GetTime() + player.id * 0.13);
+    const Color skin = own ? Color{255, 209, 46, 255} : Color{100, 204, 255, 255};
+    const auto light = Vector3{-0.4, 0.8, -0.5}.Normalized();
+    auto vertex = [&](Vector3 local, Color color, bool shaded) {
+        const auto normal = player.orientation.Rotate(local);
+        const double shade = shaded ? 0.55 + 0.45 * std::max(0.0, dot(normal, light)) : 1;
+        const auto point = render_vector(player.position + normal * player.radius);
+        rlColor4ub(static_cast<unsigned char>(color.r * shade),
+                   static_cast<unsigned char>(color.g * shade),
+                   static_cast<unsigned char>(color.b * shade), 255);
+        rlVertex3f(point.x, point.y, point.z);
+    };
+    rlDisableBackfaceCulling();
     rlBegin(RL_TRIANGLES);
-    for (const auto& triangle : m_ballGeometry) {
-        const Color color = triangle.light
-                                ? Color{245, 241, 218, 255}
-                                : (own ? Color{245, 128, 25, 255} : Color{32, 125, 225, 255});
-
-        for (const auto vertex : triangle.vertices) {
-            const auto normal = player.orientation.Rotate(vertex);
-            const double shade = 0.4 + 0.6 * std::max(0.0, dot(normal, lightDirection));
-            const auto world = render_vector(player.position + normal * BALL_RADIUS);
-
-            rlColor4ub(static_cast<unsigned char>(color.r * shade),
-                       static_cast<unsigned char>(color.g * shade),
-                       static_cast<unsigned char>(color.b * shade), 255);
-            rlVertex3f(world.x, world.y, world.z);
+    for (int ring = 0; ring < BALL_RINGS; ++ring) {
+        for (int sector = 0; sector < BALL_SECTORS; ++sector) {
+            const auto a = chomper_surface(static_cast<double>(ring) / BALL_RINGS,
+                                           static_cast<double>(sector) / BALL_SECTORS, opening);
+            const auto b = chomper_surface(static_cast<double>(ring + 1) / BALL_RINGS,
+                                           static_cast<double>(sector) / BALL_SECTORS, opening);
+            const auto c = chomper_surface(static_cast<double>(ring) / BALL_RINGS,
+                                           static_cast<double>(sector + 1) / BALL_SECTORS, opening);
+            const auto d = chomper_surface(static_cast<double>(ring + 1) / BALL_RINGS,
+                                           static_cast<double>(sector + 1) / BALL_SECTORS, opening);
+            for (const auto point : {a, b, c, b, d, c}) {
+                vertex(point, skin, true);
+            }
+        }
+        for (const double edge : {0.0, 1.0}) {
+            vertex({}, Color{92, 34, 43, 255}, false);
+            vertex(chomper_surface(static_cast<double>(ring) / BALL_RINGS, edge, opening),
+                   Color{133, 42, 53, 255}, false);
+            vertex(chomper_surface(static_cast<double>(ring + 1) / BALL_RINGS, edge, opening),
+                   Color{133, 42, 53, 255}, false);
         }
     }
     rlEnd();
+    rlEnableBackfaceCulling();
+    for (const double side : {-1.0, 1.0}) {
+        const auto eye = player.position + player.orientation.Rotate(
+                                               Vector3{side * 0.4, 0.65, -0.57} * player.radius);
+        DrawSphereEx(render_vector(eye), radius * 0.17f, 10, 12, RAYWHITE);
+        const auto pupil = eye + player.orientation.Rotate(Vector3{0, 0.02, -0.13} * player.radius);
+        DrawSphereEx(render_vector(pupil), radius * 0.085f, 8, 10, Color{24, 33, 47, 255});
+    }
+}
+
+void SceneRenderer::DrawMine(const MineState& mine, std::uint64_t tick) const
+{
+    const auto center = render_vector(mine.position);
+    const bool ready = mine.readyTick <= tick;
+    const float radius = static_cast<float>(simulation::MINE_RADIUS);
+    const Color color = ready ? Color{125, 236, 109, 255} : Color{78, 100, 97, 255};
+    DrawSphereEx(center, radius * 0.78f, 12, 16, color);
+    for (int index = 0; index < 12; ++index) {
+        const double angle = static_cast<double>(index) * 2 * std::numbers::pi / 12;
+        const Vector3 direction{std::cos(angle), index % 2 == 0 ? 0.45 : -0.1, std::sin(angle)};
+        DrawCylinderEx(render_vector(mine.position + direction * 0.35),
+                       render_vector(mine.position + direction * (ready ? 0.9 : 0.55)), 0.17f, 0, 6,
+                       color);
+    }
+    DrawSphereEx({center.x, center.y + radius * 0.85f, center.z}, radius * 0.23f, 8, 10,
+                 ready ? Color{244, 83, 91, 255} : DARKGRAY);
+    DrawCircle3D({center.x, 0.02f, center.z}, radius + 0.35f, {1, 0, 0}, 90,
+                 ready ? Color{171, 238, 130, 255} : Color{75, 104, 94, 255});
 }
 
 void SceneRenderer::DrawCollectible(const CollectibleState& collectible) const
@@ -875,44 +890,9 @@ void SceneRenderer::DrawCollectible(const CollectibleState& collectible) const
 
 void SceneRenderer::DrawPhysicsDebug(const WorldSnapshot& state, const PlayerState& player) const
 {
-    CompoundBallCollider collider(simulation::PLAYER_RADIUS);
-    const Quaternion inversePlayerOrientation = player.orientation.Conjugate();
-    for (const auto& collectible : state.collectibles) {
-        if (collectible.attachedPlayerId != player.id) {
-            continue;
-        }
-
-        const Vector3 localPosition =
-            inversePlayerOrientation.Rotate(collectible.position - player.position);
-        const Quaternion localOrientation =
-            (inversePlayerOrientation * collectible.orientation).Normalized();
-        collider.AddCollectible(localPosition, localOrientation, collectible.kind,
-                                simulation::COLLECTIBLE_BASE_RADIUS * collectible.scale);
-    }
-
-    for (const auto& sphere : collider.Spheres()) {
-        const Vector3 center = player.position + player.orientation.Rotate(sphere.center);
-        DrawSphereWires(render_vector(center), static_cast<float>(sphere.radius), 8, 12,
-                        Color{80, 220, 255, 210});
-    }
-
-    RigidBody body;
-    body.position = player.position;
-    body.velocity = player.velocity;
-    body.orientation = player.orientation;
-    body.angularVelocity = player.angularVelocity;
-    const auto contacts = PhysicsWorld::TerrainContacts(body, collider);
-    for (std::size_t index = 0; index < contacts.count; ++index) {
-        const auto& contact = contacts.points[index];
-        if (contact.terrain.penetration < -PhysicsWorld::CONTACT_TOLERANCE) {
-            break;
-        }
-
-        DrawSphere(render_vector(contact.point), 0.035f, Color{255, 70, 70, 255});
-        DrawLine3D(render_vector(contact.point),
-                   render_vector(contact.point + contact.terrain.normal * 0.45),
-                   Color{255, 230, 80, 255});
-    }
+    (void)state;
+    DrawSphereWires(render_vector(player.position), static_cast<float>(player.radius), 12, 16,
+                    Color{80, 220, 255, 210});
 }
 
 MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
@@ -927,7 +907,12 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
 
     const auto uiCanvas = make_ui_canvas();
     const auto target = camera_target(state, playerId);
-    const Camera3D camera{{target.x + 4, target.y + 3.5f, target.z + 5.5f},
+    const auto own = std::ranges::find(state.players, playerId, &PlayerState::id);
+    const float cameraScale =
+        own == state.players.end()
+            ? 1.0f
+            : static_cast<float>(1 + (own->radius - simulation::PLAYER_RADIUS) * 0.65);
+    const Camera3D camera{{target.x, target.y + 10 * cameraScale, target.z + 9 * cameraScale},
                           target,
                           {0, 1, 0},
                           45,
@@ -939,6 +924,9 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
     BeginMode3D(camera);
     draw_terrain();
 
+    for (const auto& mine : state.mines) {
+        DrawMine(mine, state.tick);
+    }
     for (const auto& collectible : state.collectibles) {
         DrawCollectible(collectible);
     }
@@ -955,7 +943,7 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
 
     begin_ui(uiCanvas);
     for (const auto& player : state.players) {
-        if (player.deathTick == 0) {
+        if (player.deathTick == 0 && player.id != playerId) {
             draw_player_label(player, camera, uiCanvas);
         }
     }
@@ -966,7 +954,7 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
         draw_overlay(state.tick, playerId, mode, status);
     }
     if (m_showPhysicsDebug) {
-        DrawText("F3 compound colliders | red contacts | yellow normals", 28, 180, 16,
+        DrawText("F3 authoritative character collision spheres", 28, 180, 16,
                  Color{80, 220, 255, 255});
     }
     const bool defeated =

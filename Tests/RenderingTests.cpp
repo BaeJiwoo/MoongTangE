@@ -1,4 +1,5 @@
 #include "Client/PlayerLifeState.h"
+#include "Client/Rendering/ChomperGeometry.h"
 #include "Client/Rendering/DisplaySettings.h"
 #include "Client/Rendering/DisplaySettingsStore.h"
 #include "Client/Rendering/SnapshotInterpolator.h"
@@ -180,39 +181,22 @@ int main()
         MOONGTANGE_CHECK(middle.players[0].nickname == "Alice");
         MOONGTANGE_CHECK(MoongTangE::test::approx(middle.collectibles[0].position.x, 1));
 
-        SnapshotInterpolator attachedView;
-        const Vector3 attachmentOffset{0.75, 0, 0};
-        const Quaternion collectibleOrientation = Quaternion::FromRotation({0.2, 0, 0});
-        WorldSnapshot attachedFrom{
-            3,
-            {{1, {0, 0.5, 0}, {}, {}, {}, "Alice"}},
-            {{1, CollectibleKind::APPLE, {0.75, 0.5, 0}, collectibleOrientation, 1, 1}}};
-        WorldSnapshot attachedTo = attachedFrom;
-        attachedTo.tick = 6;
-        attachedTo.players[0].position = {2, 0.5, 0};
-        attachedTo.players[0].orientation = Quaternion::FromRotation({0, std::numbers::pi / 2, 0});
-        attachedTo.collectibles[0].position =
-            attachedTo.players[0].position +
-            attachedTo.players[0].orientation.Rotate(attachmentOffset);
-        attachedTo.collectibles[0].orientation =
-            (attachedTo.players[0].orientation * collectibleOrientation).Normalized();
-
-        attachedView.Push(attachedFrom);
-        attachedView.Push(attachedTo);
-        attachedView.Advance(0.025);
-        const auto attachedMiddle = attachedView.Sample();
-        const auto& attachedPlayer = attachedMiddle.players[0];
-        const auto& attachedCollectible = attachedMiddle.collectibles[0];
-        const Quaternion inverseAttachedPlayer = attachedPlayer.orientation.Conjugate();
-        MOONGTANGE_CHECK(
-            (inverseAttachedPlayer.Rotate(attachedCollectible.position - attachedPlayer.position) -
-             attachmentOffset)
-                .Length() < 1e-9);
-        MOONGTANGE_CHECK(((inverseAttachedPlayer * attachedCollectible.orientation)
-                              .Normalized()
-                              .Rotate({0, 1, 0}) -
-                          collectibleOrientation.Rotate({0, 1, 0}))
-                             .Length() < 1e-9);
+        SnapshotInterpolator growthView;
+        auto grown = b;
+        grown.players[0].radius = 1.5;
+        grown.collectibles.clear();
+        growthView.Push(a);
+        growthView.Push(grown);
+        growthView.Advance(0.025);
+        MOONGTANGE_CHECK(test::approx(growthView.Sample().players[0].radius, 1.0));
+        MOONGTANGE_CHECK(growthView.Sample().collectibles.empty());
+        MOONGTANGE_CHECK(mouth_angle(0) != mouth_angle(0.1));
+        for (int frame = 0; frame < 120; ++frame) {
+            const double angle = mouth_angle(static_cast<double>(frame) / 60);
+            MOONGTANGE_CHECK(angle >= 0.06 && angle <= 0.7);
+            const auto jaw = chomper_surface(0.5, 0, angle);
+            MOONGTANGE_CHECK(test::approx(jaw.Length(), 1) && jaw.y > 0 && jaw.z < 0);
+        }
 
         view.Push(a); // Stale packet cannot rewind the view.
         MOONGTANGE_CHECK(view.Sample().players[0].position == middle.players[0].position);

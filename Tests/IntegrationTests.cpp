@@ -2,6 +2,7 @@
 #include "Client/Transport/TcpClientTransport.h"
 #include "Common/Game/GameWorld.h"
 #include "GameplayTestSupport.h"
+#include "GrowthTestSupport.h"
 #include "Network/Protocol/Codec.h"
 #include "Server/Core/GameRound.h"
 #include "Server/Network/NetworkServer.h"
@@ -41,12 +42,10 @@ MoongTangE::PlayerState exercise(MoongTangE::IClientTransport& client)
         if (auto state = client.Receive()) {
             for (const auto& p : state->players) {
                 if (p.id == id && p.velocity.x > 0) {
-                    MOONGTANGE_CHECK(p.velocity.Length() < 5.5);
+                    MOONGTANGE_CHECK(p.velocity.Length() <=
+                                     MoongTangE::simulation::PLAYER_MOVE_SPEED);
                     MOONGTANGE_CHECK(MoongTangE::test::approx(p.velocity.x, -p.velocity.z));
-                    MOONGTANGE_CHECK(
-                        MoongTangE::test::approx(p.angularVelocity.z, -p.velocity.x / 0.5));
-                    MOONGTANGE_CHECK(
-                        MoongTangE::test::approx(p.angularVelocity.x, p.velocity.z / 0.5));
+                    MOONGTANGE_CHECK(p.angularVelocity == MoongTangE::Vector3{});
                     MOONGTANGE_CHECK(p.orientation != MoongTangE::Quaternion{} &&
                                      p.orientation.Unit());
                     return true;
@@ -96,6 +95,12 @@ void deterministic_transport_equivalence()
         MOONGTANGE_CHECK(a.players[0].orientation == b.players[0].orientation);
         MOONGTANGE_CHECK(a.players[0].angularVelocity == b.players[0].angularVelocity);
         MOONGTANGE_CHECK(a.collectibles.size() == b.collectibles.size());
+        MOONGTANGE_CHECK(a.players[0].radius == b.players[0].radius &&
+                         a.players[0].foodEaten == b.players[0].foodEaten);
+        MOONGTANGE_CHECK(a.mines.size() == b.mines.size());
+        for (std::size_t index = 0; index < a.mines.size(); ++index) {
+            MOONGTANGE_CHECK(a.mines[index].readyTick == b.mines[index].readyTick);
+        }
         for (std::size_t index = 0; index < a.collectibles.size(); ++index) {
             MOONGTANGE_CHECK(a.collectibles[index].id == b.collectibles[index].id);
             MOONGTANGE_CHECK(a.collectibles[index].kind == b.collectibles[index].kind);
@@ -170,17 +175,27 @@ void defeat_and_restart_cross_both_transports(bool localVictim)
     const auto roomId = victim->RoomId();
     test::wait_for_gameplay(*victim);
     WorldSnapshot state;
-    MOONGTANGE_CHECK(test::wait_for([&] {
-        if (auto received = victim->Receive()) {
-            state = std::move(*received);
-        }
-        return state.tick >= 90 && state.players.size() == 2 &&
-               std::any_of(state.collectibles.begin(), state.collectibles.end(),
-                           [&](const auto& item) {
-                               return item.attachedPlayerId == winner->PlayerId();
-                           });
-    }));
-
+    std::uint64_t winnerSequence = 0;
+    MOONGTANGE_CHECK(test::wait_for(
+        [&] {
+            if (auto received = victim->Receive()) {
+                state = std::move(*received);
+            }
+            if (state.players.size() != 2) {
+                return false;
+            }
+            const auto& grown = state.players[0];
+            if (grown.radius >= 0.8) {
+                MOONGTANGE_CHECK(winner->Send({winner->PlayerId(), ++winnerSequence, 0, 0}));
+                return true;
+            }
+            auto input = test::steer_to(state, winner->PlayerId(),
+                                        test::nearest_food(state, winner->PlayerId()));
+            input.sequence = ++winnerSequence;
+            MOONGTANGE_CHECK(winner->Send(input));
+            return false;
+        },
+        std::chrono::seconds(12)));
     std::uint64_t sequence = 0;
     MOONGTANGE_CHECK(test::wait_for(
         [&] {
@@ -190,13 +205,12 @@ void defeat_and_restart_cross_both_transports(bool localVictim)
             if (state.players[1].deathTick != 0) {
                 return true;
             }
-            auto direction = state.players[0].position - state.players[1].position;
-            direction.y = 0;
-            direction = direction.Normalized();
-            MOONGTANGE_CHECK(victim->Send({playerId, ++sequence, direction.x, direction.z}));
+            auto input = test::steer_to(state, winner->PlayerId(), state.players[1].position);
+            input.sequence = ++winnerSequence;
+            MOONGTANGE_CHECK(winner->Send(input));
             return false;
         },
-        std::chrono::seconds(5)));
+        std::chrono::seconds(12)));
     const auto deathTick = state.players[1].deathTick;
     MOONGTANGE_CHECK(victim->Connected() && state.players[0].deathTick == 0);
 
@@ -224,8 +238,9 @@ void round_results_and_replay_cross_the_protocol()
     bool observedWinner = false;
     for (std::uint64_t tick = 0; tick < 6000; ++tick) {
         const auto state = direct.Snapshot();
-        const InputCommand input{
-            1, tick + 1, 0, 0, 0, state.round.phase == RoundPhase::RESULTS ? state.round.id : 0};
+        auto input = test::steer_to(state, 1, test::nearest_food(state, 1));
+        input.sequence = tick + 1;
+        input.nextRoundId = state.round.phase == RoundPhase::RESULTS ? state.round.id : 0;
         MOONGTANGE_CHECK(direct.Apply(input));
         MOONGTANGE_CHECK(serialized.Apply(wire::read_input(wire::input(input), 1)));
         direct.Step();

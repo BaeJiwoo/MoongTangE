@@ -31,8 +31,7 @@ int main()
             state = a.Receive();
             return state && state->players.size() == 2 && state->players[0].velocity.x > 0.5;
         }));
-        MOONGTANGE_CHECK(MoongTangE::test::approx(state->players[0].angularVelocity.z,
-                                                  -state->players[0].velocity.x / 0.5));
+        MOONGTANGE_CHECK(state->players[0].angularVelocity == MoongTangE::Vector3{});
         MOONGTANGE_CHECK(state->players[0].orientation != MoongTangE::Quaternion{});
         MOONGTANGE_CHECK(state->players[1].velocity.x == 0);
         MOONGTANGE_CHECK(state->players[0].nickname == "Alice" &&

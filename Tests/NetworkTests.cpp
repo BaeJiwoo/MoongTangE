@@ -104,8 +104,7 @@ void clients_receive_authoritative_rolling(const NetworkServer& server, ServerHo
             for (const auto& player : state->players) {
                 if (player.id == firstId && player.velocity.x > 0.5) {
                     MOONGTANGE_CHECK(player.nickname == "Alice");
-                    MOONGTANGE_CHECK(MoongTangE::test::approx(player.angularVelocity.z,
-                                                              -player.velocity.x / 0.5));
+                    MOONGTANGE_CHECK(player.angularVelocity == Vector3{});
                     MOONGTANGE_CHECK(player.orientation != Quaternion{} &&
                                      player.orientation.Unit());
                     return true;
@@ -197,7 +196,7 @@ void fragmented_frames_and_disconnect(const NetworkServer& server)
         for (int i = 0; i < 40 && !moved; ++i) {
             const auto state = wire::read_snapshot(read_frame(raw)).world;
             for (const auto& p : state.players) {
-                if (p.id == id && p.velocity.x > 0.5 && p.angularVelocity.z < 0) {
+                if (p.id == id && p.velocity.x > 0.5 && p.angularVelocity == Vector3{}) {
                     moved = true;
                 }
             }
@@ -212,7 +211,7 @@ void fragmented_frames_and_disconnect(const NetworkServer& server)
 
 void malformed_frames_are_rejected(const NetworkServer& server)
 {
-    for (const auto& bad : std::vector<wire::Bytes>{{0, 0, 32, 1},
+    for (const auto& bad : std::vector<wire::Bytes>{{0, 0, 128, 1},
                                                     {0, 0, 0, 0},
                                                     wire::frame(wire::Bytes{1, 0, 1}),
                                                     wire::frame(wire::input({1, 1, 0, 0}))}) {

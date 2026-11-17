@@ -32,10 +32,10 @@ proto::WorldSnapshot protobuf_snapshot(const WorldSnapshot& state)
 
 void framing_and_version_negotiation()
 {
-    // Known Protobuf bytes: field 1, varint wire type, protocol version 10.
-    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 10});
-    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 10});
-    wire::read_client_hello(wire::Bytes{1, 8, 10});
+    // Known Protobuf bytes: field 1, varint wire type, protocol version 11.
+    MOONGTANGE_CHECK(wire::client_hello() == wire::Bytes{1, 8, 11});
+    MOONGTANGE_CHECK(wire::frame(wire::client_hello()) == wire::Bytes{0, 0, 0, 3, 1, 8, 11});
+    wire::read_client_hello(wire::Bytes{1, 8, 11});
     MOONGTANGE_CHECK(test::throws([] {
         wire::read_client_hello(wire::Bytes{1, 8, 9});
     }));
@@ -76,12 +76,12 @@ void framing_and_version_negotiation()
     }));
 
     for (const auto& bad : {wire::Bytes{}, wire::Bytes{0, 0, 1}, wire::Bytes{0, 0, 0, 0},
-                            wire::Bytes{0, 0, 32, 1}, wire::Bytes{0, 0, 0, 1, 0}}) {
+                            wire::Bytes{0, 0, 128, 1}, wire::Bytes{0, 0, 0, 1, 0}}) {
         MOONGTANGE_CHECK(MoongTangE::test::throws([&] {
             wire::frame_size(bad);
         }));
     }
-    MOONGTANGE_CHECK(wire::frame_size(wire::Bytes{0, 0, 32, 0}) == wire::MAX_FRAME_BYTES);
+    MOONGTANGE_CHECK(wire::frame_size(wire::Bytes{0, 0, 128, 0}) == wire::MAX_FRAME_BYTES);
     MOONGTANGE_CHECK(MoongTangE::test::throws([] {
         wire::frame({});
     }));
@@ -231,7 +231,7 @@ void snapshots_validate_all_game_invariants()
                                 {-2, 0.35, 4},
                                 Quaternion::FromRotation({0, 0.2, 0}),
                                 1.0,
-                                7}}};
+                                0}}};
     const auto original = protobuf_snapshot(state);
     const auto restored = wire::read_snapshot(wire::snapshot({1, state})).world;
     MOONGTANGE_CHECK(restored.tick == state.tick && restored.players.size() == 1);
@@ -245,7 +245,7 @@ void snapshots_validate_all_game_invariants()
     MOONGTANGE_CHECK(restored.collectibles[0].position == state.collectibles[0].position);
     MOONGTANGE_CHECK(restored.collectibles[0].orientation == state.collectibles[0].orientation);
     MOONGTANGE_CHECK(restored.collectibles[0].scale == 1.0);
-    MOONGTANGE_CHECK(restored.collectibles[0].attachedPlayerId == 7);
+    MOONGTANGE_CHECK(restored.collectibles[0].attachedPlayerId == 0);
     MOONGTANGE_CHECK(wire::read_snapshot(wire::snapshot({1, {0, {}, {}}})).world.tick == 0);
 
     auto reject = [](const proto::WorldSnapshot& message) {
@@ -262,19 +262,52 @@ void snapshots_validate_all_game_invariants()
     bad.mutable_players(0)->set_death_tick(state.tick + 1);
     reject(bad);
 
-    bad = original;
-    bad.mutable_players(0)->set_death_tick(state.tick);
-    reject(bad); // A defeated player cannot own collectibles.
-
     auto defeated = state;
     defeated.players[0].deathTick = state.tick;
-    MOONGTANGE_CHECK(test::throws([&] {
-        wire::snapshot({1, defeated});
-    }));
-    defeated.collectibles[0].attachedPlayerId = 0;
     MOONGTANGE_CHECK(
         wire::read_snapshot(wire::snapshot({1, defeated})).world.players[0].deathTick ==
         state.tick);
+    for (const double radius :
+         {0.0, simulation::MAX_PLAYER_RADIUS + 1, std::numeric_limits<double>::infinity()}) {
+        bad = original;
+        bad.mutable_players(0)->set_radius(radius);
+        reject(bad);
+        auto invalid = state;
+        invalid.players[0].radius = radius;
+        MOONGTANGE_CHECK(test::throws([&] {
+            wire::snapshot({1, invalid});
+        }));
+    }
+    bad = original;
+    bad.mutable_players(0)->clear_radius();
+    reject(bad);
+    bad = original;
+    bad.mutable_players(0)->clear_food_eaten();
+    reject(bad);
+    bad = original;
+    bad.mutable_players(0)->set_food_eaten(simulation::MAX_FOOD_PER_ROUND + 1);
+    reject(bad);
+    bad = original;
+    bad.mutable_players(0)->set_mine_hit_tick(state.tick + 1);
+    reject(bad);
+    auto withMine = state;
+    withMine.players[0].radius = 1.25;
+    withMine.players[0].foodEaten = 13;
+    withMine.players[0].mineHitTick = state.tick;
+    withMine.mines = {{1, {2, 0.65, 3}, state.tick + simulation::MINE_RESPAWN_TICKS}};
+    const auto mineCopy = wire::read_snapshot(wire::snapshot({1, withMine})).world;
+    MOONGTANGE_CHECK(mineCopy.players[0].radius == 1.25 && mineCopy.players[0].foodEaten == 13);
+    MOONGTANGE_CHECK(mineCopy.mines[0].readyTick == withMine.mines[0].readyTick);
+    withMine.mines.push_back(withMine.mines[0]);
+    MOONGTANGE_CHECK(test::throws([&] {
+        wire::snapshot({1, withMine});
+    }));
+    bad = protobuf_snapshot(state);
+    auto* invalidMine = bad.add_mines();
+    invalidMine->set_id(1);
+    invalidMine->mutable_position()->CopyFrom(original.players(0).position());
+    invalidMine->set_ready_tick(state.tick + simulation::MINE_RESPAWN_TICKS + 1);
+    reject(bad);
 
     bad = original;
     bad.clear_server_tick();
@@ -370,16 +403,18 @@ void maximum_snapshot_fits_bounded_frame()
                    simulation::ROUND_RESULTS_TICKS, true};
     // Largest varints, all vector/quaternion components present, all 32 records.
     for (std::uint32_t index = 0; index < MAX_PLAYERS; ++index) {
-        state.players.push_back(
-            {std::numeric_limits<std::uint32_t>::max() - index,
-             {1, 2, 3},
-             {4, 5, 6},
-             {0.5, 0.5, 0.5, 0.5},
-             {7, 8, 9},
-             std::string(MAX_NICKNAME_LENGTH, 'a'),
-             0,
-             static_cast<std::uint32_t>(MAX_COLLECTIBLES) * simulation::COLLECTION_POINTS,
-             true});
+        state.players.push_back({std::numeric_limits<std::uint32_t>::max() - index,
+                                 {1, 2, 3},
+                                 {4, 5, 6},
+                                 {0.5, 0.5, 0.5, 0.5},
+                                 {7, 8, 9},
+                                 std::string(MAX_NICKNAME_LENGTH, 'a'),
+                                 0,
+                                 simulation::MAX_FOOD_PER_ROUND * simulation::COLLECTION_POINTS,
+                                 true,
+                                 simulation::MAX_PLAYER_RADIUS,
+                                 simulation::MAX_FOOD_PER_ROUND,
+                                 state.tick});
     }
 
     const auto bytes = wire::snapshot({1, state});
@@ -395,7 +430,11 @@ void maximum_snapshot_fits_bounded_frame()
                                       {1, 2, 3},
                                       {0.5, 0.5, 0.5, 0.5},
                                       simulation::COLLECTIBLE_MAX_SCALE,
-                                      state.players.front().id});
+                                      0});
+    }
+    for (std::uint32_t index = 0; index < simulation::MAX_MINES; ++index) {
+        state.mines.push_back(
+            {std::numeric_limits<std::uint32_t>::max() - index, {1, 2, 3}, state.tick});
     }
     const auto fullBytes = wire::snapshot({1, state});
     MOONGTANGE_CHECK(fullBytes.size() <= wire::MAX_FRAME_BYTES);
@@ -425,13 +464,14 @@ void maximum_snapshot_fits_bounded_frame()
 void round_state_is_required_and_bounded()
 {
     WorldSnapshot state{6000,
-                        {{1, {}, {}, {}, {}, "Alice", 0, 500, true}},
+                        {{1, {}, {}, {}, {}, "Alice", 0, simulation::SOLO_TARGET_SCORE, true}},
                         {},
                         {7, RoundPhase::RESULTS, 180, false}};
     const auto decoded = wire::read_snapshot(wire::snapshot({1, state})).world;
     MOONGTANGE_CHECK(decoded.round.id == 7 && decoded.round.phase == RoundPhase::RESULTS &&
                      decoded.round.remainingTicks == 180 && !decoded.round.competitive);
-    MOONGTANGE_CHECK(decoded.players[0].roundScore == 500 && decoded.players[0].roundWinner);
+    MOONGTANGE_CHECK(decoded.players[0].roundScore == simulation::SOLO_TARGET_SCORE &&
+                     decoded.players[0].roundWinner);
     const auto valid = protobuf_snapshot(state);
     auto rejects = [](const auto& message) {
         return test::throws([&] {
@@ -456,7 +496,8 @@ void round_state_is_required_and_bounded()
     message = valid;
     message.mutable_players(0)->clear_round_winner();
     MOONGTANGE_CHECK(rejects(message));
-    for (const auto badScore : {1U, 100U, 2500U}) {
+    for (const auto badScore :
+         {1U, 100U, simulation::MAX_FOOD_PER_ROUND * simulation::COLLECTION_POINTS + 100}) {
         message = valid;
         message.mutable_players(0)->set_round_score(badScore);
         MOONGTANGE_CHECK(rejects(message));

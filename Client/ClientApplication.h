@@ -67,7 +67,7 @@ class ClientApplication
     bool m_multiplayer{};
     bool m_gameMenuOpen{};
     bool m_moved{};
-    bool m_rolled{};
+    bool m_facedMovement{};
 };
 
 } // namespace MoongTangE

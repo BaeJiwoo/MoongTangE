@@ -38,7 +38,7 @@ int main()
         auto state = server.SnapshotFor(id)->world;
         MOONGTANGE_CHECK(state.tick != 0);
         MOONGTANGE_CHECK(state.players[0].nickname == "Player");
-        MOONGTANGE_CHECK(state.players[0].angularVelocity.z < 0 &&
+        MOONGTANGE_CHECK(state.players[0].angularVelocity == MoongTangE::Vector3{} &&
                          state.players[0].orientation.Unit());
 
         for (std::uint64_t seq = 2; seq < 10000; ++seq) {

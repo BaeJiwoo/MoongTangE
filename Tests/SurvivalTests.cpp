@@ -1,160 +1,106 @@
-#include "Common/Game/GameWorld.h"
-#include "TestSupport.h"
-
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-
-namespace {
+#include "GrowthTestSupport.h"
 
 using namespace MoongTangE;
 
-void chase(GameWorld& world, std::uint32_t hunterId, std::uint32_t targetId,
-           std::uint64_t restartDeathTick = 0)
-{
-    const auto state = world.Snapshot();
-    const auto& hunter = state.players[hunterId - 1];
-    const auto& target = state.players[targetId - 1];
-    auto direction = target.position - hunter.position;
-    direction.y = 0;
-    direction = direction.Normalized();
-    MOONGTANGE_CHECK(
-        world.Apply({hunterId, state.tick + 1, direction.x, direction.z, restartDeathTick}));
-}
+namespace {
 
-void smaller_ball_dies_and_can_restart_without_rejoining()
-{
-    // Seed 24 puts one collectible at player 1's landing area, away from player 2.
-    GameWorld world(24);
-    MOONGTANGE_CHECK(world.AddPlayer(1) && world.AddPlayer(2));
-    for (int tick = 0; tick < 90; ++tick) {
-        world.Step();
-    }
-    auto state = world.Snapshot();
-    MOONGTANGE_CHECK(std::any_of(state.collectibles.begin(), state.collectibles.end(),
-                                 [](const auto& collectible) {
-                                     return collectible.attachedPlayerId == 1;
-                                 }));
-    MOONGTANGE_CHECK(std::none_of(state.collectibles.begin(), state.collectibles.end(),
-                                  [](const auto& collectible) {
-                                      return collectible.attachedPlayerId == 2;
-                                  }));
-    MOONGTANGE_CHECK(state.players[0].deathTick == 0 && state.players[1].deathTick == 0);
-
-    for (int tick = 0; tick < 200 && state.players[1].deathTick == 0; ++tick) {
-        chase(world, 2, 1);
-        world.Step();
-        state = world.Snapshot();
-    }
-    const auto deathTick = state.players[1].deathTick;
-    const auto deathPosition = state.players[1].position;
-    MOONGTANGE_CHECK(deathTick != 0 && state.players[0].deathTick == 0);
-    MOONGTANGE_CHECK(world.PlayerCount() == 2 && world.HasPlayer(2));
-
-    // Movement, wrong defeat IDs, and a stale input cannot revive or move a defeated player.
-    for (int tick = 0; tick < 120; ++tick) {
-        MOONGTANGE_CHECK(world.Apply({2, state.tick + 1, 1, 1, deathTick + 1}));
-        MOONGTANGE_CHECK(!world.Apply({2, state.tick + 1, 0, 0, deathTick}));
-        world.Step();
-        state = world.Snapshot();
-        MOONGTANGE_CHECK(state.players[1].position == deathPosition);
-        MOONGTANGE_CHECK(state.players[1].deathTick == deathTick);
-        MOONGTANGE_CHECK(state.players[1].velocity == Vector3{});
-        MOONGTANGE_CHECK(std::none_of(state.collectibles.begin(), state.collectibles.end(),
-                                      [](const auto& collectible) {
-                                          return collectible.attachedPlayerId == 2;
-                                      }));
-    }
-
-    MOONGTANGE_CHECK(world.Apply({2, state.tick + 1, 0, 0, deathTick}));
-    world.Step();
-    state = world.Snapshot();
-    MOONGTANGE_CHECK(state.players[1].deathTick == 0);
-    MOONGTANGE_CHECK((state.players[1].position - state.players[0].position).Length() > 3);
-    MOONGTANGE_CHECK(state.players[1].orientation == Quaternion{});
-    MOONGTANGE_CHECK(std::abs(state.players[1].position.x) <
-                     simulation::COLLECTIBLE_AREA_HALF_EXTENT);
-    MOONGTANGE_CHECK(std::abs(state.players[1].position.z) <
-                     simulation::COLLECTIBLE_AREA_HALF_EXTENT);
-
-    // Repeated delivery of the old request must not revive a subsequent defeat.
-    for (int tick = 0; tick < 2400 && state.players[1].deathTick == 0; ++tick) {
-        chase(world, 2, 1, deathTick);
-        world.Step();
-        state = world.Snapshot();
-    }
-    MOONGTANGE_CHECK(state.players[1].deathTick > deathTick);
-    const auto nextDeathTick = state.players[1].deathTick;
-    for (int tick = 0; tick < 6; ++tick) {
-        MOONGTANGE_CHECK(world.Apply({2, state.tick + 1, 0, 0, deathTick}));
-        world.Step();
-        state = world.Snapshot();
-        MOONGTANGE_CHECK(state.players[1].deathTick == nextDeathTick);
-    }
-    MOONGTANGE_CHECK(world.Apply({2, state.tick + 1, 0, 0, nextDeathTick}));
-    world.Step();
-    MOONGTANGE_CHECK(world.Snapshot().players[1].deathTick == 0);
-    world.RemovePlayer(2);
-    MOONGTANGE_CHECK(!world.HasPlayer(2) && world.AddPlayer(3));
-}
-
-void larger_ball_wins_regardless_of_player_id_order()
-{
-    GameWorld world(24);
-    MOONGTANGE_CHECK(world.AddPlayer(2) && world.AddPlayer(1));
-    for (int tick = 0; tick < 90; ++tick) {
-        world.Step();
-    }
-    auto state = world.Snapshot();
-    for (int tick = 0; tick < 200 && state.players[0].deathTick == 0; ++tick) {
-        chase(world, 1, 2);
-        world.Step();
-        state = world.Snapshot();
-    }
-    MOONGTANGE_CHECK(state.players[0].deathTick != 0 && state.players[1].deathTick == 0);
-}
-
-void expanded_spawns_cover_the_new_area_and_scale_range()
+void eating_and_restart(std::uint32_t eaterId, std::uint32_t victimId)
 {
     GameWorld world;
-    while (world.CollectibleCount() < simulation::MAX_COLLECTIBLES) {
+    MOONGTANGE_CHECK(world.AddPlayer(eaterId));
+    test::grow_player(world, eaterId, 1.3);
+    MOONGTANGE_CHECK(world.AddPlayer(victimId));
+    for (int tick = 0; tick < 3000; ++tick) {
+        const auto state = world.Snapshot();
+        const auto& victim = *std::ranges::find(state.players, victimId, &PlayerState::id);
+        if (victim.deathTick != 0) {
+            break;
+        }
+        MOONGTANGE_CHECK(world.Apply(test::steer_to(state, eaterId, victim.position)));
         world.Step();
     }
-    for (int tick = 0; tick < 180; ++tick) {
+    auto state = world.Snapshot();
+    auto victim = *std::ranges::find(state.players, victimId, &PlayerState::id);
+    MOONGTANGE_CHECK(victim.deathTick != 0 && world.PlayerCount() == 2);
+    const auto deathTick = victim.deathTick;
+    const auto deathPosition = victim.position;
+    for (int tick = 0; tick < 30; ++tick) {
+        MOONGTANGE_CHECK(world.Apply({victimId, state.tick + 1, 1, 1, deathTick + 1}));
         world.Step();
+        state = world.Snapshot();
+        victim = *std::ranges::find(state.players, victimId, &PlayerState::id);
+        MOONGTANGE_CHECK(victim.deathTick == deathTick && victim.position == deathPosition);
     }
-    const auto state = world.Snapshot();
-    double smallest = simulation::COLLECTIBLE_MAX_SCALE;
-    double largest = simulation::COLLECTIBLE_MIN_SCALE;
-    bool outsideOldArea = false;
-    for (const auto& collectible : state.collectibles) {
-        smallest = std::min(smallest, collectible.scale);
-        largest = std::max(largest, collectible.scale);
-        outsideOldArea = outsideOldArea || std::abs(collectible.position.x) > 12 ||
-                         std::abs(collectible.position.z) > 12;
-        MOONGTANGE_CHECK(collectible.position.Finite() && collectible.orientation.Unit());
-        MOONGTANGE_CHECK(std::abs(collectible.position.x) <=
-                         simulation::COLLECTIBLE_AREA_HALF_EXTENT);
-        MOONGTANGE_CHECK(std::abs(collectible.position.z) <=
-                         simulation::COLLECTIBLE_AREA_HALF_EXTENT);
-    }
-    MOONGTANGE_CHECK(outsideOldArea);
-    MOONGTANGE_CHECK(test::approx(smallest, 0.4) && test::approx(largest, 2.0));
+    MOONGTANGE_CHECK(world.Apply({victimId, state.tick + 1, 0, 0, deathTick}));
+    world.Step();
+    state = world.Snapshot();
+    victim = *std::ranges::find(state.players, victimId, &PlayerState::id);
+    MOONGTANGE_CHECK(victim.deathTick == 0 && victim.radius == simulation::PLAYER_RADIUS);
+    MOONGTANGE_CHECK(victim.foodEaten == 0 && victim.mineHitTick == 0);
+    MOONGTANGE_CHECK((victim.position - deathPosition).Length() > 2);
 }
 
-void equal_balls_collide_without_defeat()
+void mines_shrink_only_large_players_and_rearm()
 {
-    GameWorld world(123456789);
+    GameWorld small(1);
+    MOONGTANGE_CHECK(small.AddPlayer(1));
+    const auto mine = small.Snapshot().mines.front();
+    for (int tick = 0; tick < 250; ++tick) {
+        const auto state = small.Snapshot();
+        MOONGTANGE_CHECK(small.Apply(test::steer_to(state, 1, mine.position)));
+        small.Step();
+    }
+    const auto smallState = small.Snapshot();
+    MOONGTANGE_CHECK((smallState.players[0].position - mine.position).Length() < 0.8);
+    MOONGTANGE_CHECK(smallState.players[0].radius < simulation::MINE_TRIGGER_RADIUS);
+    MOONGTANGE_CHECK(smallState.players[0].mineHitTick == 0 && smallState.mines[0].readyTick == 0);
+    // Use a fresh world for the large-character path; consuming food is the only way to grow.
+    GameWorld world;
+    MOONGTANGE_CHECK(world.AddPlayer(1));
+    test::grow_player(world, 1, 1.4);
+    auto state = world.Snapshot();
+    const auto target = std::ranges::min_element(state.mines, {}, [&](const auto& item) {
+                            return (item.position - state.players[0].position).Length();
+                        })->position;
+    bool hit = false;
+    for (int tick = 0; tick < 3000; ++tick) {
+        state = world.Snapshot();
+        MOONGTANGE_CHECK(world.Apply(test::steer_to(state, 1, target)));
+        world.Step();
+        const auto after = world.Snapshot();
+        if (after.players[0].mineHitTick != state.players[0].mineHitTick) {
+            MOONGTANGE_CHECK(after.players[0].radius < state.players[0].radius);
+            MOONGTANGE_CHECK(after.players[0].deathTick == 0);
+            MOONGTANGE_CHECK(after.players[0].foodEaten == state.players[0].foodEaten);
+            MOONGTANGE_CHECK(test::approx(
+                std::pow(after.players[0].radius, 3),
+                std::max(std::pow(simulation::PLAYER_RADIUS, 3),
+                         std::pow(state.players[0].radius, 3) * simulation::MINE_RETAINED_VOLUME)));
+            const auto hitTick = after.players[0].mineHitTick;
+            for (std::uint64_t frame = 0; frame < simulation::MINE_IMMUNITY_TICKS - 1; ++frame) {
+                world.Step();
+                MOONGTANGE_CHECK(world.Snapshot().players[0].mineHitTick == hitTick);
+            }
+            MOONGTANGE_CHECK(std::ranges::any_of(after.mines, [&](const auto& item) {
+                return item.readyTick == hitTick + simulation::MINE_RESPAWN_TICKS;
+            }));
+            hit = true;
+            break;
+        }
+    }
+    MOONGTANGE_CHECK(hit);
+}
+
+void equal_players_do_not_eat_each_other()
+{
+    GameWorld world;
     MOONGTANGE_CHECK(world.AddPlayer(1) && world.AddPlayer(2));
-    for (int tick = 0; tick < 180; ++tick) {
-        MOONGTANGE_CHECK(world.Apply({1, static_cast<std::uint64_t>(tick + 1), 1, 0}));
-        MOONGTANGE_CHECK(world.Apply({2, static_cast<std::uint64_t>(tick + 1), -1, 0}));
+    for (std::uint64_t tick = 1; tick < 180; ++tick) {
+        MOONGTANGE_CHECK(world.Apply({1, tick, 1, 0}) && world.Apply({2, tick, -1, 0}));
         world.Step();
         const auto state = world.Snapshot();
         MOONGTANGE_CHECK(state.players[0].deathTick == 0 && state.players[1].deathTick == 0);
-        MOONGTANGE_CHECK(state.players[0].position.x <= state.players[1].position.x);
-        MOONGTANGE_CHECK((state.players[0].position - state.players[1].position).Length() >=
-                         2 * simulation::PLAYER_RADIUS - 1e-9);
+        MOONGTANGE_CHECK(state.players[1].position.x - state.players[0].position.x >= 1 - 1e-9);
     }
 }
 
@@ -162,10 +108,10 @@ void equal_balls_collide_without_defeat()
 
 int main()
 {
-    return MoongTangE::test::run([] {
-        smaller_ball_dies_and_can_restart_without_rejoining();
-        larger_ball_wins_regardless_of_player_id_order();
-        expanded_spawns_cover_the_new_area_and_scale_range();
-        equal_balls_collide_without_defeat();
+    return test::run([] {
+        eating_and_restart(1, 2);
+        eating_and_restart(2, 1);
+        mines_shrink_only_large_players_and_rearm();
+        equal_players_do_not_eat_each_other();
     });
 }

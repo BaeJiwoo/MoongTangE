@@ -22,6 +22,13 @@ if(MOONGTANGE_BUILD_CLIENT AND MOONGTANGE_TEST_GUI)
   add_custom_command(TARGET SurvivalGuiSmoke POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${PROJECT_SOURCE_DIR}/Assets" "$<TARGET_FILE_DIR:SurvivalGuiSmoke>/Assets")
+  add_executable(GrowthGuiSmoke GrowthGuiSmoke.cpp ../Client/Rendering/Scene.cpp)
+  target_link_libraries(GrowthGuiSmoke PRIVATE Common ClientDisplaySettings raylib)
+  add_custom_command(TARGET GrowthGuiSmoke POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      "${PROJECT_SOURCE_DIR}/Assets" "$<TARGET_FILE_DIR:GrowthGuiSmoke>/Assets")
+  add_test(NAME GrowthGuiSmoke COMMAND GrowthGuiSmoke)
+  set_tests_properties(GrowthGuiSmoke PROPERTIES TIMEOUT 30)
   add_test(NAME SurvivalGuiSmoke COMMAND SurvivalGuiSmoke)
   set_tests_properties(SurvivalGuiSmoke PROPERTIES TIMEOUT 30)
 endif()
@@ -42,6 +49,7 @@ if(MOONGTANGE_BUILD_NETWORK)
   moongtange_test(NetworkTests NetworkTests.cpp TcpTransport TcpTestSupport)
   moongtange_test(MultiRoomTests MultiRoomTests.cpp TcpTransport)
   moongtange_test(IntegrationTests IntegrationTests.cpp TcpTransport)
+  set_tests_properties(IntegrationTests PROPERTIES TIMEOUT 75)
   add_executable(RemoteProbe RemoteProbe.cpp)
   target_link_libraries(RemoteProbe PRIVATE TcpTransport)
   add_executable(RoomProbe RoomProbe.cpp)
