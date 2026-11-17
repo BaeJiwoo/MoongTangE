@@ -17,8 +17,6 @@ int main(int argumentCount, char* arguments[])
         auto state = world.Snapshot();
         state.players[0].nickname = "Jiwoo";
         state.players[0].orientation = MoongTangE::Quaternion::FromRotation({0, 2.5, 0});
-        state.players[0].roundScore = state.players[0].foodEaten * simulation::COLLECTION_POINTS;
-        state.round = {1, RoundPhase::PLAYING, 3600, false};
         auto draw = [&] {
             MOONGTANGE_CHECK(renderer.Draw(state, 1, "Embedded server", "Room 1", false, false, {},
                                            false, 0) == MenuAction::NONE);
@@ -64,8 +62,6 @@ int main(int argumentCount, char* arguments[])
             }
         }
         MOONGTANGE_CHECK(hit && state.players[0].radius < before.players[0].radius);
-        state.round = {1, RoundPhase::PLAYING, 3000, false};
-        state.players[0].roundScore = state.players[0].foodEaten * simulation::COLLECTION_POINTS;
         for (int frame = 0; frame < 3; ++frame) {
             draw();
         }

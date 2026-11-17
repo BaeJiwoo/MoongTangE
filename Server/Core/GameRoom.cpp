@@ -4,12 +4,12 @@
 
 namespace MoongTangE {
 
-GameRoom::GameRoom(std::uint64_t seed) : m_round(seed) {}
+GameRoom::GameRoom(std::uint64_t seed) : m_world(seed) {}
 
 bool GameRoom::Join(std::uint32_t playerId)
 {
     if (PlayerCount() + ReservedCount() >= GameRoomOptions::PLAYERS_PER_ROOM ||
-        m_reserved.contains(playerId) || !m_round.AddPlayer(playerId)) {
+        m_reserved.contains(playerId) || !m_world.AddPlayer(playerId)) {
         return false;
     }
     m_emptySince.reset();
@@ -19,7 +19,7 @@ bool GameRoom::Join(std::uint32_t playerId)
 bool GameRoom::Reserve(std::uint32_t playerId)
 {
     if (playerId == 0 || PlayerCount() + ReservedCount() >= GameRoomOptions::PLAYERS_PER_ROOM ||
-        m_round.HasPlayer(playerId) || !m_reserved.insert(playerId).second) {
+        m_world.HasPlayer(playerId) || !m_reserved.insert(playerId).second) {
         return false;
     }
     m_emptySince.reset();
@@ -28,7 +28,7 @@ bool GameRoom::Reserve(std::uint32_t playerId)
 
 bool GameRoom::Claim(std::uint32_t playerId)
 {
-    if (!m_reserved.contains(playerId) || !m_round.AddPlayer(playerId)) {
+    if (!m_reserved.contains(playerId) || !m_world.AddPlayer(playerId)) {
         return false;
     }
     m_reserved.erase(playerId);
@@ -37,10 +37,10 @@ bool GameRoom::Claim(std::uint32_t playerId)
 
 void GameRoom::Leave(std::uint32_t playerId, Clock::time_point now)
 {
-    if (m_reserved.erase(playerId) == 0 && !m_round.HasPlayer(playerId)) {
+    if (m_reserved.erase(playerId) == 0 && !m_world.HasPlayer(playerId)) {
         return;
     }
-    m_round.RemovePlayer(playerId);
+    m_world.RemovePlayer(playerId);
     if (PlayerCount() + ReservedCount() == 0) {
         m_emptySince = now;
     }
@@ -48,19 +48,19 @@ void GameRoom::Leave(std::uint32_t playerId, Clock::time_point now)
 
 bool GameRoom::Apply(InputCommand input)
 {
-    return m_round.Apply(input);
+    return m_world.Apply(input);
 }
 
 void GameRoom::Step()
 {
     if (PlayerCount() != 0) {
-        m_round.Step();
+        m_world.Step();
     }
 }
 
 std::size_t GameRoom::PlayerCount() const
 {
-    return m_round.PlayerCount();
+    return m_world.PlayerCount();
 }
 
 bool GameRoom::Expired(Clock::time_point now, std::chrono::seconds lifetime) const
@@ -75,7 +75,7 @@ std::size_t GameRoom::ReservedCount() const
 
 WorldSnapshot GameRoom::Snapshot() const
 {
-    return m_round.Snapshot();
+    return m_world.Snapshot();
 }
 
 } // namespace MoongTangE

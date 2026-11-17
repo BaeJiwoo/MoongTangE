@@ -129,8 +129,7 @@ void ClientApplication::Run()
                 : 0;
 
         const bool escapePressed = IsKeyPressed(KEY_ESCAPE);
-        if (m_transport && escapePressed && !m_optionsOpen && !m_playerLife.Defeated() &&
-            !m_playerLife.RoundFinished()) {
+        if (m_transport && escapePressed && !m_optionsOpen && !m_playerLife.Defeated()) {
             m_gameMenuOpen = !m_gameMenuOpen;
         } else if (!m_transport && escapePressed && !m_optionsOpen && m_errorMessage.empty()) {
             break;
@@ -161,7 +160,7 @@ void ClientApplication::Run()
             continue;
         }
         ReceiveSnapshot();
-        if (m_playerLife.Defeated() || m_playerLife.RoundFinished()) {
+        if (m_playerLife.Defeated()) {
             if (m_displayConfirmationDeadline) {
                 RevertDisplaySettings(window);
             }
@@ -179,12 +178,12 @@ void ClientApplication::Run()
         const auto status = m_transport->Connected()
                                 ? "Room " + std::to_string(m_transport->RoomId())
                                 : std::string("Joining...");
-        const auto gameMenuAction = renderer.Draw(
-            m_presentation.Sample(), m_transport->PlayerId(),
-            m_multiplayer ? "TCP dedicated server" : "Embedded server", status.c_str(),
-            m_gameMenuOpen, m_optionsOpen, m_displaySettings.Pending(),
-            m_displayConfirmationDeadline.has_value(), confirmationSeconds,
-            m_playerLife.RestartDeathTick() != 0, m_playerLife.NextRoundId() != 0);
+        const auto gameMenuAction =
+            renderer.Draw(m_presentation.Sample(), m_transport->PlayerId(),
+                          m_multiplayer ? "TCP dedicated server" : "Embedded server",
+                          status.c_str(), m_gameMenuOpen, m_optionsOpen,
+                          m_displaySettings.Pending(), m_displayConfirmationDeadline.has_value(),
+                          confirmationSeconds, m_playerLife.RestartDeathTick() != 0);
         if (HandleMenuAction(gameMenuAction, window)) {
             break;
         }
@@ -215,9 +214,6 @@ bool ClientApplication::HandleMenuAction(MenuAction action, GraphicsWindow& wind
         break;
     case MenuAction::RESTART_GAME:
         m_playerLife.RequestRestart();
-        break;
-    case MenuAction::NEXT_ROUND:
-        m_playerLife.RequestNextRound();
         break;
     case MenuAction::MAIN_MENU:
         ReturnToMenu({});
@@ -359,7 +355,6 @@ bool ClientApplication::SendInput(bool movementEnabled)
 
     auto input = keyboard_input(m_transport->PlayerId(), ++m_sequence);
     input.restartDeathTick = m_playerLife.RestartDeathTick();
-    input.nextRoundId = m_playerLife.NextRoundId();
     if (!movementEnabled) {
         input.x = 0;
         input.z = 0;

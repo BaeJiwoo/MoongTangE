@@ -15,9 +15,9 @@ int main(int argumentCount, char* arguments[])
             100,
             {{1, {-2, 0.5, 0}, {}, {}, {}, "Winner"}, {2, {0, 0.5, 0}, {}, {}, {}, "Player", 100}},
             {{1, CollectibleKind::APPLE, {-2, 1.2, 0}, {}, 2, 0}}};
-        auto draw = [&](bool pending = false, bool nextRoundPending = false) {
+        auto draw = [&](bool pending = false) {
             return renderer.Draw(state, 2, "Embedded server", "Room 1", false, false, {}, false, 0,
-                                 pending, nextRoundPending);
+                                 pending);
         };
         for (int frame = 0; frame < 3; ++frame) {
             MOONGTANGE_CHECK(draw() == MenuAction::NONE);
@@ -50,40 +50,21 @@ int main(int argumentCount, char* arguments[])
         PlayAutomationEvent({0, KEY_UP_EVENT, {KEY_ENTER, 0, 0, 0}});
         draw();
 
-        state.round = {1, RoundPhase::COUNTDOWN, 180, false};
-        MOONGTANGE_CHECK(draw() == MenuAction::NONE);
-        state.round.phase = RoundPhase::PLAYING;
-        state.round.remainingTicks = 3600;
-        state.players[1].roundScore = 300;
+        // Neither passing the old deadline nor exceeding the former food goal creates results.
+        state.tick = 18000;
+        state.players[1].foodEaten = 50;
+        state.players[1].radius = 1.4;
+        state.players[1].position.y = 1.4;
         state.collectibles.push_back({2, CollectibleKind::BANANA, {-12, 0.5, -18}, {}, 1});
         state.collectibles.push_back({3, CollectibleKind::BURGER, {-21, 0.5, -28}, {}, 1.2});
-        draw();
+        for (const int key : {KEY_ENTER, KEY_R}) {
+            PlayAutomationEvent({0, KEY_DOWN_EVENT, {key, 0, 0, 0}});
+            MOONGTANGE_CHECK(draw() == MenuAction::NONE);
+            PlayAutomationEvent({0, KEY_UP_EVENT, {key, 0, 0, 0}});
+            draw();
+        }
         if (argumentCount > 2) {
             window.SaveScreenshot(arguments[2]);
         }
-        state.round.phase = RoundPhase::RESULTS;
-        state.round.remainingTicks = 180;
-        state.players[1].roundScore = simulation::SOLO_TARGET_SCORE;
-        state.players[1].roundWinner = true;
-        // Round result takes precedence even if the player died on the final tick.
-        state.players[1].deathTick = state.tick;
-        PlayAutomationEvent({0, KEY_DOWN_EVENT, {KEY_ENTER, 0, 0, 0}});
-        MOONGTANGE_CHECK(draw() == MenuAction::NONE);
-        PlayAutomationEvent({0, KEY_UP_EVENT, {KEY_ENTER, 0, 0, 0}});
-        state.round.remainingTicks = 0;
-        draw();
-        if (argumentCount > 3) {
-            window.SaveScreenshot(arguments[3]);
-        }
-        PlayAutomationEvent({0, KEY_DOWN_EVENT, {KEY_ENTER, 0, 0, 0}});
-        MOONGTANGE_CHECK(draw() == MenuAction::NEXT_ROUND);
-        PlayAutomationEvent({0, KEY_UP_EVENT, {KEY_ENTER, 0, 0, 0}});
-        draw();
-        PlayAutomationEvent({0, KEY_DOWN_EVENT, {KEY_R, 0, 0, 0}});
-        MOONGTANGE_CHECK(draw(false, true) == MenuAction::NONE);
-        PlayAutomationEvent({0, KEY_UP_EVENT, {KEY_R, 0, 0, 0}});
-        draw();
-        PlayAutomationEvent({0, KEY_DOWN_EVENT, {KEY_ESCAPE, 0, 0, 0}});
-        MOONGTANGE_CHECK(draw() == MenuAction::MAIN_MENU);
     });
 }

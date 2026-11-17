@@ -9,7 +9,7 @@
 
 - 최초 실행: [README의 빌드 도구](../README.md#빌드) 설치 필요. CMake가 의존성을 준비하므로 오래 걸릴 수 있음. 이후에는 증분 빌드.
 - Windows 진입점은 기존 CMake의 Python 경로 → `py -3` → PATH의 Python 순서로 찾음. Python을 직접 지정해 `Tools/playtest.py`를 실행해도 동일하게 동작.
-- `check`: 외부 그래픽·네트워크 의존성 없이 `build/playtest-core`에서 `PhysicsTests`, `WorldTests`, `SurvivalTests`, `RenderingTests`, `CliTests`, `LocalTests`, `PlaytestToolTests` 실행. 전체 통합 테스트를 대체하지 않음.
+- `check`: 외부 그래픽·네트워크 의존성 없이 `build/playtest-core`에서 `PhysicsTests`, `WorldTests`, `SurvivalTests`, `ContinuousPlayTests`, `RenderingTests`, `CliTests`, `LocalTests`, `PlaytestToolTests` 실행. 전체 통합 테스트를 대체하지 않음.
 - `play`/`single`: 해당 운영체제의 Release 프리셋 사용. `play`는 API도 빌드. 기본 3명, 최대 3명. 서버 한 개·방 한 개로 실제 게스트 세션 → 예약 → TCP 입장 경로 사용.
 - `--seed 42`: 초기 물체 배치 재현. 기본 seed 42. 입력 시점까지 재현하는 리플레이 기능은 아님.
 - `--skip-build`: 현재 빌드 결과를 그대로 사용. 소스와 실행 파일이 다를 수 있다는 안내 표시. 기본 실행은 빌드를 생략하지 않음.
@@ -24,7 +24,6 @@
 | 메뉴 | Esc |
 | 사망 후 다시 플레이 | Fail 화면에서 PLAY AGAIN 또는 Enter/R |
 | 사망 후 메인 메뉴 | Fail 화면에서 MAIN MENU 또는 Esc |
-| 결과에서 다음 판 | 3초 결과 표시 후 NEXT ROUND 또는 Enter/R (방 전체 재시작) |
 | 전체 종료 | 게임 창 모두 닫기 또는 실행 터미널 Ctrl+C |
 | 로그 확인 | 실행 시 출력되는 `build/playtest-logs/<시각>-<고유값>` |
 
@@ -38,10 +37,9 @@
 API·서버는 루프백·임시 포트를 사용하고 임시 서버 키를 생성합니다. 키는 서버 환경으로만 전달하며
 클라이언트 환경에서는 제거합니다. 로그·상태 파일에 키를 쓰지 않습니다.
 
-경기는 3초 준비 후 90초간 진행합니다. 싱글플레이는 20개 음식 섭취, 멀티플레이는 최고 점수가 목표입니다.
-목표·점수·타이머와 레이더를 보며 플레이하고, 사망 후 개인 재시작과 결과 후 방 전체 재시작을
-각각 확인하세요. 자세한 규칙은 [GAME_LOOP.md](GAME_LOOP.md)에 있습니다.
+입장 즉시 제한 시간 없이 플레이합니다. 음식 섭취·성장·지뢰 피해, 현재 질량 순위와
+탈락 후 개인 재시작을 확인하세요. 자세한 규칙은 [GAME_LOOP.md](GAME_LOOP.md)에 있습니다.
 
-빠른 검사에 `RoundTests`가 포함됩니다. 자동 플레이로 기본 seed의 목표 달성과 판 전환을 검증하지만
-모든 배치의 체감 품질을 보장하지는 않습니다. 수동 확인 시 seed, 조작 방향, 캐릭터 크기·지뢰 위치와 F3 화면을
-함께 남기면 같은 상황을 비교하기 쉽습니다.
+빠른 검사에 `ContinuousPlayTests`가 포함됩니다. 300초 분량의 자동 플레이가 과거 90초와
+20개 목표를 넘겨 계속 진행되는지, 입퇴장에도 월드가 보존되는지 검사합니다.
+수동 확인 시 seed, 조작 방향, 캐릭터 크기·지뢰 위치와 F3 화면을 함께 남기면 비교하기 쉽습니다.

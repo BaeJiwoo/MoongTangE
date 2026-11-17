@@ -4,7 +4,7 @@
 #include "GameplayTestSupport.h"
 #include "GrowthTestSupport.h"
 #include "Network/Protocol/Codec.h"
-#include "Server/Core/GameRound.h"
+#include "Server/Core/GameRoom.h"
 #include "Server/Network/NetworkServer.h"
 #include "TestSupport.h"
 
@@ -229,18 +229,17 @@ void defeat_and_restart_cross_both_transports(bool localVictim)
     winner->Close();
 }
 
-void round_results_and_replay_cross_the_protocol()
+void continuous_play_crosses_the_protocol()
 {
     using namespace MoongTangE;
-    GameRound direct(24), serialized(24);
-    MOONGTANGE_CHECK(direct.AddPlayer(1) && direct.AddPlayer(2));
-    MOONGTANGE_CHECK(serialized.AddPlayer(1) && serialized.AddPlayer(2));
-    bool observedWinner = false;
+    GameRoom direct(24), serialized(24);
+    MOONGTANGE_CHECK(direct.Join(1) && direct.Join(2));
+    MOONGTANGE_CHECK(serialized.Join(1) && serialized.Join(2));
     for (std::uint64_t tick = 0; tick < 6000; ++tick) {
         const auto state = direct.Snapshot();
         auto input = test::steer_to(state, 1, test::nearest_food(state, 1));
         input.sequence = tick + 1;
-        input.nextRoundId = state.round.phase == RoundPhase::RESULTS ? state.round.id : 0;
+        input.nextRoundId = 1; // Legacy requests do not end or reset this room.
         MOONGTANGE_CHECK(direct.Apply(input));
         MOONGTANGE_CHECK(serialized.Apply(wire::read_input(wire::input(input), 1)));
         direct.Step();
@@ -254,10 +253,14 @@ void round_results_and_replay_cross_the_protocol()
             MOONGTANGE_CHECK(a.players[index].position == b.players[index].position &&
                              a.players[index].roundScore == b.players[index].roundScore &&
                              a.players[index].roundWinner == b.players[index].roundWinner);
-            observedWinner = observedWinner || b.players[index].roundWinner;
+            MOONGTANGE_CHECK(!b.players[index].roundWinner && b.players[index].roundScore == 0);
+            MOONGTANGE_CHECK(a.players[index].radius == b.players[index].radius &&
+                             a.players[index].foodEaten == b.players[index].foodEaten);
         }
     }
-    MOONGTANGE_CHECK(observedWinner && direct.Snapshot().round.id == 2);
+    MOONGTANGE_CHECK(direct.Snapshot().tick == 6000 && direct.Snapshot().round.id == 0);
+    MOONGTANGE_CHECK(direct.Snapshot().round.phase == RoundPhase::FREE_PLAY);
+    MOONGTANGE_CHECK(direct.Snapshot().players[0].foodEaten > 20);
 }
 
 } // namespace
@@ -266,7 +269,7 @@ int main()
 {
     return MoongTangE::test::run([] {
         deterministic_transport_equivalence();
-        round_results_and_replay_cross_the_protocol();
+        continuous_play_crosses_the_protocol();
         asynchronous_transport_invariants();
         defeat_and_restart_cross_both_transports(false);
         defeat_and_restart_cross_both_transports(true);
