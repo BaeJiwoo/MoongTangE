@@ -13,7 +13,7 @@ struct InputCommand
     double x{}, z{};
     // Repeat until acknowledged. A previous defeat cannot restart a later life.
     std::uint64_t restartDeathTick{};
-    // Only a result for this exact round may request a room-wide replay.
+    // Legacy wire field; continuous rooms ignore room-wide replay requests.
     std::uint64_t nextRoundId{};
 
     bool Valid() const

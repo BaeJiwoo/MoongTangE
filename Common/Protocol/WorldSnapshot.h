@@ -28,7 +28,7 @@ inline constexpr bool valid_collectible_kind(CollectibleKind kind)
 
 enum class RoundPhase : std::uint32_t
 {
-    FREE_PLAY = 0, // Standalone physics snapshots; hosted games always have a round.
+    FREE_PLAY = 0, // Continuous gameplay. Other values are retained for legacy wire decoding.
     COUNTDOWN = 1,
     PLAYING = 2,
     RESULTS = 3
@@ -51,6 +51,7 @@ struct PlayerState
     std::string nickname;
     // Zero while alive; otherwise the authoritative tick of this particular defeat.
     std::uint64_t deathTick{};
+    // Legacy round metadata: live servers always publish zero/false.
     std::uint32_t roundScore{};
     bool roundWinner{};
     double radius{simulation::PLAYER_RADIUS};

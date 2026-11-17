@@ -32,8 +32,7 @@ if(MSVC)
   target_compile_definitions(ClientDisplaySettings PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 add_library(ServerCore Server/Core/ServerHost.cpp Server/Core/TickScheduler.cpp
-  Server/Core/GameRoom.cpp Server/Core/GameRoomManager.cpp Server/Core/GameRoomOptions.cpp
-  Server/Core/GameRound.cpp)
+  Server/Core/GameRoom.cpp Server/Core/GameRoomManager.cpp Server/Core/GameRoomOptions.cpp)
 target_link_libraries(ServerCore PUBLIC Common Threads::Threads)
 add_library(ServerOptions Server/ServerOptions.cpp)
 target_link_libraries(ServerOptions PUBLIC Common)

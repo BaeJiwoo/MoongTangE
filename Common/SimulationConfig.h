@@ -10,6 +10,7 @@ inline constexpr double FIXED_DELTA = 1.0 / TICKS_PER_SECOND;
 inline constexpr std::uint64_t SNAPSHOT_INTERVAL_TICKS = 3;
 inline constexpr std::uint64_t INPUT_TIMEOUT_TICKS = 2 * TICKS_PER_SECOND;
 
+// Legacy protocol validation limits; live rooms do not run timed rounds.
 inline constexpr std::uint64_t ROUND_COUNTDOWN_TICKS = 3 * TICKS_PER_SECOND;
 inline constexpr std::uint64_t ROUND_DURATION_TICKS = 90 * TICKS_PER_SECOND;
 inline constexpr std::uint64_t ROUND_RESULTS_TICKS = 3 * TICKS_PER_SECOND;

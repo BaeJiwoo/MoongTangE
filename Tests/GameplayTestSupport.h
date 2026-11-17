@@ -12,10 +12,10 @@ inline void wait_for_gameplay(IClientTransport& client)
     check(wait_for(
               [&] {
                   const auto state = client.Receive();
-                  return state && state->round.phase == RoundPhase::PLAYING;
+                  return state && state->round.phase == RoundPhase::FREE_PLAY;
               },
               std::chrono::seconds(6)),
-          "Server countdown completed");
+          "Server continuous gameplay started");
 }
 
 } // namespace MoongTangE::test

@@ -2,6 +2,7 @@
 #include "Client/Rendering/ChomperGeometry.h"
 #include "Client/Rendering/DisplaySettings.h"
 #include "Client/Rendering/DisplaySettingsStore.h"
+#include "Client/Rendering/PlayerRanking.h"
 #include "Client/Rendering/SnapshotInterpolator.h"
 #include "Client/Rendering/UiLayout.h"
 #include "TestSupport.h"
@@ -16,32 +17,23 @@ int main()
     return MoongTangE::test::run([] {
         using namespace MoongTangE;
 
+        WorldSnapshot ranking;
+        ranking.players = {{1}, {2}, {3}, {4}};
+        ranking.players[0].radius = 0.8;
+        ranking.players[0].roundScore = 100000; // Legacy score cannot change current mass rank.
+        ranking.players[1].radius = 1.2;
+        ranking.players[2].radius = 1.2;
+        ranking.players[3].radius = 3;
+        ranking.players[3].deathTick = 1;
+        auto leaders = ranked_players(ranking);
+        MOONGTANGE_CHECK(leaders.size() == 3 && leaders[0]->id == 2 && leaders[1]->id == 3);
+        MOONGTANGE_CHECK(player_mass(*leaders[0]) > player_mass(*leaders[2]));
+        ranking.players[1].radius = 0.5;
+        leaders = ranked_players(ranking);
+        MOONGTANGE_CHECK(leaders[0]->id == 3 && leaders[2]->id == 2);
+
         PlayerLifeState life;
-        WorldSnapshot roundState{1, {{1, {0, 2, 0}}}, {}, {1, RoundPhase::COUNTDOWN, 180, false}};
-        life.Observe(roundState, 1);
-        MOONGTANGE_CHECK(!life.MovementEnabled());
-        life.RequestNextRound();
-        MOONGTANGE_CHECK(life.NextRoundId() == 0);
-        roundState.round.phase = RoundPhase::RESULTS;
-        life.Observe(roundState, 1);
-        life.RequestNextRound();
-        MOONGTANGE_CHECK(life.RoundFinished() && life.NextRoundId() == 1);
-        life.Observe(roundState, 1);
-        MOONGTANGE_CHECK(life.NextRoundId() == 1);
-        SnapshotInterpolator roundView;
-        roundView.Push(roundState);
-        ++roundState.tick;
-        ++roundState.round.id;
-        roundState.round.phase = RoundPhase::COUNTDOWN;
-        roundState.players[0].position = {20, 2, 20};
-        roundView.Push(roundState);
-        MOONGTANGE_CHECK(roundView.Sample().players[0].position == roundState.players[0].position);
-        life.Observe(roundState, 1);
-        MOONGTANGE_CHECK(life.NextRoundId() == 0 && !life.RoundFinished());
-        roundState.round.phase = RoundPhase::PLAYING;
-        life.Observe(roundState, 1);
         MOONGTANGE_CHECK(life.MovementEnabled());
-        life.Reset();
         WorldSnapshot alive{10, {{1, {}, {}, {}, {}, "Alice"}}, {}};
         auto defeated = alive;
         defeated.tick = 20;

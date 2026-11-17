@@ -184,7 +184,8 @@ void fragmented_frames_and_disconnect(const NetworkServer& server)
 
         bool playing = false;
         for (int frame = 0; frame < 100 && !playing; ++frame) {
-            playing = wire::read_snapshot(read_frame(raw)).world.round.phase == RoundPhase::PLAYING;
+            playing =
+                wire::read_snapshot(read_frame(raw)).world.round.phase == RoundPhase::FREE_PLAY;
         }
         MOONGTANGE_CHECK(playing);
         const auto command = wire::frame(wire::input({id, 1, 1, 0}));

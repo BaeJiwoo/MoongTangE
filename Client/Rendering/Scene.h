@@ -19,7 +19,6 @@ enum class MenuAction
     MULTIPLAYER,
     RESUME_GAME,
     RESTART_GAME,
-    NEXT_ROUND,
     MAIN_MENU,
     EXIT_GAME,
     SHOW_OPTIONS,
@@ -57,8 +56,7 @@ class SceneRenderer
     MenuAction Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
                     const char* status, bool gameMenuOpen, bool optionsOpen,
                     const DisplaySettingsState& selectedSettings, bool confirmationOpen,
-                    int confirmationSeconds, bool restartPending = false,
-                    bool nextRoundPending = false) const;
+                    int confirmationSeconds, bool restartPending = false) const;
 
   private:
     void DrawMine(const MineState& mine, std::uint64_t tick) const;

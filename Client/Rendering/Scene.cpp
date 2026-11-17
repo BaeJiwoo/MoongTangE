@@ -1,6 +1,7 @@
 #include "Client/Rendering/Scene.h"
 
 #include "Client/Rendering/ChomperGeometry.h"
+#include "Client/Rendering/PlayerRanking.h"
 #include "Client/Rendering/UiLayout.h"
 #include "Common/Physics/CompoundBallCollider.h"
 #include "Common/Physics/PhysicsWorld.h"
@@ -31,7 +32,6 @@ constexpr float OPTIONS_DIALOG_WIDTH = 680;
 constexpr float OPTIONS_DIALOG_HEIGHT = 640;
 constexpr float GAME_MENU_WIDTH = 520;
 constexpr float GAME_MENU_HEIGHT = 390;
-constexpr auto SOLO_TARGET_OBJECTS = simulation::SOLO_TARGET_SCORE / simulation::COLLECTION_POINTS;
 
 struct UiCanvas
 {
@@ -344,19 +344,6 @@ MenuAction draw_fail_screen(float screenWidth, float screenHeight, bool restartP
     return MenuAction::NONE;
 }
 
-std::vector<const PlayerState*> ranked_players(const WorldSnapshot& state)
-{
-    std::vector<const PlayerState*> players;
-    for (const auto& player : state.players) {
-        players.push_back(&player);
-    }
-    std::ranges::sort(players, [](const auto* first, const auto* second) {
-        return first->roundScore != second->roundScore ? first->roundScore > second->roundScore
-                                                       : first->id < second->id;
-    });
-    return players;
-}
-
 std::string leaderboard_name(const PlayerState& player)
 {
     auto name = player.nickname.empty() ? std::string("Player") : player.nickname;
@@ -412,29 +399,18 @@ void draw_collection_radar(const WorldSnapshot& state, const PlayerState& own)
     DrawText("Gold: food  Green: mines", 890, 682, 14, LIGHTGRAY);
 }
 
-void draw_round_hud(const WorldSnapshot& state, std::uint32_t playerId)
+void draw_survival_hud(const WorldSnapshot& state, std::uint32_t playerId)
 {
     const auto own = std::ranges::find(state.players, playerId, &PlayerState::id);
     if (own == state.players.end()) {
         return;
     }
-    const auto seconds =
-        static_cast<unsigned>((state.round.remainingTicks + simulation::TICKS_PER_SECOND - 1) /
-                              simulation::TICKS_PER_SECOND);
     DrawRectangleRounded({14, 14, 480, 158}, 0.08f, 8, Color{12, 18, 30, 230});
-    DrawText("MOONGTANGE  /  CHOMP & GROW", 30, 28, 20, RAYWHITE);
-    DrawText(state.round.competitive
-                 ? "Collect food. Highest score wins when time is up."
-                 : TextFormat("Eat %u foods before time runs out.", SOLO_TARGET_OBJECTS),
-             30, 60, 17, LIGHTGRAY);
-    DrawText(TextFormat("%u PTS", own->roundScore), 30, 91, 30, GOLD);
-    DrawText(state.round.competitive
-                 ? TextFormat("%u points per new object", simulation::COLLECTION_POINTS)
-                 : TextFormat("%u / %u collected", own->roundScore / simulation::COLLECTION_POINTS,
-                              SOLO_TARGET_OBJECTS),
-             210, 100, 19, RAYWHITE);
-    DrawText(TextFormat("SIZE %.2fm   |   WASD move   ESC menu", own->radius * 2), 30, 142, 15,
-             LIGHTGRAY);
+    DrawText("MOONGTANGE  /  FREE PLAY", 30, 28, 20, RAYWHITE);
+    DrawText("Eat. Grow. Survive. No time limit.", 30, 60, 18, LIGHTGRAY);
+    DrawText(TextFormat("MASS %.1f", player_mass(*own)), 30, 91, 30, GOLD);
+    DrawText(TextFormat("SIZE %.2f m", own->radius * 2), 280, 100, 19, RAYWHITE);
+    DrawText("WASD move   |   ESC menu   |   F3 debug", 30, 142, 15, LIGHTGRAY);
     DrawRectangleRounded({14, 180, 480, 54}, 0.1f, 8, Color{12, 18, 30, 220});
     const bool recentlyHit =
         own->mineHitTick != 0 && state.tick - own->mineHitTick < simulation::MINE_IMMUNITY_TICKS;
@@ -444,83 +420,22 @@ void draw_round_hud(const WorldSnapshot& state, std::uint32_t playerId)
                                 : "Small enough to pass safely through green mines."),
              28, 198, 16, recentlyHit ? Color{255, 126, 97, 255} : Color{157, 230, 156, 255});
 
-    DrawRectangleRounded({862, 14, 224, 88}, 0.08f, 8, Color{12, 18, 30, 230});
-    DrawText(TextFormat("ROUND %llu", static_cast<unsigned long long>(state.round.id)), 880, 26, 16,
-             LIGHTGRAY);
-    DrawText(TextFormat("%02u:%02u", seconds / 60, seconds % 60), 910, 50, 36,
-             seconds <= 10 && state.round.phase == RoundPhase::PLAYING ? RED : RAYWHITE);
-
     const auto players = ranked_players(state);
+    DrawRectangleRounded({862, 14, 224, 72}, 0.08f, 8, Color{12, 18, 30, 230});
+    DrawText("MASS RANKING", 880, 28, 20, RAYWHITE);
+    DrawText(TextFormat("%u alive", static_cast<unsigned>(players.size())), 880, 58, 16, LIGHTGRAY);
     int row = 0;
     for (const auto* player : players) {
         if (row == 3) {
             break;
         }
-        DrawRectangle(862, 114 + row * 34, 224, 32, Color{12, 18, 30, 210});
-        DrawText(leaderboard_name(*player).c_str(), 876, 122 + row * 34, 16,
+        DrawRectangle(862, 98 + row * 34, 224, 32, Color{12, 18, 30, 210});
+        DrawText(leaderboard_name(*player).c_str(), 876, 106 + row * 34, 16,
                  player->id == playerId ? SKYBLUE : LIGHTGRAY);
-        DrawText(TextFormat("%u", player->roundScore), 1022, 122 + row * 34, 16, GOLD);
+        DrawText(TextFormat("%.1f", player_mass(*player)), 1022, 106 + row * 34, 16, GOLD);
         ++row;
     }
     draw_collection_radar(state, *own);
-
-    if (state.round.phase == RoundPhase::COUNTDOWN) {
-        DrawRectangleRounded({365, 250, 370, 184}, 0.1f, 8, Color{12, 18, 30, 230});
-        DrawText("GET READY", 438, 274, 32, RAYWHITE);
-        DrawText(TextFormat("%u", seconds), 532, 321, 64, GOLD);
-        DrawText("Eat, grow, and watch the green mines.", 406, 404, 17, LIGHTGRAY);
-    }
-}
-
-MenuAction draw_round_results(const WorldSnapshot& state, std::uint32_t playerId, bool pending)
-{
-    const auto own = std::ranges::find(state.players, playerId, &PlayerState::id);
-    const bool won = own != state.players.end() && own->roundWinner;
-    const auto winners = std::ranges::count(state.players, true, &PlayerState::roundWinner);
-    DrawRectangle(0, 0, 1100, 720, Color{0, 0, 0, 185});
-    DrawRectangleRounded({260, 110, 580, 500}, 0.08f, 8, Color{30, 37, 52, 255});
-    DrawText(won ? (winners > 1 ? "DRAW / JOINT WIN" : "YOU WIN!") : "ROUND OVER", 292, 138, 40,
-             won ? GOLD : Color{255, 110, 90, 255});
-    DrawText(state.round.competitive ? (winners == 0 ? "No objects collected. No winner this round."
-                                                     : "Final scores - highest score wins")
-             : won ? TextFormat("Goal complete: %u objects collected!", SOLO_TARGET_OBJECTS)
-                   : TextFormat("Time up. Collect %u objects to win.", SOLO_TARGET_OBJECTS),
-             292, 196, 21, RAYWHITE);
-    const auto players = ranked_players(state);
-    int row = 0;
-    for (const auto* player : players) {
-        if (row == 3) {
-            break;
-        }
-        DrawRectangleRounded({292, 245.0f + static_cast<float>(row * 46), 516, 38}, 0.15f, 4,
-                             player->id == playerId ? Color{40, 68, 88, 255}
-                                                    : Color{19, 27, 40, 255});
-        DrawText(TextFormat("%.24s%s",
-                            player->nickname.empty() ? "Player" : player->nickname.c_str(),
-                            player->roundWinner ? "  *" : ""),
-                 308, 254 + row * 46, 20, RAYWHITE);
-        DrawText(TextFormat("%u", player->roundScore), 728, 254 + row * 46, 20, GOLD);
-        ++row;
-    }
-    const bool ready = state.round.remainingTicks == 0 && !pending;
-    const auto seconds =
-        static_cast<unsigned>((state.round.remainingTicks + simulation::TICKS_PER_SECOND - 1) /
-                              simulation::TICKS_PER_SECOND);
-    DrawText(pending ? "Starting a fresh round for everyone..."
-                     : "Next round resets the arena for everyone in this room.",
-             292, 401, 16, LIGHTGRAY);
-    const char* label = ready     ? "NEXT ROUND  [ENTER / R]"
-                        : pending ? "STARTING..."
-                                  : TextFormat("NEXT ROUND IN %u", seconds);
-    if (draw_menu_button({310, 446, 480, 56}, label, ready) ||
-        (ready && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_R)))) {
-        return MenuAction::NEXT_ROUND;
-    }
-    if (draw_menu_button({310, 526, 480, 54}, "MAIN MENU  [ESC]", true) ||
-        IsKeyPressed(KEY_ESCAPE)) {
-        return MenuAction::MAIN_MENU;
-    }
-    return MenuAction::NONE;
 }
 
 ::Vector3 render_vector(Vector3 value)
@@ -536,22 +451,6 @@ MenuAction draw_round_results(const WorldSnapshot& state, std::uint32_t playerId
         }
     }
     return {};
-}
-
-void draw_overlay(std::uint64_t tick, std::uint32_t playerId, const char* mode, const char* status)
-{
-    DrawRectangle(14, 14, 550, 182, Color{12, 18, 30, 220});
-    DrawText("MoongTangE", 28, 28, 22, RAYWHITE);
-    DrawText(TextFormat("%s | Player %u | Tick %llu", mode, playerId,
-                        static_cast<unsigned long long>(tick)),
-             28, 62, 18, SKYBLUE);
-
-    DrawText("WASD push  |  Release to coast  |  Opposite key to brake", 28, 90, 16, LIGHTGRAY);
-    DrawText("ESC menu  |  F3 physics debug  |  Server physics 60 Hz", 28, 114, 16, LIGHTGRAY);
-
-    DrawText(status, 28, 140, 16, LIGHTGRAY);
-
-    DrawFPS(static_cast<int>(REFERENCE_WINDOW_WIDTH) - 100, 20);
 }
 
 void draw_player_label(const PlayerState& player, const Camera3D& camera, const UiCanvas& canvas)
@@ -898,8 +797,7 @@ void SceneRenderer::DrawPhysicsDebug(const WorldSnapshot& state, const PlayerSta
 MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerId, const char* mode,
                                const char* status, bool gameMenuOpen, bool optionsOpen,
                                const DisplaySettingsState& selectedSettings, bool confirmationOpen,
-                               int confirmationSeconds, bool restartPending,
-                               bool nextRoundPending) const
+                               int confirmationSeconds, bool restartPending) const
 {
     if (IsKeyPressed(KEY_F3)) {
         m_showPhysicsDebug = !m_showPhysicsDebug;
@@ -948,24 +846,18 @@ MenuAction SceneRenderer::Draw(const WorldSnapshot& state, std::uint32_t playerI
         }
     }
 
-    if (state.round.id != 0) {
-        draw_round_hud(state, playerId);
-    } else {
-        draw_overlay(state.tick, playerId, mode, status);
-    }
+    draw_survival_hud(state, playerId);
     if (m_showPhysicsDebug) {
-        DrawText("F3 authoritative character collision spheres", 28, 180, 16,
-                 Color{80, 220, 255, 255});
+        DrawText(TextFormat("%s | %s | Tick %llu | collision spheres", mode, status,
+                            static_cast<unsigned long long>(state.tick)),
+                 28, 250, 16, Color{80, 220, 255, 255});
     }
     const bool defeated =
         std::any_of(state.players.begin(), state.players.end(), [playerId](const auto& player) {
             return player.id == playerId && player.deathTick != 0;
         });
     const auto gameMenuAction =
-        state.round.phase == RoundPhase::RESULTS
-            ? draw_round_results(state, playerId, nextRoundPending)
-        : defeated
-            ? draw_fail_screen(REFERENCE_WINDOW_WIDTH, REFERENCE_WINDOW_HEIGHT, restartPending)
+        defeated ? draw_fail_screen(REFERENCE_WINDOW_WIDTH, REFERENCE_WINDOW_HEIGHT, restartPending)
         : gameMenuOpen
             ? draw_game_menu(REFERENCE_WINDOW_WIDTH, REFERENCE_WINDOW_HEIGHT, optionsOpen,
                              selectedSettings, confirmationOpen, confirmationSeconds)

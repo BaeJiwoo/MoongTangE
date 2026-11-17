@@ -42,7 +42,6 @@
 | `ServerApplication` | 독립 서버 시작, 종료 요청·시그널·시간 제한, 실행 중 자원 소유 | 개별 플레이어 물리 변경 |
 | `ServerHost` | Tick 스레드, 연결 등록, 제한된 명령 큐, 최신 Snapshot의 안전한 공유 | 소켓·화면 처리 |
 | `GameRoomManager` / `GameRoom` | 생성 순서에 따른 3인 방 배정·퇴장·예약·빈 방 정리, 방별 경기 소유 | 소켓과 다른 스레드의 직접 접근 |
-| `GameRound` | 준비·제한 시간·점수·결과·다음 판, 방별 월드 소유 | 소켓·그래픽·영구 결과 저장 |
 | `GameWorld` | 플레이어·음식·지뢰·입력·seed 상태, 이동·성장·피해·충돌 판정 | 스레드 생성·소켓 접근 |
 | `PhysicsWorld` | 기존 물리 유틸리티와 회귀 검증용 중력·지형·복합 구·구름 계산 | 입력 수신·렌더링 |
 | `NetworkServer` (`NativeServer`) | 운영체제별 네트워크 실행 객체 소유, 시작·종료와 포트 조회의 공개 진입점 | 개별 세션 처리 |
@@ -65,8 +64,7 @@ flowchart TD
     Network -->|명령 큐에 등록| Host
     Host --> Rooms[GameRoomManager]
     Rooms --> Room[GameRoom: 최대 3명]
-    Room --> Round[GameRound: 준비 / 진행 / 결과]
-    Round --> World[방별 GameWorld]
+    Room --> World[방별 GameWorld: 연속 성장 / 생존]
     World --> Physics[PhysicsWorld]
     Host -->|잠금 아래 최신 Snapshot 복사| Network
 ```
@@ -114,7 +112,7 @@ Snapshot은 기본 3 Tick마다 게시하며 클라이언트는 표시용 보간
 - `GameWorld(seed, initialTick)`은 난수 상태, 음식과 고정 지뢰 위치를 초기화합니다.
 - `AddPlayer/RemovePlayer/HasPlayer/PlayerCount/CollectibleCount`는 참가와 현재 음식 수를 관리합니다.
 - `Apply()`는 입력 유효성과 시퀀스를 검사합니다. `Step()`만 이동·소비·피해를 변경하고
-  `AdvanceClock()`은 준비/결과 시간 동안 전송 Tick만 진행합니다.
+  입장 즉시 이동을 처리하며 시간이나 수집량에 따른 종료는 없습니다.
 - `Move()`는 정규화한 입력을 목표 속도로 변환하고 방향 quaternion을 설정합니다.
   `Constrain()`은 높이와 경기장 경계를 제한합니다.
 - `Volume/SetVolume`은 반지름의 세제곱 단위로 부피를 계산하고 반지름·질량을 갱신합니다.
@@ -124,7 +122,7 @@ Snapshot은 기본 3 Tick마다 게시하며 클라이언트는 표시용 보간
 - `ResolvePlayers()`는 같은 Tick의 크기로 먹히는 플레이어를 결정하고 생존자에게만 부피를
   전달합니다. 나머지 겹침은 기존 자체 구 충돌 응답으로 분리합니다.
 - `TryRestart()`는 생존자와 음식에서 떨어진 최대 81개 후보를 검사하고 같은 ID/시퀀스로
-  몸체만 초기화합니다. 점수용 누적 섭취 횟수는 보존합니다.
+  몸체만 초기화합니다. 통계용 누적 섭취 횟수는 보존합니다.
 - `SpawnFood()`는 유한한 후보 횟수로 음식·지뢰·플레이어와 겹치지 않는 위치를 찾습니다.
 - `Snapshot()`은 음식, 플레이어 크기·섭취 횟수·피격 Tick, 지뢰의 재활성화 Tick을 복사합니다.
 
@@ -176,22 +174,22 @@ Local/TCP 양쪽의 사망·동일 방 재시작을 검증합니다. `SurvivalGu
 
 - `mouth_angle()`과 `chomper_surface()`는 정지 중에도 움직이는 입과 구 표면을 계산합니다.
 - `DrawBall()`은 입이 열린 구·입 안쪽·눈을 그리고, `DrawMine()`은 지뢰와 대기 상태를 표시합니다.
-- `Draw()`는 크기에 맞춰 카메라 거리를 조절하며 HUD에 점수·지름·지뢰 경고와 레이더를 표시합니다.
+- `Draw()`는 크기에 맞춰 카메라 거리를 조절하며 HUD에 현재 질량·지름·지뢰 경고와 레이더를 표시합니다.
 - `DrawPhysicsDebug()`는 서버 반지름으로 충돌 구를 그립니다.
 - `SnapshotInterpolator`는 위치·방향·반지름을 보간하며 소비된 음식을 유지하거나 예측하지 않습니다.
 
 </details>
 
-<details><summary>Common/Game/CollectionScore.h — 누적 섭취 점수</summary>
+<details><summary>Client/Rendering/PlayerRanking.h — 현재 질량 순위</summary>
 
-`Observe()`는 서버의 누적 섭취 횟수를 단조롭게 수용하고 4096회로 제한합니다.
-`Points()`는 횟수당 100점을 반환합니다. 새 라운드에서 객체를 초기화합니다.
+`player_mass()`는 서버 반지름에서 현재 질량을 계산합니다. `ranked_players()`는 생존자만
+선택해 현재 크기 내림차순, 동률은 ID 오름차순으로 정렬합니다. 과거 점수는 사용하지 않습니다.
 
 </details>
 
 ## 싱글플레이와 독립 서버
 
-싱글플레이의 `ClientApplication`은 메인 화면에서 닉네임을 입력하고 `SINGLE PLAYER`를 선택한 뒤 `ServerHost`를 시작하여 `LocalTransport`로 입력과 Snapshot을 교환합니다. 서버 배정 정보가 있으면 `MULTIPLAYER` 입력이 활성화되고, 선택 시 닉네임을 포함한 Hello로 `TcpClientTransport`가 접속합니다. 서버의 구조화된 입장 오류와 전송 오류는 클라이언트를 종료하지 않고 메뉴 모달에 표시합니다. 게임 중 ESC는 `RESUME GAME`, `OPTIONS`, `EXIT GAME`을 포함한 통합 메뉴를 열고 이동 입력을 중립으로 유지합니다. 옵션은 메인 화면과 동일한 해상도·화면 모드·모니터·VSync·FPS 설정 및 적용 확인 절차를 사용합니다. `RESUME GAME` 또는 옵션 밖에서 ESC를 누르면 게임으로 돌아가며 `EXIT GAME`과 창 닫기는 전송 계층을 먼저 닫은 뒤 그래픽 창을 해제합니다. 자동화용 `--smoke`만 메인 화면을 건너뛰고 실행 옵션에 맞는 전송 계층을 즉시 만듭니다. 소켓과 `ServerApplication`은 로컬 모드에 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameRound`, `GameWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
+싱글플레이의 `ClientApplication`은 메인 화면에서 닉네임을 입력하고 `SINGLE PLAYER`를 선택한 뒤 `ServerHost`를 시작하여 `LocalTransport`로 입력과 Snapshot을 교환합니다. 서버 배정 정보가 있으면 `MULTIPLAYER` 입력이 활성화되고, 선택 시 닉네임을 포함한 Hello로 `TcpClientTransport`가 접속합니다. 서버의 구조화된 입장 오류와 전송 오류는 클라이언트를 종료하지 않고 메뉴 모달에 표시합니다. 게임 중 ESC는 `RESUME GAME`, `OPTIONS`, `EXIT GAME`을 포함한 통합 메뉴를 열고 이동 입력을 중립으로 유지합니다. 옵션은 메인 화면과 동일한 해상도·화면 모드·모니터·VSync·FPS 설정 및 적용 확인 절차를 사용합니다. `RESUME GAME` 또는 옵션 밖에서 ESC를 누르면 게임으로 돌아가며 `EXIT GAME`과 창 닫기는 전송 계층을 먼저 닫은 뒤 그래픽 창을 해제합니다. 자동화용 `--smoke`만 메인 화면을 건너뛰고 실행 옵션에 맞는 전송 계층을 즉시 만듭니다. 소켓과 `ServerApplication`은 로컬 모드에 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameRoom`, `GameWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
 
 `Common`과 `ServerCore`는 raylib·운영체제 API에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication`과 outbound 전용 `MatchmakingControlClient`를 제공하고, `TcpTransport`·`ServerOptions` 및 비공개 HTTP 의존성 `MatchmakingHttp`를 연결합니다. ASP.NET `MatchmakingApi`는 CMake 대상과 주소 공간을 공유하지 않는 별도 프로젝트입니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며 네트워크 헤더의 독립 컴파일도 생략합니다.
 
@@ -269,38 +267,17 @@ Local/TCP 양쪽의 사망·동일 방 재시작을 검증합니다. `SurvivalGu
 <details>
 <summary>Server/Core/GameRoom.h · GameRoom.cpp — 독립 게임방</summary>
 
-`GameRoom`의 `m_round`가 `GameRound`를 소유하고, `GameRound::m_world`가 실제 `GameWorld`를
-소유합니다. 예약·빈 방 수명은 방의 책임이며 경기 진행·점수·승패는 `GameRound`의 책임입니다.
-두 클래스 모두 `ServerCore`에 빌드되고 서버 Tick 스레드에서만 접근합니다.
+`GameRoom::m_world`가 `GameWorld`를 직접 소유합니다. 예약·빈 방 수명은 방의 책임이며
+서버 Tick 스레드만 월드를 진행합니다. `ServerCore`에서 GameRound 빌드 대상을 제거했습니다.
+입장·퇴장·개인 재시작은 다른 참가자의 월드를 초기화하지 않습니다.
 
 | 함수 | 설명 |
 | --- | --- |
 | `Join(playerId)` | 정원 내에서 월드에 참가자를 추가하고 빈 방 타이머를 해제합니다. |
 | `Leave(playerId, now)` | 참가자를 제거하고 마지막 퇴장 시 단조 시계의 빈 방 시작 시각을 기록합니다. 중복 퇴장은 무시합니다. |
-| `Apply(input)` / `Step()` | 해당 경기의 입력과 준비·진행·결과 전이를 처리합니다. 빈 방은 진행을 생략합니다. |
+| `Apply(input)` / `Step()` | 해당 월드 입력과 상시 시뮬레이션을 처리합니다. 빈 방은 진행을 생략합니다. |
 | `PlayerCount()` / `Snapshot()` | 해당 월드의 인원과 상태를 조회합니다. |
 | `Expired(now, lifetime)` | 빈 방 보관 기한 경과 여부를 반환합니다. |
-
-</details>
-
-<details>
-<summary>Server/Core/GameRound.h · GameRound.cpp — 경기와 점수</summary>
-
-| 함수 | 설명 |
-| --- | --- |
-| 생성자 | 방 seed와 월드를 보유하고 첫 판의 180 Tick 준비 상태를 만듭니다. |
-| `AddPlayer()` / `RemovePlayer()` | 참가·포기를 처리합니다. 두 명 이상이 되면 경쟁 모드를 유지하고 전원 이탈 시 다음 준비 상태로 초기화합니다. |
-| `HasPlayer()` / `PlayerCount()` | 예약 정원 계산에 필요한 실제 참가자 정보를 반환합니다. |
-| `Apply()` | 연결별 증가 시퀀스를 검증합니다. 진행 중 입력은 월드로 전달하고 결과의 일치하는 경기 번호만 재시작 요청으로 저장합니다. |
-| `Step()` | 준비/결과에서는 월드 시계만 진행합니다. 플레이 중 월드 실행 후 누적 섭취 횟수를 점수에 반영하고 목표·시간 종료를 판정합니다. |
-| `FinishRound()` | 최고 점수 또는 솔로 목표로 승자를 한 번 확정하고 결과 표시 상태로 바꿉니다. |
-| `StartNextRound()` | Tick·입력 시퀀스·참가 ID를 유지하며 새 seed로 월드, 점수, 사망 상태를 재설정합니다. |
-| `Snapshot()` | 물리 상태에 경기 상태와 참가자 점수·승리 여부를 붙입니다. 닉네임은 기존 ServerHost 경로에서 설정됩니다. |
-
-`Common/Game/CollectionScore.h`의 `Observe()`는 누적 섭취 횟수를 기록하며 `Points()`는
-100점씩 합산합니다. 횟수는 최대 4096으로 제한하고 별도의 ID 목록은 저장하지 않습니다. `GameWorld::AdvanceClock()`은
-정지된 물리와 별도로 Snapshot Tick을 증가시키고, 생성자의 `initialTick`은 판 전환 시
-단조 증가를 보존합니다. 소환 주기는 실제 물리 Step 횟수로 계산합니다.
 
 </details>
 

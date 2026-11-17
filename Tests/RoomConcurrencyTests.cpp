@@ -129,7 +129,7 @@ void input_flood_cannot_fill_other_players_slots()
     MOONGTANGE_CHECK(test::wait_for(
         [&] {
             const auto room = host.SnapshotFor(players[3]);
-            return room && room->world.round.phase == RoundPhase::PLAYING;
+            return room && room->world.round.phase == RoundPhase::FREE_PLAY;
         },
         6s));
 
