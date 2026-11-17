@@ -9,7 +9,7 @@
 
 - 최초 실행: [README의 빌드 도구](../README.md#빌드) 설치 필요. CMake가 의존성을 준비하므로 오래 걸릴 수 있음. 이후에는 증분 빌드.
 - Windows 진입점은 기존 CMake의 Python 경로 → `py -3` → PATH의 Python 순서로 찾음. Python을 직접 지정해 `Tools/playtest.py`를 실행해도 동일하게 동작.
-- `check`: 외부 그래픽·네트워크 의존성 없이 `build/playtest-core`에서 `PhysicsTests`, `WorldTests`, `SurvivalTests`, `ContinuousPlayTests`, `RenderingTests`, `CliTests`, `LocalTests`, `PlaytestToolTests` 실행. 전체 통합 테스트를 대체하지 않음.
+- `check`: 외부 그래픽·네트워크 의존성 없이 `build/playtest-core`에서 `PhysicsTests`, `WorldTests`, `ArenaTests`, `SurvivalTests`, `ContinuousPlayTests`, `RenderingTests`, `CliTests`, `LocalTests`, `PlaytestToolTests` 실행. 전체 통합 테스트를 대체하지 않음.
 - `play`/`single`: 해당 운영체제의 Release 프리셋 사용. `play`는 API도 빌드. 기본 3명, 최대 3명. 서버 한 개·방 한 개로 실제 게스트 세션 → 예약 → TCP 입장 경로 사용.
 - `--seed 42`: 초기 물체 배치 재현. 기본 seed 42. 입력 시점까지 재현하는 리플레이 기능은 아님.
 - `--skip-build`: 현재 빌드 결과를 그대로 사용. 소스와 실행 파일이 다를 수 있다는 안내 표시. 기본 실행은 빌드를 생략하지 않음.
@@ -43,3 +43,5 @@ API·서버는 루프백·임시 포트를 사용하고 임시 서버 키를 생
 빠른 검사에 `ContinuousPlayTests`가 포함됩니다. 300초 분량의 자동 플레이가 과거 90초와
 20개 목표를 넘겨 계속 진행되는지, 입퇴장에도 월드가 보존되는지 검사합니다.
 수동 확인 시 seed, 조작 방향, 캐릭터 크기·지뢰 위치와 F3 화면을 함께 남기면 비교하기 쉽습니다.
+
+`ArenaTests`는 큰 음식 보존과 성장 후 섭취, 작은 공격자의 큰 상대 섭취 금지, 바위 충돌, 진흙 감속·회복, 확장 맵의 음식 생성 위치를 검사합니다.

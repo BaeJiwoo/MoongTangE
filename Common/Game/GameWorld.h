@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/Game/ArenaLayout.h"
 #include "Common/Physics/Collision/SphereSphere.h"
 #include "Common/Protocol/InputCommand.h"
 #include "Common/Protocol/WorldSnapshot.h"
@@ -185,13 +186,31 @@ class GameWorld
         const double limit = simulation::MAP_HALF_EXTENT - body.radius;
         body.position.x = std::clamp(body.position.x, -limit, limit);
         body.position.z = std::clamp(body.position.z, -limit, limit);
+        // At 60 Hz movement is at most 0.1 m, far below the smallest rock's diameter.
+        // Reapply after growth and player separation as well as normal movement.
+        for (const auto& rock : ARENA_ROCKS) {
+            Vector3 offset = body.position - rock.position;
+            offset.y = 0;
+            const double distance = offset.Length();
+            const double separation = body.radius + rock.radius;
+            if (distance >= separation) {
+                continue;
+            }
+            const Vector3 normal = distance > 1e-9 ? offset * (1 / distance) : Vector3{1, 0, 0};
+            body.position = body.position + normal * (separation - distance);
+            const double inwardSpeed = dot(body.velocity, normal);
+            if (inwardSpeed < 0) {
+                body.velocity = body.velocity - normal * inwardSpeed;
+            }
+        }
     }
 
     static void Move(Player& player)
     {
         auto& body = player.body;
-        const double speed =
-            simulation::PLAYER_MOVE_SPEED / std::pow(body.radius / simulation::PLAYER_RADIUS, 0.25);
+        const double terrainSpeed = in_mud(body.position) ? MUD_SPEED_FACTOR : 1.0;
+        const double speed = simulation::PLAYER_MOVE_SPEED * terrainSpeed /
+                             std::pow(body.radius / simulation::PLAYER_RADIUS, 0.25);
         Vector3 direction{player.input.x, 0, player.input.z};
         if (direction.Length() > 1) {
             direction = direction.Normalized();
@@ -237,7 +256,7 @@ class GameWorld
             const double radius = simulation::COLLECTIBLE_BASE_RADIUS * food.scale;
             for (auto& [id, player] : m_players) {
                 (void)id;
-                if (player.deathTick != 0) {
+                if (player.deathTick != 0 || player.body.radius < radius) {
                     continue;
                 }
                 const double hit = SweepFraction(player.previousPosition, player.body.position,
@@ -297,8 +316,9 @@ class GameWorld
                 }
                 auto larger = a.body.radius >= b.body.radius ? first : second;
                 auto smaller = larger == first ? second : first;
-                if (Volume(larger->second.body.radius) <
-                    Volume(smaller->second.body.radius) * simulation::EAT_VOLUME_RATIO) {
+                if (larger->second.body.radius <= smaller->second.body.radius ||
+                    Volume(larger->second.body.radius) <
+                        Volume(smaller->second.body.radius) * simulation::EAT_VOLUME_RATIO) {
                     continue;
                 }
                 const auto victimId = smaller->first;
@@ -346,8 +366,8 @@ class GameWorld
         for (std::size_t attempt = 0; attempt < 81; ++attempt) {
             const auto slot = (attempt + player.spawnSlot) % 81;
             const auto row = slot / 9;
-            Vector3 position{-20 + static_cast<double>(slot % 9) * 5, simulation::PLAYER_RADIUS,
-                             -20 + static_cast<double>(row) * 5};
+            Vector3 position{-40 + static_cast<double>(slot % 9) * 10, simulation::PLAYER_RADIUS,
+                             -40 + static_cast<double>(row) * 10};
             const bool safe = std::ranges::all_of(m_players, [&](const auto& entry) {
                 const auto& other = entry.second;
                 return other.deathTick != 0 ||
@@ -355,7 +375,8 @@ class GameWorld
                                   position.z - other.body.position.z) >
                            other.body.radius + simulation::PLAYER_RADIUS + 2;
             });
-            if (!safe || std::ranges::any_of(m_food, [&](const auto& food) {
+            if (!safe || overlaps_rock(position, simulation::PLAYER_RADIUS + 1) ||
+                in_mud(position) || std::ranges::any_of(m_food, [&](const auto& food) {
                     return (food.position - position).Length() <
                            simulation::PLAYER_RADIUS +
                                simulation::COLLECTIBLE_BASE_RADIUS * food.scale + 1;
@@ -396,7 +417,8 @@ class GameWorld
             if (food.position.x > -2 && food.position.x < 13 && std::abs(food.position.z) < 2) {
                 continue;
             }
-            if (std::ranges::any_of(
+            if (overlaps_rock(food.position, radius + 0.5) ||
+                std::ranges::any_of(
                     m_food,
                     [&](const auto& other) {
                         return (food.position - other.position).Length() <

@@ -68,5 +68,22 @@ int main(int argumentCount, char* arguments[])
         if (argumentCount > 2) {
             window.SaveScreenshot(arguments[2]);
         }
+
+        // Preview the expanded terrain with the authoritative small player and large-food markers.
+        if (argumentCount > 3) {
+            GameWorld arena(42);
+            MOONGTANGE_CHECK(arena.AddPlayer(1));
+            for (int tick = 0; tick < 300; ++tick) {
+                const auto current = arena.Snapshot();
+                MOONGTANGE_CHECK(arena.Apply(test::steer_to(current, 1, {-6, 0, -15})));
+                arena.Step();
+            }
+            state = arena.Snapshot();
+            state.players[0].nickname = "Jiwoo";
+            for (int frame = 0; frame < 3; ++frame) {
+                draw();
+            }
+            window.SaveScreenshot(arguments[3]);
+        }
     });
 }
