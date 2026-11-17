@@ -56,6 +56,9 @@ message PlayerState {
   optional uint64 death_tick = 7;
   optional uint32 round_score = 8;
   optional bool round_winner = 9;
+  optional double radius = 10;
+  optional uint32 food_eaten = 11;
+  optional uint64 mine_hit_tick = 12;
 }
 
 message RoundState {
@@ -88,12 +91,19 @@ message CollectibleState {
   uint32 attached_player_id = 6;
 }
 
+message MineState {
+  uint32 id = 1;
+  Vector3 position = 2;
+  uint64 ready_tick = 3;
+}
+
 message WorldSnapshot {
   optional uint64 server_tick = 1;
   repeated PlayerState players = 2;
   uint64 room_id = 3;
   repeated CollectibleState collectibles = 4;
   RoundState round = 5;
+  repeated MineState mines = 6;
 }
 
 message Disconnect {}

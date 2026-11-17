@@ -13,8 +13,8 @@ namespace MoongTangE::wire {
 
 using Bytes = std::vector<std::uint8_t>;
 
-inline constexpr std::uint32_t PROTOCOL_VERSION = 10;
-inline constexpr std::uint32_t MAX_FRAME_BYTES = 8192;
+inline constexpr std::uint32_t PROTOCOL_VERSION = 11;
+inline constexpr std::uint32_t MAX_FRAME_BYTES = 32768;
 inline constexpr unsigned FRAME_HEADER_BYTES = 4;
 
 enum class MessageType : std::uint8_t

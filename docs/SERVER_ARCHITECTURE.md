@@ -43,8 +43,8 @@
 | `ServerHost` | Tick 스레드, 연결 등록, 제한된 명령 큐, 최신 Snapshot의 안전한 공유 | 소켓·화면 처리 |
 | `GameRoomManager` / `GameRoom` | 생성 순서에 따른 3인 방 배정·퇴장·예약·빈 방 정리, 방별 경기 소유 | 소켓과 다른 스레드의 직접 접근 |
 | `GameRound` | 준비·제한 시간·점수·결과·다음 판, 방별 월드 소유 | 소켓·그래픽·영구 결과 저장 |
-| `GameWorld` | 플레이어·수집 물체·입력·결정론적 seed 상태, 입력 만료와 플레이어 충돌 호출 | 스레드 생성·소켓 접근 |
-| `PhysicsWorld` | 중력, 지형·복합 구 접촉, 마찰, 구름 저항과 자세 갱신 | 입력 수신·렌더링 |
+| `GameWorld` | 플레이어·음식·지뢰·입력·seed 상태, 이동·성장·피해·충돌 판정 | 스레드 생성·소켓 접근 |
+| `PhysicsWorld` | 기존 물리 유틸리티와 회귀 검증용 중력·지형·복합 구·구름 계산 | 입력 수신·렌더링 |
 | `NetworkServer` (`NativeServer`) | 운영체제별 네트워크 실행 객체 소유, 시작·종료와 포트 조회의 공개 진입점 | 개별 세션 처리 |
 | `NativeServerNetworkRuntime` | 네트워크 스레드, TCP 연결, Hello, 입력 검증·전달, Snapshot 송신 | 게임 월드 직접 변경 |
 | `NativeTcpChannel` | 길이 프레이밍, 부분 송수신, 타임아웃과 전송 큐 | 물리·게임 규칙 |
@@ -93,49 +93,45 @@ sequenceDiagram
     Client->>Net: 입력(sequence, x, z)
     Net->>Queue: 세션 ID를 부여하고 입력 등록
     Queue->>World: Tick 경계에서 명령 소비
-    World->>World: 힘·마찰·회전 계산 (60Hz)
+    World->>World: 이동·섭취·성장·지뢰 판정 (60Hz)
     World-->>Net: 최신 Snapshot 복사 (기본 20Hz)
     Net-->>Client: 해당 방의 RoomSnapshot
     Client->>Client: 위치·회전 보간 후 렌더링
 ```
 
-입력에는 임의의 플레이어 ID나 방 ID를 실어 보낼 수 없습니다. 네트워크 세션의 ID를 서버가 부여하며, 유한한 입력값·범위·증가하는 시퀀스를 검증합니다. 입력이 120 Tick 동안 갱신되지 않으면 조작력을 해제하고 관성 운동은 계속 계산합니다.
+입력에는 임의의 플레이어 ID나 방 ID를 실어 보낼 수 없습니다. 네트워크 세션의 ID를 서버가 부여하며, 유한한 입력값·범위·증가하는 시퀀스를 검증합니다. 입력이 120 Tick 동안 갱신되지 않으면 이동을 중립으로 전환해 정지합니다.
 
-물리는 고정 `dt=1/60`을 사용합니다. `Common/Physics/Terrain.h`의 평면·원뿔형 뾰족 지형·구형 언덕 정의를 서버 충돌과 클라이언트 렌더링이 함께 사용합니다. 복합 구와 지형의 접촉 법선 및 침투 깊이는 Common에서 계산하며, 서버 Tick만 위치·속도·회전을 보정합니다. 같은 방의 플레이어는 ID 순서로 쌍을 순회하며 각 복합 콜라이더가 중심 방향으로 갖는 지지 거리를 합쳐 침투를 질량 비율로 분리하고, 접근하는 상대 속도에만 제한된 반발 충격량을 적용합니다. 반복 충돌 풀이 사이마다 같은 복합 콜라이더로 지형 제약을 다시 적용합니다. 기본 Snapshot 게시 간격은 서버의 3 Tick입니다. 방별 Tick은 독립적이며 빈 방은 물리 계산을 건너뜁니다. TCP 서버는 약 50ms마다 아직 보내지 않은 최신 상태를 전송하므로 실제 도착 간격은 스케줄링과 네트워크에 영향을 받습니다. 클라이언트의 보간은 표시용이며 서버 상태를 변경하지 않습니다.
+월드는 고정 `dt=1/60`으로 평면 이동, 음식 소비, 지뢰, 플레이어 접촉을 처리합니다.
+Snapshot은 기본 3 Tick마다 게시하며 클라이언트는 표시용 보간만 수행합니다.
 
-## 결정론적 수집 물체와 복합 구 콜라이더 — Issues #53, #54, #57, #71
+## 음식 성장과 지뢰 — Issue #91
 
-방 생성 시 seed에 따라 간격을 둔 물체 16개를 만들고, 경기 진행 중 5초마다 Y=8에서
-새 물체를 떨어뜨립니다. 모든 변경은 기존 Tick 스레드에서 일어나며 최대 24개입니다. 자세한
-상수, 난수 변환, 배치 거부, 이중 물리 프록시·로컬 부착, Snapshot과 GLB 정규화 규칙은
-[수집 물체 시스템](COLLECTIBLE_SYSTEM.md)에 정리합니다.
+초기 음식 64개, 최대 96개이며 플레이 중 30 Tick마다 보충합니다. 지뢰는 6개입니다.
+[상세 규칙](COLLECTIBLE_SYSTEM.md)은 서버와 클라이언트의 공유 상수를 설명합니다.
 
-<details><summary>Common/Game/GameWorld.h · DeterministicRandom.h — 소환과 물리</summary>
+<details><summary>Common/Game/GameWorld.h — 이동·섭취·성장·지뢰</summary>
 
-- `GameWorld(seed)`는 시작 물체를 만들고 같은 seed의 생성 순서를 재현합니다.
-- `SpawnCollectible(falling)`은 종류·고유 크기·방향·XZ 후보를 만들고 최소 간격과 최대 개수를
-  검사합니다.
-- `PlayerCollider()`는 기본 공과 부착물의 현재 감쇠 정착 변환에서 종류별 구 프록시 합집합을
-  조립합니다. `Step()`은 이 복합 콜라이더로 플레이어를 먼저 적분합니다.
-- `TryAttach()`는 자유 물체 종류별 구와 플레이어 복합 구 사이의 Tick 구간 최초 표면 접촉을
-  찾습니다. 목표 중심은 반지름의 25%가 묻히며 위치·자세는 9 Tick 감쇠 보간합니다. 부착
-  순간에는 플레이어 `RigidBody`에 충격량을 적용하지 않습니다.
-- `UpdateMassProperties()`는 기본 공과 부착물 질량, 자체 구 관성과 공 중심까지의 평행축 항을
-  합산합니다. 이동력은 질량에 비례해 최대 10배까지 보정합니다.
-- `UpdateAttached()`는 공의 월드 변환으로 붙은 물체의 위치·회전과 분리용 표면 속도를
-  갱신합니다. `DetachCollectibles()`는 플레이어 퇴장 또는 사망 시 자유 상태로 되돌립니다.
-- `PlayerVolume()`은 기본 공과 부착물 대표 반지름의 세제곱 합을 구합니다. `PlayersTouch()`는
-  상대 좌표 sweep으로 실제 구 프록시 접촉을 찾고, `ResolvePlayerCollisions()`는 같은 Tick의
-  크기로 작은 공의 탈락을 함께 결정한 뒤 생존 공들의 겹침을 풉니다. 동률은 탈락하지 않습니다.
-- `DefeatPlayer()`는 부착물을 분리하고 `deathTick`을 기록하며 속도·회전·이동 입력을 정지합니다.
-  사망자도 연결·방 정원을 유지하며 새 입장 명령을 만들지 않습니다.
-- `TryRestart()` / `CanRestartAt()`는 최대 81개 후보에서 생존 공의 모든 구와 수집물에 대해
-  XZ 반지름 합 + 2 m 간격을 만족하는 위치를 찾고 몸체를 초기화합니다. 현재 사망 Tick과
-  일치하는 입력 요청만 `Step()`에서 처리하며, 입력 시퀀스와 플레이어 ID는 보존합니다.
-- `Snapshot()`은 플레이어 `deathTick`(0이면 생존)과 물체 ID·종류·위치·자세·크기·부착 ID를 복사합니다.
-- `DeterministicRandom::Next/Index/Range`는 STL 분포에 기대지 않는 고정 난수 변환입니다.
+- `GameWorld(seed, initialTick)`은 난수 상태, 음식과 고정 지뢰 위치를 초기화합니다.
+- `AddPlayer/RemovePlayer/HasPlayer/PlayerCount/CollectibleCount`는 참가와 현재 음식 수를 관리합니다.
+- `Apply()`는 입력 유효성과 시퀀스를 검사합니다. `Step()`만 이동·소비·피해를 변경하고
+  `AdvanceClock()`은 준비/결과 시간 동안 전송 Tick만 진행합니다.
+- `Move()`는 정규화한 입력을 목표 속도로 변환하고 방향 quaternion을 설정합니다.
+  `Constrain()`은 높이와 경기장 경계를 제한합니다.
+- `Volume/SetVolume`은 반지름의 세제곱 단위로 부피를 계산하고 반지름·질량을 갱신합니다.
+- `SweepFraction()`은 XZ 상대 이동 구간의 최초 원 접촉을 계산합니다.
+- `ConsumeFood()`는 최초 접촉자에게 부피와 누적 섭취 횟수를 부여하고 음식을 제거합니다.
+- `TriggerMines()`는 크기·보호 시간·재활성화 시간을 검사하고 질량을 40% 줄입니다.
+- `ResolvePlayers()`는 같은 Tick의 크기로 먹히는 플레이어를 결정하고 생존자에게만 부피를
+  전달합니다. 나머지 겹침은 기존 자체 구 충돌 응답으로 분리합니다.
+- `TryRestart()`는 생존자와 음식에서 떨어진 최대 81개 후보를 검사하고 같은 ID/시퀀스로
+  몸체만 초기화합니다. 점수용 누적 섭취 횟수는 보존합니다.
+- `SpawnFood()`는 유한한 후보 횟수로 음식·지뢰·플레이어와 겹치지 않는 위치를 찾습니다.
+- `Snapshot()`은 음식, 플레이어 크기·섭취 횟수·피격 Tick, 지뢰의 재활성화 Tick을 복사합니다.
 
 </details>
+
+아래 복합 구·지형 물리 유틸리티와 회귀 테스트는 유지하지만 성장 게임의 플레이어와 음식은
+부착·구름 시뮬레이션을 호출하지 않습니다.
 
 <details><summary>Common/Physics/CollectibleProxy.h · CompoundBallCollider.h · CompoundMassProperties.h · PhysicsWorld.h — 복합 접촉</summary>
 
@@ -176,17 +172,26 @@ Local/TCP 양쪽의 사망·동일 방 재시작을 검증합니다. `SurvivalGu
 
 </details>
 
-<details><summary>Client/Rendering/Scene.cpp — F3 복합 물리 디버그</summary>
+<details><summary>Client/Rendering/Scene.cpp · ChomperGeometry.h — 3D 캐릭터·지뢰·HUD</summary>
 
-- `DrawPhysicsDebug()`는 Snapshot의 부착 상대 변환으로 Common 복합 콜라이더를 재구성합니다.
-- `F3`을 누르면 구 프록시, 현재 표시 상태의 활성 접촉점과 접촉 법선을 표시합니다. 이 경로는
-  서버 상태를 예측하거나 변경하지 않습니다.
+- `mouth_angle()`과 `chomper_surface()`는 정지 중에도 움직이는 입과 구 표면을 계산합니다.
+- `DrawBall()`은 입이 열린 구·입 안쪽·눈을 그리고, `DrawMine()`은 지뢰와 대기 상태를 표시합니다.
+- `Draw()`는 크기에 맞춰 카메라 거리를 조절하며 HUD에 점수·지름·지뢰 경고와 레이더를 표시합니다.
+- `DrawPhysicsDebug()`는 서버 반지름으로 충돌 구를 그립니다.
+- `SnapshotInterpolator`는 위치·방향·반지름을 보간하며 소비된 음식을 유지하거나 예측하지 않습니다.
+
+</details>
+
+<details><summary>Common/Game/CollectionScore.h — 누적 섭취 점수</summary>
+
+`Observe()`는 서버의 누적 섭취 횟수를 단조롭게 수용하고 4096회로 제한합니다.
+`Points()`는 횟수당 100점을 반환합니다. 새 라운드에서 객체를 초기화합니다.
 
 </details>
 
 ## 싱글플레이와 독립 서버
 
-싱글플레이의 `ClientApplication`은 메인 화면에서 닉네임을 입력하고 `SINGLE PLAYER`를 선택한 뒤 `ServerHost`를 시작하여 `LocalTransport`로 입력과 Snapshot을 교환합니다. 서버 배정 정보가 있으면 `MULTIPLAYER` 입력이 활성화되고, 선택 시 닉네임을 포함한 Hello로 `TcpClientTransport`가 접속합니다. 서버의 구조화된 입장 오류와 전송 오류는 클라이언트를 종료하지 않고 메뉴 모달에 표시합니다. 게임 중 ESC는 `RESUME GAME`, `OPTIONS`, `EXIT GAME`을 포함한 통합 메뉴를 열고 이동 입력을 중립으로 유지합니다. 옵션은 메인 화면과 동일한 해상도·화면 모드·모니터·VSync·FPS 설정 및 적용 확인 절차를 사용합니다. `RESUME GAME` 또는 옵션 밖에서 ESC를 누르면 게임으로 돌아가며 `EXIT GAME`과 창 닫기는 전송 계층을 먼저 닫은 뒤 그래픽 창을 해제합니다. 자동화용 `--smoke`만 메인 화면을 건너뛰고 실행 옵션에 맞는 전송 계층을 즉시 만듭니다. 소켓과 `ServerApplication`은 로컬 모드에 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameWorld`, `PhysicsWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
+싱글플레이의 `ClientApplication`은 메인 화면에서 닉네임을 입력하고 `SINGLE PLAYER`를 선택한 뒤 `ServerHost`를 시작하여 `LocalTransport`로 입력과 Snapshot을 교환합니다. 서버 배정 정보가 있으면 `MULTIPLAYER` 입력이 활성화되고, 선택 시 닉네임을 포함한 Hello로 `TcpClientTransport`가 접속합니다. 서버의 구조화된 입장 오류와 전송 오류는 클라이언트를 종료하지 않고 메뉴 모달에 표시합니다. 게임 중 ESC는 `RESUME GAME`, `OPTIONS`, `EXIT GAME`을 포함한 통합 메뉴를 열고 이동 입력을 중립으로 유지합니다. 옵션은 메인 화면과 동일한 해상도·화면 모드·모니터·VSync·FPS 설정 및 적용 확인 절차를 사용합니다. `RESUME GAME` 또는 옵션 밖에서 ESC를 누르면 게임으로 돌아가며 `EXIT GAME`과 창 닫기는 전송 계층을 먼저 닫은 뒤 그래픽 창을 해제합니다. 자동화용 `--smoke`만 메인 화면을 건너뛰고 실행 옵션에 맞는 전송 계층을 즉시 만듭니다. 소켓과 `ServerApplication`은 로컬 모드에 필요하지 않습니다. 독립 서버만 `ServerApplication`을 사용합니다. 두 모드가 같은 `ServerHost`, `GameRound`, `GameWorld`를 사용하므로 게임 규칙과 물리 구현이 같습니다.
 
 `Common`과 `ServerCore`는 raylib·운영체제 API에 의존하지 않습니다. `ServerOptions` 라이브러리는 Common만 사용하므로 CLI 파서는 네트워크를 끈 테스트에서도 사용할 수 있습니다. `ServerRuntime` 빌드 대상은 `ServerApplication`과 outbound 전용 `MatchmakingControlClient`를 제공하고, `TcpTransport`·`ServerOptions` 및 비공개 HTTP 의존성 `MatchmakingHttp`를 연결합니다. ASP.NET `MatchmakingApi`는 CMake 대상과 주소 공간을 공유하지 않는 별도 프로젝트입니다. `MOONGTANGE_BUILD_NETWORK=OFF`이면 독립 서버·ServerRuntime·TcpTransport를 빌드하지 않으며 네트워크 헤더의 독립 컴파일도 생략합니다.
 
@@ -287,13 +292,13 @@ Local/TCP 양쪽의 사망·동일 방 재시작을 검증합니다. `SurvivalGu
 | `AddPlayer()` / `RemovePlayer()` | 참가·포기를 처리합니다. 두 명 이상이 되면 경쟁 모드를 유지하고 전원 이탈 시 다음 준비 상태로 초기화합니다. |
 | `HasPlayer()` / `PlayerCount()` | 예약 정원 계산에 필요한 실제 참가자 정보를 반환합니다. |
 | `Apply()` | 연결별 증가 시퀀스를 검증합니다. 진행 중 입력은 월드로 전달하고 결과의 일치하는 경기 번호만 재시작 요청으로 저장합니다. |
-| `Step()` | 준비/결과에서는 월드 시계만 진행합니다. 플레이 중 물리 실행 후 처음 획득한 물체에 점수를 부여하고 목표·시간 종료를 판정합니다. |
+| `Step()` | 준비/결과에서는 월드 시계만 진행합니다. 플레이 중 월드 실행 후 누적 섭취 횟수를 점수에 반영하고 목표·시간 종료를 판정합니다. |
 | `FinishRound()` | 최고 점수 또는 솔로 목표로 승자를 한 번 확정하고 결과 표시 상태로 바꿉니다. |
 | `StartNextRound()` | Tick·입력 시퀀스·참가 ID를 유지하며 새 seed로 월드, 점수, 사망 상태를 재설정합니다. |
 | `Snapshot()` | 물리 상태에 경기 상태와 참가자 점수·승리 여부를 붙입니다. 닉네임은 기존 ServerHost 경로에서 설정됩니다. |
 
-`Common/Game/CollectionScore.h`의 `Collect()`는 물체 ID별로 한 번만 기록하며 `Points()`는
-100점씩 합산합니다. 저장량은 최대 물체 수에 묶입니다. `GameWorld::AdvanceClock()`은
+`Common/Game/CollectionScore.h`의 `Observe()`는 누적 섭취 횟수를 기록하며 `Points()`는
+100점씩 합산합니다. 횟수는 최대 4096으로 제한하고 별도의 ID 목록은 저장하지 않습니다. `GameWorld::AdvanceClock()`은
 정지된 물리와 별도로 Snapshot Tick을 증가시키고, 생성자의 `initialTick`은 판 전환 시
 단조 증가를 보존합니다. 소환 주기는 실제 물리 Step 횟수로 계산합니다.
 
@@ -477,15 +482,14 @@ Linux 구현은 non-blocking socket, `epoll`, `eventfd`를 사용합니다. Wind
 | `client_hello()` / `server_hello(admission)` | 프로토콜 버전·입장 결과·서버 할당 ID·방 ID가 담긴 Hello를 인코딩합니다. |
 | `read_client_hello(data)` / `read_server_hello(data)` | Hello 버전과 입장 결과·ID 조합을 검증합니다. 서버 Hello 해석은 AdmissionResult를 반환합니다. |
 | `input(command)` / `read_input(data, sessionId)` | 입력을 인코딩하거나 세션 ID를 결합하여 검증된 InputCommand로 해석합니다. |
-| `snapshot(room)` / `read_snapshot(data)` | Tick, 플레이어와 최대 24개 수집 물체 상태를 변환하고 개수·ID·종류·필드·수치·회전·크기 및 부착 플레이어 참조를 검사합니다. |
+| `snapshot(room)` / `read_snapshot(data)` | Tick, 플레이어와 최대 96개 음식 및 6개 지뢰 상태를 변환하고 개수·ID·종류·필드·수치·회전·반지름·섭취 횟수·피격/재활성화 Tick를 검사합니다. |
 | `disconnect()` / `is_disconnect(data)` | Disconnect를 만들거나 종류와 Protobuf 본문을 검증합니다. |
 | `frame(payload)` / `frame_size(header)` | 4바이트 big-endian 길이를 붙이거나 읽고 프레임 한도를 검사합니다. |
 | `encode<Message>()` / `decode<Message>()` (cpp 내부) | 메시지 종류와 Protobuf 직렬화/역직렬화, 크기·파서 한도를 공통 처리합니다. |
 | `write_vector()` / `read_vector()` / `write_quaternion()` / `read_quaternion()` (cpp 내부) | 벡터·회전을 Protobuf 필드와 게임 값 타입 사이에서 검증하며 변환합니다. |
 
-`PROTOCOL_VERSION = 10`, `MAX_FRAME_BYTES = 8192`, `FRAME_HEADER_BYTES = 4`입니다. 입력 코덱은
-`restart_death_tick`을 보존하고 Snapshot 코덱은 명시적인 `death_tick` 존재·Tick 상한과 생존한
-부착 소유자를 검증합니다. MessageType의 wire 값은 유지하며 이전 버전은 Hello에서 거부합니다.
+`PROTOCOL_VERSION = 11`, `MAX_FRAME_BYTES = 32768`, `FRAME_HEADER_BYTES = 4`입니다. 입력 코덱은
+`restart_death_tick`을 보존하고 Snapshot 코덱은 명시적인 `death_tick` 존재·Tick 상한과 반지름·섭취 횟수·지뢰 상태를 검증합니다. 부착 ID는 0만 허용합니다. MessageType의 wire 값은 유지하며 이전 버전은 Hello에서 거부합니다.
 `.proto`는 데이터 선언이며 함수 구현은 빌드 폴더에서 생성됩니다.
 
 </details>
@@ -530,11 +534,11 @@ flowchart LR
 
 TCP 프레임은 **4바이트 big-endian 길이 + 1바이트 메시지 종류 + Protobuf 본문**입니다. 종류별 필수 값, 입력 범위, ID, 중복 플레이어, quaternion 정규화와 유한한 실수를 변환 시 검증합니다. 플레이어 ID는 클라이언트 입력 메시지에 없으며 접속 세션의 ID를 서버에서 주입합니다.
 
-최대 메시지는 8KiB이며, 코덱의 방어적 상한은 32명입니다. 최대 길이 플레이어 ID·Tick과
-최대 ID·점수·경기 번호·16자 닉네임을 넣은 32명/24개 물체 Snapshot이 8KiB 안에 드는지 검사합니다.
-최대 24개 부착 물체 또는 최대 길이 사망 Tick을 포함해도 프레임 상한 안인지 검사합니다.
+최대 메시지는 32KiB이며, 코덱의 방어적 상한은 32명입니다. 최대 길이 플레이어 ID·Tick과
+최대 ID·점수·경기 번호·16자 닉네임을 넣은 32명/96개 음식/6개 지뢰 Snapshot이 32KiB 안에 드는지 검사합니다.
+최대 크기의 음식·지뢰 데이터 또는 최대 길이 사망 Tick을 포함해도 프레임 상한 안인지 검사합니다.
 실제 게임방은 최대 3명만 허용합니다. 파싱 전에 프레임 크기를 검사하고 Protobuf 재귀 깊이는
-16으로 제한합니다. 프로토콜 버전은 10이며 이전 버전 Hello는 거부합니다. 알 수 없는 Protobuf
+16으로 제한합니다. 프로토콜 버전은 11이며 이전 버전 Hello는 거부합니다. 알 수 없는 Protobuf
 필드는 크기·재귀 한도 안에서 허용하지만 알려진 값의 검증은 계속 적용됩니다.
 
 ## 시작과 종료

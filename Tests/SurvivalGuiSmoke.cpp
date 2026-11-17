@@ -14,7 +14,7 @@ int main(int argumentCount, char* arguments[])
         WorldSnapshot state{
             100,
             {{1, {-2, 0.5, 0}, {}, {}, {}, "Winner"}, {2, {0, 0.5, 0}, {}, {}, {}, "Player", 100}},
-            {{1, CollectibleKind::APPLE, {-2, 1.2, 0}, {}, 2, 1}}};
+            {{1, CollectibleKind::APPLE, {-2, 1.2, 0}, {}, 2, 0}}};
         auto draw = [&](bool pending = false, bool nextRoundPending = false) {
             return renderer.Draw(state, 2, "Embedded server", "Room 1", false, false, {}, false, 0,
                                  pending, nextRoundPending);
@@ -63,7 +63,7 @@ int main(int argumentCount, char* arguments[])
         }
         state.round.phase = RoundPhase::RESULTS;
         state.round.remainingTicks = 180;
-        state.players[1].roundScore = 500;
+        state.players[1].roundScore = simulation::SOLO_TARGET_SCORE;
         state.players[1].roundWinner = true;
         // Round result takes precedence even if the player died on the final tick.
         state.players[1].deathTick = state.tick;

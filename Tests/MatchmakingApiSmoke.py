@@ -66,13 +66,13 @@ def varint(data, offset):
 def hello(game_port, ticket="", nickname="SmokePlayer"):
     peer = socket.create_connection(("127.0.0.1", game_port), timeout=3)
     try:
-        payload = bytes([1, 8, 10])
+        payload = bytes([1, 8, 11])
         if ticket:
             payload += bytes([18, 64]) + ticket.encode("ascii")
         payload += bytes([26, len(nickname)]) + nickname.encode("ascii")
         peer.sendall(struct.pack("!I", len(payload)) + payload)
         size = struct.unpack("!I", receive_exact(peer, 4))[0]
-        check(size <= 8192, "Oversized frame")
+        check(size <= 32768, "Oversized frame")
         response = receive_exact(peer, size)
         check(response[0] == 2, "Expected server hello")
         fields = {}

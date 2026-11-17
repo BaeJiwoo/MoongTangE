@@ -53,6 +53,9 @@ struct PlayerState
     std::uint64_t deathTick{};
     std::uint32_t roundScore{};
     bool roundWinner{};
+    double radius{simulation::PLAYER_RADIUS};
+    std::uint32_t foodEaten{};
+    std::uint64_t mineHitTick{};
 };
 
 struct CollectibleState
@@ -65,12 +68,20 @@ struct CollectibleState
     std::uint32_t attachedPlayerId{};
 };
 
+struct MineState
+{
+    std::uint32_t id{};
+    Vector3 position{};
+    std::uint64_t readyTick{};
+};
+
 struct WorldSnapshot
 {
     std::uint64_t tick{};
     std::vector<PlayerState> players;
     std::vector<CollectibleState> collectibles;
     RoundState round;
+    std::vector<MineState> mines;
 };
 
 } // namespace MoongTangE

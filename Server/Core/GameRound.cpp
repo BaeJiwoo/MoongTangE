@@ -81,10 +81,8 @@ void GameRound::Step()
 
     m_world.Step();
     const auto state = m_world.Snapshot();
-    for (const auto& collectible : state.collectibles) {
-        if (collectible.attachedPlayerId != 0) {
-            m_participants.at(collectible.attachedPlayerId).score.Collect(collectible.id);
-        }
+    for (const auto& player : state.players) {
+        m_participants.at(player.id).score.Observe(player.foodEaten);
     }
     --m_state.remainingTicks;
     const bool soloTargetReached =

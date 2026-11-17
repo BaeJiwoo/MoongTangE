@@ -95,7 +95,7 @@ void validate_round(const RoundState& round)
 
 void validate_score(const PlayerState& player, const RoundState& round)
 {
-    require(player.roundScore <= MAX_COLLECTIBLES * simulation::COLLECTION_POINTS &&
+    require(player.roundScore <= simulation::MAX_FOOD_PER_ROUND * simulation::COLLECTION_POINTS &&
             player.roundScore % simulation::COLLECTION_POINTS == 0);
     require(!player.roundWinner ||
             (round.phase == RoundPhase::RESULTS &&
@@ -200,7 +200,8 @@ Bytes snapshot(const RoomSnapshot& room)
 {
     const auto& state = room.world;
     require(room.roomId != 0 && state.players.size() <= MAX_PLAYERS &&
-            state.collectibles.size() <= MAX_COLLECTIBLES);
+            state.collectibles.size() <= MAX_COLLECTIBLES &&
+            state.mines.size() <= simulation::MAX_MINES);
 
     proto::WorldSnapshot message;
     message.set_server_tick(state.tick);
@@ -213,14 +214,14 @@ Bytes snapshot(const RoomSnapshot& room)
     round.set_competitive(state.round.competitive);
 
     std::set<std::uint32_t> ids;
-    std::set<std::uint32_t> aliveIds;
     for (const auto& player : state.players) {
         require(player.id != 0 && ids.insert(player.id).second);
         require(player.deathTick <= state.tick);
         validate_score(player, state.round);
-        if (player.deathTick == 0) {
-            aliveIds.insert(player.id);
-        }
+        require(std::isfinite(player.radius) && player.radius >= simulation::PLAYER_RADIUS &&
+                player.radius <= simulation::MAX_PLAYER_RADIUS &&
+                player.foodEaten <= simulation::MAX_FOOD_PER_ROUND &&
+                player.mineHitTick <= state.tick);
 
         auto& record = *message.add_players();
         record.set_id(player.id);
@@ -229,6 +230,9 @@ Bytes snapshot(const RoomSnapshot& room)
         record.set_death_tick(player.deathTick);
         record.set_round_score(player.roundScore);
         record.set_round_winner(player.roundWinner);
+        record.set_radius(player.radius);
+        record.set_food_eaten(player.foodEaten);
+        record.set_mine_hit_tick(player.mineHitTick);
         write_vector(*record.mutable_position(), player.position);
         write_vector(*record.mutable_velocity(), player.velocity);
         write_quaternion(*record.mutable_orientation(), player.orientation);
@@ -237,12 +241,11 @@ Bytes snapshot(const RoomSnapshot& room)
 
     std::set<std::uint32_t> collectibleIds;
     for (const auto& collectible : state.collectibles) {
-        require(
-            collectible.id != 0 && collectibleIds.insert(collectible.id).second &&
-            valid_collectible_kind(collectible.kind) && std::isfinite(collectible.scale) &&
-            collectible.scale >= simulation::COLLECTIBLE_MIN_SCALE &&
-            collectible.scale <= simulation::COLLECTIBLE_MAX_SCALE &&
-            (collectible.attachedPlayerId == 0 || aliveIds.contains(collectible.attachedPlayerId)));
+        require(collectible.id != 0 && collectibleIds.insert(collectible.id).second &&
+                valid_collectible_kind(collectible.kind) && std::isfinite(collectible.scale) &&
+                collectible.scale >= simulation::COLLECTIBLE_MIN_SCALE &&
+                collectible.scale <= simulation::COLLECTIBLE_MAX_SCALE &&
+                collectible.attachedPlayerId == 0);
 
         auto& record = *message.add_collectibles();
         record.set_id(collectible.id);
@@ -252,6 +255,16 @@ Bytes snapshot(const RoomSnapshot& room)
         record.set_scale(collectible.scale);
         record.set_attached_player_id(collectible.attachedPlayerId);
     }
+    std::set<std::uint32_t> mineIds;
+    for (const auto& mine : state.mines) {
+        require(mine.id != 0 && mineIds.insert(mine.id).second &&
+                (mine.readyTick <= state.tick ||
+                 mine.readyTick - state.tick <= simulation::MINE_RESPAWN_TICKS));
+        auto& record = *message.add_mines();
+        record.set_id(mine.id);
+        write_vector(*record.mutable_position(), mine.position);
+        record.set_ready_tick(mine.readyTick);
+    }
     return encode(MessageType::SNAPSHOT, message);
 }
 
@@ -260,7 +273,8 @@ RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
     const auto message = decode<proto::WorldSnapshot>(data, MessageType::SNAPSHOT);
     require(message.room_id() != 0 && message.has_server_tick() && message.has_round() &&
             message.players_size() <= static_cast<int>(MAX_PLAYERS) &&
-            message.collectibles_size() <= static_cast<int>(MAX_COLLECTIBLES));
+            message.collectibles_size() <= static_cast<int>(MAX_COLLECTIBLES) &&
+            message.mines_size() <= static_cast<int>(simulation::MAX_MINES));
 
     WorldSnapshot state{message.server_tick(), {}, {}};
     state.round = {message.round().id(), static_cast<RoundPhase>(message.round().phase()),
@@ -270,14 +284,14 @@ RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
     state.collectibles.reserve(static_cast<std::size_t>(message.collectibles_size()));
 
     std::set<std::uint32_t> ids;
-    std::set<std::uint32_t> aliveIds;
     for (const auto& record : message.players()) {
         require(record.id() != 0 && ids.insert(record.id()).second);
         require(record.has_death_tick() && record.death_tick() <= state.tick &&
-                record.has_round_score() && record.has_round_winner());
-        if (record.death_tick() == 0) {
-            aliveIds.insert(record.id());
-        }
+                record.has_round_score() && record.has_round_winner() && record.has_radius() &&
+                std::isfinite(record.radius()) && record.radius() >= simulation::PLAYER_RADIUS &&
+                record.radius() <= simulation::MAX_PLAYER_RADIUS && record.has_food_eaten() &&
+                record.food_eaten() <= simulation::MAX_FOOD_PER_ROUND &&
+                record.has_mine_hit_tick() && record.mine_hit_tick() <= state.tick);
         require(record.nickname().empty() || valid_nickname(record.nickname()));
         require(record.has_position() && record.has_velocity() && record.has_orientation() &&
                 record.has_angular_velocity());
@@ -285,23 +299,31 @@ RoomSnapshot read_snapshot(std::span<const std::uint8_t> data)
         state.players.push_back(
             {record.id(), read_vector(record.position()), read_vector(record.velocity()),
              read_quaternion(record.orientation()), read_vector(record.angular_velocity()),
-             record.nickname(), record.death_tick(), record.round_score(), record.round_winner()});
+             record.nickname(), record.death_tick(), record.round_score(), record.round_winner(),
+             record.radius(), record.food_eaten(), record.mine_hit_tick()});
         validate_score(state.players.back(), state.round);
     }
 
     std::set<std::uint32_t> collectibleIds;
     for (const auto& record : message.collectibles()) {
-        require(
-            record.id() != 0 && collectibleIds.insert(record.id()).second &&
-            record.kind() >= proto::APPLE && record.kind() <= proto::DONUT &&
-            record.has_position() && record.has_orientation() && record.has_scale() &&
-            std::isfinite(record.scale()) && record.scale() >= simulation::COLLECTIBLE_MIN_SCALE &&
-            record.scale() <= simulation::COLLECTIBLE_MAX_SCALE &&
-            (record.attached_player_id() == 0 || aliveIds.contains(record.attached_player_id())));
+        require(record.id() != 0 && collectibleIds.insert(record.id()).second &&
+                record.kind() >= proto::APPLE && record.kind() <= proto::DONUT &&
+                record.has_position() && record.has_orientation() && record.has_scale() &&
+                std::isfinite(record.scale()) &&
+                record.scale() >= simulation::COLLECTIBLE_MIN_SCALE &&
+                record.scale() <= simulation::COLLECTIBLE_MAX_SCALE &&
+                record.attached_player_id() == 0);
         state.collectibles.push_back({record.id(), static_cast<CollectibleKind>(record.kind()),
                                       read_vector(record.position()),
                                       read_quaternion(record.orientation()), record.scale(),
                                       record.attached_player_id()});
+    }
+    std::set<std::uint32_t> mineIds;
+    for (const auto& record : message.mines()) {
+        require(record.id() != 0 && mineIds.insert(record.id()).second && record.has_position() &&
+                (record.ready_tick() <= state.tick ||
+                 record.ready_tick() - state.tick <= simulation::MINE_RESPAWN_TICKS));
+        state.mines.push_back({record.id(), read_vector(record.position()), record.ready_tick()});
     }
     return {message.room_id(), std::move(state)};
 }
